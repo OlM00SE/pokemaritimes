@@ -1,0 +1,31 @@
+{
+  "id": "MAP_ROUTE201_1",
+  "name": "Route201_1",
+  "layout": "LAYOUT_ROUTE201_1",
+  "music": "MUS_ROUTE101",
+  "region_map_section": "MAPSEC_ROUTE_102",
+  "requires_flash": false,
+  "weather": "WEATHER_SUNNY",
+  "map_type": "MAP_TYPE_ROUTE",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_WOODSTOCK_2",
+      "offset": 0,
+      "direction": "right"
+    },
+    {
+      "map": "MAP_HOME_TOWN_0",
+      "offset": 0,
+      "direction": "up"
+    }
+  ],
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": []
+}

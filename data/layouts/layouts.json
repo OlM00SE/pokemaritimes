@@ -4410,6 +4410,116 @@
       "secondary_tileset": "gTileset_MysteryEventsHouse",
       "border_filepath": "data/layouts/SootopolisCity_MysteryEventsHouse_1F_StairsUnblocked/border.bin",
       "blockdata_filepath": "data/layouts/SootopolisCity_MysteryEventsHouse_1F_StairsUnblocked/map.bin"
+    },
+    {
+      "id": "LAYOUT_HOME_TOWN_0",
+      "name": "HomeTown_0_Layout",
+      "width": 36,
+      "height": 26,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/HomeTown_0/border.bin",
+      "blockdata_filepath": "data/layouts/HomeTown_0/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE201_1",
+      "name": "Route201_1_Layout",
+      "width": 50,
+      "height": 20,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route201_1/border.bin",
+      "blockdata_filepath": "data/layouts/Route201_1/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE202_1",
+      "name": "Route202_1_Layout",
+      "width": 42,
+      "height": 46,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route202_1/border.bin",
+      "blockdata_filepath": "data/layouts/Route202_1/map.bin"
+    },
+    {
+      "id": "LAYOUT_FREDERICTON_0",
+      "name": "Fredericton_0_Layout",
+      "width": 50,
+      "height": 46,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Rustboro",
+      "border_filepath": "data/layouts/Fredericton_0/border.bin",
+      "blockdata_filepath": "data/layouts/Fredericton_0/map.bin"
+    },
+    {
+      "id": "LAYOUT_WOODSTOCK_2",
+      "name": "Woodstock_2_Layout",
+      "width": 36,
+      "height": 34,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Woodstock_2/border.bin",
+      "blockdata_filepath": "data/layouts/Woodstock_2/map.bin"
+    },
+    {
+      "id": "LAYOUT_LITTLEROOT_TOWN_MY_HOUSE_1F_0",
+      "name": "LittlerootTown_MyHouse_1F_0_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_Building",
+      "secondary_tileset": "gTileset_BrendansMaysHouse",
+      "border_filepath": "data/layouts/LittlerootTown_MyHouse_1F_0/border.bin",
+      "blockdata_filepath": "data/layouts/LittlerootTown_MyHouse_1F_0/map.bin"
+    },
+    {
+      "id": "LAYOUT_LITTLEROOT_TOWN_MY_HOUSE_2F_0",
+      "name": "LittlerootTown_MyHouse_2F_0_Layout",
+      "width": 9,
+      "height": 8,
+      "primary_tileset": "gTileset_Building",
+      "secondary_tileset": "gTileset_BrendansMaysHouse",
+      "border_filepath": "data/layouts/LittlerootTown_MyHouse_2F_0/border.bin",
+      "blockdata_filepath": "data/layouts/LittlerootTown_MyHouse_2F_0/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE203_1",
+      "name": "Route203_1_Layout",
+      "width": 60,
+      "height": 40,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route203_1/border.bin",
+      "blockdata_filepath": "data/layouts/Route203_1/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE101_2",
+      "name": "Route101_2_Layout",
+      "width": 20,
+      "height": 40,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route101_2/border.bin",
+      "blockdata_filepath": "data/layouts/Route101_2/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE203_1_2",
+      "name": "Route203_1_2_Layout",
+      "width": 60,
+      "height": 28,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route203_1_2/border.bin",
+      "blockdata_filepath": "data/layouts/Route203_1_2/map.bin"
+    },
+    {
+      "id": "LAYOUT_ROUTE102_2",
+      "name": "Route102_2_Layout",
+      "width": 50,
+      "height": 20,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/Route102_2/border.bin",
+      "blockdata_filepath": "data/layouts/Route102_2/map.bin"
     }
   ]
 }

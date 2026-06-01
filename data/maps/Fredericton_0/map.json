@@ -1,0 +1,31 @@
+{
+  "id": "MAP_FREDERICTON_0",
+  "name": "Fredericton_0",
+  "layout": "LAYOUT_FREDERICTON_0",
+  "music": "MUS_RUSTBORO",
+  "region_map_section": "MAPSEC_RUSTBORO_CITY",
+  "requires_flash": false,
+  "weather": "WEATHER_SUNNY",
+  "map_type": "MAP_TYPE_CITY",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_ROUTE202_1",
+      "offset": -10,
+      "direction": "left"
+    },
+    {
+      "map": "MAP_ROUTE203_1",
+      "offset": 17,
+      "direction": "right"
+    }
+  ],
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": []
+}
