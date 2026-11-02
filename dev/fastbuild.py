@@ -6,7 +6,7 @@ source of truth (Porymap, git, editing all happen there). This script:
   1. seeds ~/maritimes-build in WSL once (tar copy, excludes .git/build),
   2. syncs only files changed on E: since the last sync (and deletions),
   3. runs make in the mirror,
-  4. copies the ROM, .map, and generated map constants back to E:.
+  4. copies the ROM, .map, generated map constants, and Poryscript output back to E:.
 
   python dev/fastbuild.py            # sync + build
   python dev/fastbuild.py --reseed   # rebuild the mirror from scratch
@@ -108,6 +108,15 @@ def main(argv):
             src = os.path.join(unc, p.replace("/", "\\"))
             if os.path.exists(src):
                 shutil.copyfile(src, os.path.join(REPO, p))
+        # Poryscript output (scripts.pory -> scripts.inc) is generated in the mirror but tracked
+        # in git: copy it back when it changed, so E: never holds a stale .inc.
+        for p in (q for q in now if q.startswith("data/") and q.endswith(".pory")):
+            inc = p[:-5] + ".inc"
+            src, dst = os.path.join(unc, inc.replace("/", "\\")), os.path.join(REPO, inc)
+            if os.path.exists(src) and (not os.path.exists(dst)
+                                        or open(src, "rb").read() != open(dst, "rb").read()):
+                shutil.copyfile(src, dst)
+                print("    generated:", inc)
         now = scan()   # copied-back files must not bounce back next sync
     json.dump(now, open(MANIFEST, "w"))
     print(f"BUILD OK: make {time.time() - t1:.0f}s, total {time.time() - t0:.0f}s")

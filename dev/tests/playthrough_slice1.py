@@ -1,0 +1,92 @@
+"""End-to-end playthrough of the first slice, as a new player would play it.
+
+  python dev/tests/playthrough_slice1.py
+
+New game (no test mode: wild battles are ON) ->
+  1. leave the house into HomeTown;
+  2. try to leave town without a Pokémon: the researcher must call the player back;
+  3. talk to the researcher: choose a starter, receive Poké Balls;
+  4. the exit is now open: walk Route 201 to Woodstock, fleeing every wild battle;
+  5. come back to the researcher and get healed.
+Screenshots: dev/out/play_*.png. Exit code 1 on the first failed step.
+"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mgba_bridge import Emu, REPO, UNTHROTTLED
+from playtest import prepare_rom
+from autowalk import Walker
+
+OUT = os.path.join(REPO, "dev", "out")
+RESEARCHER = (12, 22)
+EXIT_ABOVE = (10, 23)          # the trigger row is y=24
+
+
+class Fail(Exception):
+    pass
+
+
+def check(cond, msg):
+    print(("PASS: " if cond else "FAIL: ") + msg)
+    if not cond:
+        raise Fail(msg)
+
+
+def main():
+    with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
+        try:
+            check(e.boot_new_game(), "new game reaches the overworld")
+            battles = []
+            wk = Walker(e, on_interrupt=lambda: (battles.append(wk.here()[1]), e.flee_battle()))
+            check(e.party_count() == 0, "a new player has no Pokémon")
+
+            for m in ("LittlerootTown_MyHouse_1F_0", "HomeTown_0"):
+                check(wk.go_to_map(m), f"walk to {m}")
+
+            # 2. the exit is guarded
+            check(wk.go_to_tile(*EXIT_ABOVE), f"reach the exit path {EXIT_ABOVE}")
+            e.press("DOWN", 16, 2)
+            e.wait(30)
+            e.shot(os.path.join(OUT, "play_01_blocked.png"))
+            e.advance_text("B")
+            name, pos = wk.here()
+            check(name == "HomeTown_0" and pos[1] <= EXIT_ABOVE[1],
+                  f"without a Pokémon the player is sent back (now {name} {pos})")
+
+            # 3. the researcher gives a starter
+            check(wk.go_to_tile(RESEARCHER[0], RESEARCHER[1] + 1), "stand below the researcher")
+            e.press("UP", 3, 6)                       # face north
+            e.press("A", 3, 30)                       # talk
+            for _ in range(300):                      # A through text, the bag, and "choose this?"
+                if e.party_count() == 1:
+                    break
+                e.press("A", 3, 12)
+            check(e.party_count() == 1, "the starter is in the party")
+            e.wait(60)
+            e.shot(os.path.join(OUT, "play_02_starter.png"))
+            e.advance_text("B")                       # Poké Balls + goodbye text
+
+            # 4. the way is open; wild battles are real now
+            for m in ("Route201_1", "Woodstock_2"):
+                check(wk.go_to_map(m), f"walk to {m} (wild battles so far: {len(battles)})")
+            e.shot(os.path.join(OUT, "play_03_woodstock.png"))
+            check(e.party_count() == 1, "the starter survived the trip")
+
+            # 5. back to the researcher to heal
+            for m in ("Route201_1", "HomeTown_0"):
+                check(wk.go_to_map(m), f"walk back to {m}")
+            check(wk.go_to_tile(RESEARCHER[0], RESEARCHER[1] + 1), "back below the researcher")
+            e.press("UP", 3, 6)
+            e.press("A", 3, 30)
+            e.advance_text("B")
+            check(e.has_control(), "the heal dialogue ends and the player has control")
+            print(f"wild battles fled on the way: {len(battles)} at {battles}")
+            print("RESULT: PASS")
+            return 0
+        except Fail:
+            e.shot(os.path.join(OUT, "play_fail.png"))
+            print("RESULT: FAIL (screenshot dev/out/play_fail.png)")
+            return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

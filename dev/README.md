@@ -36,6 +36,7 @@ How compiling works:
 | `tests/reconstruction.py` | Leave-one-out regeneration of 238 vanilla maps reproduces 87.8% of terrain tiles exactly. |
 | `tests/roundtrip.py` | Extracting and recompiling our maps keeps 86–99% of metatiles identical. |
 | `check_maps.py --baseline` | The checker raises no false errors on vanilla. Known special cases are listed in `mapkit/baseline.py`. |
+| `tests/playthrough_slice1.py` | End-to-end, wild battles on: a new player is stopped at HomeTown's exit, gets a starter from the researcher, walks Route 201 to Woodstock fleeing battles, and returns to be healed. |
 | `tests/ingame_doors.py <Map>...` | Every door warp enters its interior (stairs followed), and walking out returns to the door. |
 | `tests/ingame_encounters.py <Map> [--battles N] [--no-party]` | Wild battles start on the map's grass, and only species from its land table appear. `--no-party` checks that a player with no Pokémon never gets a wild battle. |
 | `tests/ingame_warp.py`, `tests/ingame_water_woodstock.py` | Targeted in-game checks. |
@@ -43,7 +44,9 @@ How compiling works:
 ## In-game dev hooks (non-release builds only)
 `DEBUG_DEV_BRIDGE` in `include/config/debug.h` enables `gDevBridge` in `src/field_control_avatar.c`. Python uses it to warp anywhere, set flags, give the player a Pokémon (`Emu.give_mon`), and wait until the player has control.
 
-`WE_FLAG_NO_ENCOUNTER` and `OW_FLAG_NO_TRAINER_SEE` are assigned to unused flags. `Emu.test_mode()` sets them for tests.
+`WE_FLAG_NO_ENCOUNTER` and `OW_FLAG_NO_TRAINER_SEE` are assigned to unused flags. `Emu.test_mode()` sets them for movement-only tests, and also sets `FLAG_SYS_POKEMON_GET` so story gates (HomeTown's exit) are open. Other helpers: `Emu.flee_battle()`, `Emu.advance_text()`, `Emu.has_control()`, `mgba_bridge.flag_id(name)`. `Walker(e, on_interrupt=e.flee_battle)` walks with wild battles on, re-planning after each one.
+
+Map scripts may be written in Poryscript (`scripts.pory`). `fastbuild.py` copies the generated `scripts.inc` back so git tracks the current output.
 
 ## Known limits (v1)
 - **Vocabulary:** route terrain on `gTileset_General` only. Rocks, ledges, cliffs/elevation changes, shorelines, buildings and town pieces stay literal (`#`) or are hand-painted in Porymap.

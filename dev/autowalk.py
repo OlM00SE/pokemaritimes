@@ -14,8 +14,12 @@ from mgba_bridge import Emu, REPO, UNTHROTTLED
 
 
 class Walker:
-    def __init__(self, emu, project=None, log=print):
+    def __init__(self, emu, project=None, log=print, on_interrupt=None):
+        """on_interrupt: called when the overworld is lost mid-path (e.g. a wild battle);
+        the walker then re-plans from wherever the player is. None = walk blindly (test mode)."""
         self.e, self.p, self.log = emu, project or Project(), log
+        self.on_interrupt = on_interrupt
+        self.interruptions = 0
         self._worlds = {}
         self.step_on, self.door, self.arrow, self.stair = _warp_kinds(self.p)
 
@@ -72,18 +76,30 @@ class Walker:
         for d, kind in w.path_to(seen, hit[0]):
             self.e.press(DIR_NAME[d], 16 if kind != "jump" else 4, 2)
             self.e.wait(20 if kind == "jump" else 0)
+            if self.on_interrupt and not self.e.in_overworld():
+                self.interruptions += 1
+                self.on_interrupt()
+                return "interrupted"
         if hit[1]:
             self.e.press(DIR_NAME[hit[1]], 16, 2)
         return True
 
-    def go_to_map(self, target, max_legs=4):
-        for _ in range(max_legs):
+    def go_to_map(self, target, max_legs=4, max_interruptions=60):
+        legs = 0
+        while legs < max_legs:
             name, pos = self.here()
             if name == target:
                 return True
-            if not self._walk(self.world(name), self._goals(name, target)):
+            r = self._walk(self.world(name), self._goals(name, target))
+            if r == "interrupted":
+                if self.interruptions > max_interruptions:
+                    self.log(f"  gave up after {self.interruptions} interruptions")
+                    return False
+                continue                      # re-plan from the new position; not a new leg
+            if not r:
                 self.log(f"  no path in {name} from {pos} toward {target}")
                 return False
+            legs += 1
             self.e.wait(90)
             self.e.wait_until(self.e.in_overworld, 600)
         return self.here()[0] == target

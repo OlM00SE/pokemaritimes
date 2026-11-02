@@ -27,6 +27,39 @@ def config_flag(config_rel, define, repo=REPO):
     return int(f.group(1), 0) if f else 0
 
 
+def flag_id(name, repo=REPO, _cache={}):
+    """Value of a flag constant, evaluating flags.h expressions like (SYSTEM_FLAGS + 0x0).
+    Where a header defines a name twice under #if (Emerald vs FRLG), the Emerald one wins.
+    Cross-checked against the '// FLAG_0x...' comment flags.h keeps next to most flags."""
+    if not _cache:
+        notes = {}
+        for h in ("flags.h", "opponents.h"):
+            txt = open(os.path.join(repo, "include", "constants", h), encoding="utf-8").read()
+            for n, expr, note in re.findall(r"^#define\s+(\w+)\s+([^\n/]+)(//[^\n]*)?", txt, re.M):
+                expr = expr.strip()
+                if n in _cache and "FRLG" in expr:
+                    continue
+                _cache[n] = expr
+                m = re.search(r"FLAG_(0x[0-9A-Fa-f]+)", note or "")
+                if m:
+                    notes[n] = int(m.group(1), 0)
+        _cache["__notes__"] = notes
+
+    def ev(n, depth=0):
+        expr = _cache[n]
+        if depth > 20:
+            raise ValueError(f"flag {n}: define chain too deep")
+        expr = re.sub(r"\b([A-Z_][A-Z0-9_]*)\b", lambda m: str(ev(m.group(1), depth + 1)), expr)
+        if not re.fullmatch(r"[\s()+\-*0-9xXa-fA-F]+", expr):
+            raise ValueError(f"flag {n}: cannot evaluate {expr!r}")
+        return int(eval(expr, {"__builtins__": {}}))
+    v = ev(name)
+    note = _cache["__notes__"].get(name)
+    if note is not None and note != v:
+        raise ValueError(f"{name}: evaluated {v:#x} but flags.h says {note:#x}")
+    return v
+
+
 def load_map_names(repo=REPO):
     """{(group, num): 'MapName'} from the generated include/constants/map_groups.h."""
     names = {}
@@ -239,13 +272,41 @@ class Emu:
     def party_count(self):
         return self.read8(self.read32(self.sym["gPlayerPartyCountPtr"]))
 
+    def has_control(self, frames=8):
+        """True if the player has free overworld control (controlFrames advances)."""
+        addr = self.sym["gDevBridge"] + 16
+        start = self.read32(addr)
+        self.wait(frames)
+        return self.read32(addr) > start
+
+    def flee_battle(self, max_tries=600):
+        """Run from a wild battle: RUN is bottom-right of the action menu. B clears messages.
+        Returns once the overworld is back and the player has control."""
+        for _ in range(max_tries):
+            if self.in_overworld():
+                break
+            self.press("RIGHT", 3, 3); self.press("DOWN", 3, 3); self.press("A", 3, 12); self.press("B", 3, 12)
+        self.wait_for_control()
+
+    def advance_text(self, key="B", max_presses=400):
+        """Press `key` until the player has control again (B closes message boxes without
+        re-talking to the NPC in front). Returns the number of presses."""
+        for i in range(max_presses):
+            if self.in_overworld() and self.has_control():
+                return i
+            self.press(key, 3, 10)
+        raise RuntimeError("text never finished (stuck in a menu or script?)")
+
     def test_mode(self):
-        """Disable wild encounters and trainer sight (expansion config flags) for automated tests."""
+        """Movement-only testing: no wild encounters or trainer sight (expansion config flags),
+        and story gates open (FLAG_SYS_POKEMON_GET: e.g. HomeTown's 'get a Pokémon first' exit).
+        Call it before entering the map whose gate should be open (gates are armed on load)."""
         for cfg, name in (("include/config/wild_encounter.h", "WE_FLAG_NO_ENCOUNTER"),
                           ("include/config/overworld.h", "OW_FLAG_NO_TRAINER_SEE")):
             flag = config_flag(cfg, name)
             if flag:
                 self.set_flag(flag)
+        self.set_flag(flag_id("FLAG_SYS_POKEMON_GET"))
 
     def step(self, direction, n=1):
         """Walk n tiles; returns the player position afterwards."""
