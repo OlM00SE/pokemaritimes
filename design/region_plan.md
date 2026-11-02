@@ -79,14 +79,15 @@ The existing maps already fit this arc:
 | Offshore islands | Grand Manan, Sable Island | Ferries, isolated islands, post-game |
 
 ## What the vision asks of the pipeline (priority order)
-1. **Completeness tooling** (done: `section_status.py`, dead-door check). It keeps small areas honest.
-2. **Vocabulary for river-valley and forest maps:** ledges, rocks, shoreline/riverbank edges, bridges. These cover the whole early-game arc.
-3. **Stamps for town pieces** (houses, PC, Mart) with their door warps placed automatically, so a new town never ships with dead doors.
+1. **Completeness tooling** (done: `section_status.py`, the dead-door check, and the end-to-end `playthrough_slice1.py`). It keeps small areas honest.
+2. **Vocabulary for river-valley and forest maps:** ledges, rocks, shoreline/riverbank edges, bridges. These cover the whole early-game arc. *Ledges are proposed as the next milestone.*
+3. **Stamps for town pieces** (houses, PC, Mart) with their door warps placed automatically, so a new town never ships with dead doors. (Part done: `add_interior.py` fills a dead door with the matching vanilla interior; `name_area.py` gives an area its own name.)
 4. **Porytiles** for Maritime-specific tiles (log piles, covered bridge, red sand, lighthouses). Only once a map actually needs one.
 5. Later: cliff/elevation vocabulary for the coast; fog and tide mechanics.
 
 ## Open questions for Tom
-- HomeTown's name and identity: is a forestry/mill village right?
+*(Answered: HomeTown is a quiet forestry/mill village; Woodstock has a possible wildlife research station; the starter is received in HomeTown. All provisional.)*
+- HomeTown's final name.
 - Real names or Pokémon-ified ones? (Woodstock and Fredericton are currently real.)
 - How many gyms, and where is the League? Bridge or ferry to PEI? (*Not urgent.*)
 - Routes 101_2 / 102_2 (Hoenn copies): delete once the 203 branch is designed?
