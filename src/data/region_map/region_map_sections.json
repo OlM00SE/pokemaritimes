@@ -1634,6 +1634,18 @@
     {
       "id": "MAPSEC_ROUTE_203",
       "name": "ROUTE 203"
+    },
+    {
+      "id": "MAPSEC_HOMETOWN",
+      "name": "HOMETOWN"
+    },
+    {
+      "id": "MAPSEC_ROUTE_201",
+      "name": "ROUTE 201"
+    },
+    {
+      "id": "MAPSEC_WOODSTOCK",
+      "name": "WOODSTOCK"
     }
   ]
 }
