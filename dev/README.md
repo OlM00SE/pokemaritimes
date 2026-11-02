@@ -10,6 +10,7 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 | Completeness | `dev/section_status.py [--from <Map>] [Map...]`: what a slice still *lacks* (doors leading nowhere, missing encounters, no people or signs, map sections borrowed from Hoenn, silent music). By default it covers everything reachable from HomeTown_0. It only reports. |
 | Render | `dev/render_map.py <Map> --overlay collision,elevation,behavior,events,grid`. `--world` stitches the connected region; `--sheet <pri> <sec>` gives a labelled metatile index. |
 | Play-test | `dev/autowalk.py <Map> <Map> ...` walks map to map in mGBA from a new game. `dev/shoot.py <Map> x,y ...` warps and takes screenshots. |
+| Fill a dead door | `dev/add_interior.py <Map> x,y <NewName> [--like <VanillaInterior>] [--apply]` identifies the building from its facade (`mapkit/doors.py`). It clones the interior vanilla uses behind it (all floors, same layout, events stripped) and wires the warps both ways. The default is a dry run. |
 | Fix attributes | `dev/fix_attrs.py <Map> [--surfable] [--apply]` sets collision/elevation to vanilla's confident values. |
 
 ## Making or editing a map
@@ -35,10 +36,12 @@ How compiling works:
 | `tests/reconstruction.py` | Leave-one-out regeneration of 238 vanilla maps reproduces 87.8% of terrain tiles exactly. |
 | `tests/roundtrip.py` | Extracting and recompiling our maps keeps 86–99% of metatiles identical. |
 | `check_maps.py --baseline` | The checker raises no false errors on vanilla. Known special cases are listed in `mapkit/baseline.py`. |
+| `tests/ingame_doors.py <Map>...` | Every door warp enters its interior (stairs followed), and walking out returns to the door. |
+| `tests/ingame_encounters.py <Map> [--battles N] [--no-party]` | Wild battles start on the map's grass, and only species from its land table appear. `--no-party` checks that a player with no Pokémon never gets a wild battle. |
 | `tests/ingame_warp.py`, `tests/ingame_water_woodstock.py` | Targeted in-game checks. |
 
 ## In-game dev hooks (non-release builds only)
-`DEBUG_DEV_BRIDGE` in `include/config/debug.h` enables `gDevBridge` in `src/field_control_avatar.c`. Python uses it to warp anywhere, set flags, and wait until the player has control.
+`DEBUG_DEV_BRIDGE` in `include/config/debug.h` enables `gDevBridge` in `src/field_control_avatar.c`. Python uses it to warp anywhere, set flags, give the player a Pokémon (`Emu.give_mon`), and wait until the player has control.
 
 `WE_FLAG_NO_ENCOUNTER` and `OW_FLAG_NO_TRAINER_SEE` are assigned to unused flags. `Emu.test_mode()` sets them for tests.
 

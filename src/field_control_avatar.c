@@ -29,6 +29,7 @@
 #include "pokemon.h"
 #include "safari_zone.h"
 #include "script.h"
+#include "script_pokemon_util.h"
 #include "secret_base.h"
 #include "sound.h"
 #include "start_menu.h"
@@ -51,8 +52,10 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 // Maritimes dev bridge (DEBUG_DEV_BRIDGE): automated tests (dev/mgba_bridge.py) fill in the
 // arguments, then write `request`. It is serviced the next frame the player has control.
 //   'WARP': warp to mapGroup/mapNum at x,y      'FLAG': set (value!=0) or clear flagId
+//   'GIVE': give the player species flagId at level flagValue (tests that need a party)
 #define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
 #define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
+#define DEV_BRIDGE_GIVE 0x47495645 // 'GIVE'
 struct DevBridgeMailbox
 {
     u32 request;
@@ -87,6 +90,11 @@ static bool32 TryDevBridgeRequest(void)
             FlagSet(gDevBridge.flagId);
         else
             FlagClear(gDevBridge.flagId);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_GIVE:
+        gDevBridge.request = 0;
+        ScriptGiveMon(gDevBridge.flagId, gDevBridge.flagValue, ITEM_NONE);
         gDevBridge.done++;
         return FALSE;
     }

@@ -220,6 +220,25 @@ class Emu:
         if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
             raise RuntimeError("flag request not serviced")
 
+    def give_mon(self, species, level=5, timeout_frames=300):
+        """Add a Pokémon to the player's party via the dev mailbox. species: 'BIDOOF' or an id."""
+        if isinstance(species, str):
+            src = open(os.path.join(REPO, "include", "constants", "species.h"), encoding="utf-8").read()
+            m = re.search(rf"\bSPECIES_{species.upper()}\s*=\s*(\d+)", src)
+            if not m:
+                raise ValueError(f"unknown species {species}")
+            species = int(m.group(1))
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 12:x} {species}")
+        self.cmd(f"write16 {base + 14:x} {level}")
+        self.cmd(f"write32 {base:x} {0x47495645}")       # 'GIVE'
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError("give request not serviced")
+
+    def party_count(self):
+        return self.read8(self.read32(self.sym["gPlayerPartyCountPtr"]))
+
     def test_mode(self):
         """Disable wild encounters and trainer sight (expansion config flags) for automated tests."""
         for cfg, name in (("include/config/wild_encounter.h", "WE_FLAG_NO_ENCOUNTER"),

@@ -110,6 +110,7 @@ def main(argv):
     with Emu(rom, extra_args=UNTHROTTLED) as e:
         if not e.boot_new_game():
             print("FAIL: never reached overworld"); return 1
+        e.test_mode()           # no wild battles or trainer sight: the walker only tests movement
         wk = Walker(e)
         print("start:", *wk.here())
         for i, target in enumerate(argv):
