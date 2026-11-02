@@ -140,6 +140,46 @@ def render_map(project, name, scale=1, overlays=(), crop=None, detail=None):
     return img
 
 
+def changed_cells(layout, old_blocks):
+    """Cells whose block (metatile, collision or elevation) differs from old_blocks."""
+    w = layout.width
+    return [(i % w, i // w) for i, (a, b) in enumerate(zip(old_blocks, layout.blocks)) if a != b]
+
+
+def render_diff(project, layout, old_blocks, scale=2, margin=2):
+    """Before | after, cropped to the changed area (plus a margin), changed cells outlined.
+    Returns (image, changed cells), or (None, []) when nothing changed."""
+    cells = changed_cells(layout, old_blocks)
+    if not cells:
+        return None, []
+    new_blocks = layout.blocks
+    layout.blocks = list(old_blocks)
+    try:
+        before = render_layout(project, layout, 1)
+    finally:
+        layout.blocks = new_blocks
+    after = render_layout(project, layout, 1)
+    s = 16 * scale
+    x0 = max(0, min(x for x, _ in cells) - margin); x1 = min(layout.width - 1, max(x for x, _ in cells) + margin)
+    y0 = max(0, min(y for _, y in cells) - margin); y1 = min(layout.height - 1, max(y for _, y in cells) + margin)
+    box = (x0 * 16, y0 * 16, (x1 + 1) * 16, (y1 + 1) * 16)
+    size = ((x1 - x0 + 1) * s, (y1 - y0 + 1) * s)          # upscale only the cropped change
+    before, after = (im.crop(box).resize(size, Image.NEAREST) for im in (before, after))
+    for im in (before, after):
+        d = ImageDraw.Draw(im, "RGBA")
+        for x, y in cells:
+            px, py = (x - x0) * s, (y - y0) * s
+            d.rectangle((px, py, px + s - 1, py + s - 1), outline=(255, 0, 255, 200))
+    gap, head = 8, 14
+    out = Image.new("RGB", (before.width * 2 + gap, before.height + head), (24, 24, 32))
+    d = ImageDraw.Draw(out)
+    d.text((2, 1), f"before   (tiles {x0},{y0} to {x1},{y1}; {len(cells)} changed cells outlined)",
+           fill=(255, 255, 0))
+    d.text((before.width + gap + 2, 1), "after", fill=(255, 255, 0))
+    out.paste(before, (0, head)); out.paste(after, (before.width + gap, head))
+    return out, cells
+
+
 def render_sheet(project, primary, secondary, start=0, count=None, cols=16, cell=32):
     """Labeled metatile index: hex id of each row on the left, low nibble above each cell."""
     tiles = project.tileset_pair(primary, secondary)

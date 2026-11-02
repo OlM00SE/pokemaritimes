@@ -7,7 +7,7 @@
 2. Shapes: hand-drawn sketches that must build (with the expected pieces) or must be refused
    (with the expected reason). Covers stacking, junctions, lone tiles, mixed columns, and
    landings on trees, water, kept tiles, and off the map.
-3. Round trip: extract -> compile on vanilla routes with ledges (and LedgeLab) leaves every
+3. Round trip: extract -> compile on vanilla routes with ledges (and LedgeLab, Route 203) leaves every
    ledge block unchanged, attributes included.
 4. Traps: the LedgeLab sketch compiles without a trap; sealed off, the checker must report
    the soft-lock (compiled in memory, nothing written).
@@ -188,7 +188,7 @@ def learned(p, _cache={}):
 
 
 ROUNDTRIP_MAPS = ["Route102", "Route103", "Route104", "Route111", "Route115", "Route116", "Route118",
-                  "Route123", "LedgeLab"]
+                  "Route123", "LedgeLab", "Route203_1"]
 
 
 def roundtrip(p):
