@@ -77,7 +77,7 @@ Elevation bookkeeping (`ObjectEventUpdateElevation`):
   - The bottom bank is drawn on the *land* tile below (`002`).
   - `0D1` looks like pond water but is `MB_PUDDLE`, which you walk through.
 - **Paths:** two 3×3 families. Light path `1D0–1E2`, sand/dirt `118–12A`.
-- **Grammar:** vanilla keeps a grass margin between water and tall grass, paths, or sand. Sand never touches trees. Shorelines use dedicated tiles (`11B–12D`), which aren't modelled yet.
+- **Grammar:** vanilla keeps a grass margin between water and tall grass, paths, or the sand patch. Sand never touches trees. Beaches use their own sand family (`124`, with `11B–12D` edges; section 10).
 
 ## 8. Ledges (engine source, plus 238 vanilla layouts; encoded in `dev/mapkit/ledges.py`)
 **Movement:**
@@ -111,3 +111,25 @@ Ways out:
 - a dev map's spawn point (checks.spawn_point: the only warp, to MAP_DYNAMIC, on a map with no connections). Other arrival-only tiles, such as fly targets, scripted arrivals and Route 115's Terra Cave holes, never count.
 
 **Vanilla result:** exactly one real trap, the ledge pocket in `ShoalCave_LowTideEntranceRoom`. All 50 moves out of it were confirmed blocked in mGBA. Escape Rope or Dig gets the player out.
+
+## 10. Shores (mined from 238 vanilla layouts; encoded in `dev/mapkit/shores.py`)
+**Structure.** Where river/sea water (`170` family) meets land, the edge along the water's north, east and west sides is drawn on the **water** tile. The edge along its south side is drawn on the **land** tile below. `gTileset_General` has this structure in two materials, which share one shape table:
+
+| Shape (for a water cell, unless noted) | Grass bank | Beach |
+|---|---|---|
+| land N | `189` | `12C` |
+| land W / E | `190` / `192` | `125` / `123` |
+| land N+W / N+E (corner) | `188` / `18A` | `146` / `145` |
+| land E, water NE (top end of a side bank) | `178` | `11B` |
+| land W, water NW | `179` | `11D` |
+| land NW only / NE only (inner corner) | `198` / `19A` | `12D` / `12B` |
+| land cell, water N | `002` (`1E8`/`1E9` with a tree below) | `11C`; `13D` if NE is land, `13E` if NW is land |
+| open water | `170` | `170` |
+
+`180`/`181` are the same corners against rock rather than grass. Water rocks are 2×2 (`150 151 / 158 159`, solid, elevation 0 or 1) and draw their own edge.
+
+**How well the table fits vanilla.** Take every vanilla cell where water meets only grass-like land or beach sand. The table rebuilds 99.9% of them (25,556/25,589): all 265 beach-sand edges, all 73 grass banks, and the water pieces apart from 33 one-off variants (e.g. `190` where the shape says `179`). This is `tests/shore_pieces.py`.
+
+**Shapes with no tiles.** No piece has both side banks, so water must be at least two wide. There is no mixed bank/beach corner. A water cell can't carry a side bank and the opposite inner corner at once. The compiler refuses these shapes.
+
+**Attributes and movement.** Water pieces sit at elevation 1 with collision 0. Beach sand (`124`, `11C`, `13D`, `13E`; `MB_SAND`) and grass sit at elevation 3. Stepping from land toward water is an elevation mismatch, so on foot it's blocked, and facing water with Surf offers the field move. Surfing toward elevation-3 land comes ashore (`CanStopSurfing`). Warping onto water starts the player surfing. `tests/ingame_shores.py` checks every land/water edge of ShoreLab and Route 203 against this model: bump, landing, rock, and Surf through the prompt.
