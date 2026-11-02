@@ -16,6 +16,17 @@ PORT = 8765
 UNTHROTTLED = ["-C", "videoSync=0", "-C", "audioSync=0"]
 
 
+def config_flag(config_rel, define, repo=REPO):
+    """Resolve a config define like WE_FLAG_NO_ENCOUNTER -> FLAG_UNUSED_0x021 -> 0x21 (0 if unset)."""
+    txt = open(os.path.join(repo, config_rel), encoding="utf-8").read()
+    m = re.search(rf"#define\s+{define}\s+(\w+)", txt)
+    if not m or m.group(1) == "0":
+        return 0
+    flags = open(os.path.join(repo, "include", "constants", "flags.h"), encoding="utf-8").read()
+    f = re.search(rf"#define\s+{m.group(1)}\s+(0x[0-9A-Fa-f]+|\d+)", flags)
+    return int(f.group(1), 0) if f else 0
+
+
 def load_map_names(repo=REPO):
     """{(group, num): 'MapName'} from the generated include/constants/map_groups.h."""
     names = {}
@@ -158,6 +169,64 @@ class Emu:
             self._names = load_map_names()
         loc = loc or self.player()
         return self._names.get((loc[0], loc[1]), f"?{loc[0]}.{loc[1]}") if loc else None
+
+    def warp(self, map_name, x, y, timeout_frames=600):
+        """Warp anywhere via the in-game dev mailbox (DEBUG_DEV_BRIDGE). map_name is the folder
+        name (e.g. 'Route203_1'). Returns the player position after arrival."""
+        if "gDevBridge" not in self.sym:
+            raise RuntimeError("ROM has no gDevBridge (release build, or DEBUG_DEV_BRIDGE off)")
+        if not hasattr(self, "_names"):
+            self._names = load_map_names()
+        const = None
+        mj = os.path.join(REPO, "data", "maps", map_name, "map.json")
+        if os.path.exists(mj):
+            import json
+            const = json.load(open(mj, encoding="utf-8"))["id"][4:]
+        loc = next((k for k, v in self._names.items() if v == const), None)
+        if loc is None:
+            raise ValueError(f"unknown map {map_name}")
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        for off, val in ((4, loc[0]), (5, loc[1]), (6, x & 0xFF), (7, y & 0xFF)):
+            self.cmd(f"write8 {base + off:x} {val}")
+        self.cmd(f"write32 {base:x} {0x57415250}")       # 'WARP' -- written last
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 5):
+            raise RuntimeError(f"warp to {map_name} not serviced (player not in free overworld control?)")
+        self.wait(10)
+        self.wait_until(self.in_overworld, timeout_frames, 10)
+        self.wait_for_control(timeout_frames)
+        pos = self.player()
+        if (pos[0], pos[1]) != loc:
+            raise RuntimeError(f"warp to {map_name} ({x},{y}) landed on another map: {pos}")
+        # Landing on a door/arrow tile makes the player step out of it (vanilla behaviour),
+        # so the final position can differ from (x, y); callers can compare if they care.
+        return pos
+
+    def wait_for_control(self, timeout_frames=900, settle=4):
+        """Block until the player has free overworld control (gDevBridge.controlFrames advances),
+        i.e. fades, map loads, and scripts have finished. Precise, unlike fixed delays."""
+        addr = self.sym["gDevBridge"] + 16
+        start = self.read32(addr)
+        if not self.wait_until(lambda: self.read32(addr) >= start + settle, timeout_frames, 2):
+            raise RuntimeError("player never regained control (script/battle/menu active?)")
+
+    def set_flag(self, flag_id, value=True, timeout_frames=300):
+        """Set/clear a game flag via the dev mailbox (needs free overworld control)."""
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 12:x} {flag_id}")
+        self.cmd(f"write16 {base + 14:x} {1 if value else 0}")
+        self.cmd(f"write32 {base:x} {0x464C4147}")       # 'FLAG'
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError("flag request not serviced")
+
+    def test_mode(self):
+        """Disable wild encounters and trainer sight (expansion config flags) for automated tests."""
+        for cfg, name in (("include/config/wild_encounter.h", "WE_FLAG_NO_ENCOUNTER"),
+                          ("include/config/overworld.h", "OW_FLAG_NO_TRAINER_SEE")):
+            flag = config_flag(cfg, name)
+            if flag:
+                self.set_flag(flag)
 
     def step(self, direction, n=1):
         """Walk n tiles; returns the player position afterwards."""

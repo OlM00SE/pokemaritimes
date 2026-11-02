@@ -48,6 +48,51 @@
 static EWRAM_DATA u8 sWildEncounterImmunitySteps = 0;
 static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 
+// Maritimes dev bridge (DEBUG_DEV_BRIDGE): automated tests (dev/mgba_bridge.py) fill in the
+// arguments, then write `request`. It is serviced the next frame the player has control.
+//   'WARP': warp to mapGroup/mapNum at x,y      'FLAG': set (value!=0) or clear flagId
+#define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
+#define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
+struct DevBridgeMailbox
+{
+    u32 request;
+    s8 mapGroup;
+    s8 mapNum;
+    s8 x;
+    s8 y;
+    u32 done;       // incremented after each serviced request so tests can wait for completion
+    u16 flagId;
+    u16 flagValue;
+    u32 controlFrames; // frames in which the player had free control (tests wait on this)
+};
+EWRAM_DATA struct DevBridgeMailbox gDevBridge = {0};
+
+static bool32 TryDevBridgeRequest(void)
+{
+    if (!DEBUG_DEV_BRIDGE)
+        return FALSE;
+    gDevBridge.controlFrames++;
+    switch (gDevBridge.request)
+    {
+    case DEV_BRIDGE_WARP:
+        gDevBridge.request = 0;
+        gDevBridge.done++;
+        SetWarpDestination(gDevBridge.mapGroup, gDevBridge.mapNum, WARP_ID_NONE, gDevBridge.x, gDevBridge.y);
+        DoWarp();
+        ResetInitialPlayerAvatarState();
+        return TRUE;
+    case DEV_BRIDGE_FLAG:
+        gDevBridge.request = 0;
+        if (gDevBridge.flagValue)
+            FlagSet(gDevBridge.flagId);
+        else
+            FlagClear(gDevBridge.flagId);
+        gDevBridge.done++;
+        return FALSE;
+    }
+    return FALSE;
+}
+
 COMMON_DATA u8 gSelectedObjectEvent = 0;
 
 static void GetInFrontOfPlayerPosition(struct MapPosition *);
@@ -171,6 +216,9 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     playerDirection = GetPlayerFacingDirection();
     GetPlayerPosition(&position);
     metatileBehavior = MapGridGetMetatileBehaviorAt(position.x, position.y);
+
+    if (TryDevBridgeRequest())
+        return TRUE;
 
     if (CheckForTrainersWantingBattle() == TRUE)
         return TRUE;
