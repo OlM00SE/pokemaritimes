@@ -187,17 +187,20 @@ class World:
         return (gx, gy, e, e if e not in (ELEVATION_TRANSITION, ELEVATION_MULTI_LEVEL) else ELEVATION_DEFAULT,
                 bool(self.flags(gx, gy) & TILE_FLAG_SURFABLE))
 
-    def explore(self, starts, allow_surf=False, limit=200000):
-        """BFS over states. Returns {state: (prev_state, dir, kind)}."""
+    def explore(self, starts, allow_surf=False, limit=200000, edges=None):
+        """BFS over states. Returns {state: (prev_state, dir, kind)}.
+        edges: optional dict, filled with every transition taken: {state: [(next_state, dir, kind)]}."""
         seen = {s: None for s in starts}
         q = deque(starts)
         while q and len(seen) < limit:
             s = q.popleft()
             for d in "NSWE":
                 ns, kind = self.step(s, d)
-                if ns is None or ns in seen:
+                if ns is None or (kind == "surf_on" and not allow_surf):
                     continue
-                if kind == "surf_on" and not allow_surf:
+                if edges is not None:
+                    edges.setdefault(s, []).append((ns, d, kind))
+                if ns in seen:
                     continue
                 seen[ns] = (s, d, kind)
                 if self.in_map(ns[0], ns[1]):     # stop at the map edge (we are now in a neighbour)

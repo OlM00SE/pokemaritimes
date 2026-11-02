@@ -1,6 +1,7 @@
 """Render maps, tileset sheets, or the connected region (thin CLI over dev/mapkit/render.py).
 
-  python dev/render_map.py <Map> [-o out.png] [--scale N] [--overlay grid,collision,elevation,behavior,events]
+  python dev/render_map.py <Map> [-o out.png] [--scale N] [--overlay grid,collision,elevation,behavior,events,traps]
+  python dev/render_map.py <Map> --crop 10,80,30,95       # tiles x0,y0,x1,y1 (inclusive)
   python dev/render_map.py <Map> --events --grid          # legacy flags still work
   python dev/render_map.py <Map> --world [--shrink 2]     # stitch everything connected to <Map>
   python dev/render_map.py --sheet gTileset_General gTileset_Petalburg [--start 1C0 --count 64]
@@ -23,6 +24,7 @@ ap.add_argument("--shrink", type=int, default=2)
 ap.add_argument("--sheet", nargs=2, metavar=("PRIMARY", "SECONDARY"))
 ap.add_argument("--start", default="0")
 ap.add_argument("--count", type=int)
+ap.add_argument("--crop", help="x0,y0,x1,y1 in tiles, inclusive")
 a = ap.parse_args()
 args = [x for x in a.args if not (os.path.isdir(x) and os.path.exists(os.path.join(x, "Makefile")))]
 p = Project()
@@ -35,7 +37,8 @@ elif a.world:
     out = a.out or f"world_{args[0]}.png"
     print(f"{len(pos)} maps:", ", ".join(pos))
 else:
-    img = render.render_map(p, args[0], a.scale, overlays)
+    crop = tuple(int(v) for v in a.crop.split(",")) if a.crop else None
+    img = render.render_map(p, args[0], a.scale, overlays, crop)
     out = a.out or f"{args[0]}.png"
 img.save(out)
 print(out, img.size)

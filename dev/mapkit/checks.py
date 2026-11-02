@@ -3,6 +3,7 @@
 Severity: ERROR (broken in-game), WARN (likely wrong), INFO (worth knowing).
 """
 import json, os
+from collections import deque
 from .engine import World, DIRS, MAP_OFFSET
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
 
@@ -59,12 +60,103 @@ def check_attributes(p, corpus, m, E, W):
                    f"(invisible walls?), e.g. {walls[:4]}")
 
 
-def check_map(p, name, wild_maps=None, corpus=None):
+def check_ledges(world, foot_edges, E):
+    """The game never checks where a ledge jump lands (field_player_avatar.c
+    CheckForObjectEventCollision), so a jump onto a solid tile or into water is a real bug."""
+    solid, wet = {}, {}
+    for s, outs in foot_edges.items():
+        for ns, d, kind in outs:
+            if kind != "jump":
+                continue
+            dx, dy = DIRS[d]
+            ledge = world.to_map(s[0] + dx, s[1] + dy)
+            land = world.to_map(ns[0], ns[1])
+            if world.cell(ns[0], ns[1]) is None or world.collision(ns[0], ns[1]):
+                solid[ledge] = land
+            elif world.flags(ns[0], ns[1]) & TILE_FLAG_SURFABLE:
+                wet[ledge] = land
+    for found, what in ((solid, "a solid or undefined tile"), (wet, "water, on foot")):
+        if found:
+            eg = ", ".join(f"{a}->{b}" for a, b in sorted(found.items())[:4])
+            E("ledge", f"{len(found)} ledge tiles drop the player onto {what} (ledge->landing): {eg}")
+
+
+def _backward(edges, targets):
+    """States that can reach any of `targets` along `edges`."""
+    rev = {}
+    for s, outs in edges.items():
+        for ns, _, _ in outs:
+            rev.setdefault(ns, []).append(s)
+    out, q = set(targets), deque(targets)
+    while q:
+        for s in rev.get(q.popleft(), ()):
+            if s not in out:
+                out.add(s)
+                q.append(s)
+    return out
+
+
+def check_traps(world, starts, foot_starts, foot_edges, surf_edges, warp_preds, E, W, detail=None):
+    """One-way traps: places a player can walk (or jump) into but never leave. Ledges make
+    one-way moves, so a careless ledge can soft-lock the game. A way out is an exit (a map edge
+    with a connection, or any warp's trigger position) or a return to a walkable tile the player
+    can arrive on (so a dev map with only a spawn point is judged relative to it; solid arrival
+    tiles, like Route 115's Terra Cave holes, are never re-entered and don't count).
+    Only places reachable from an entrance that itself has a way out are judged, so maps the
+    engine model can't leave (scripted interiors) aren't reported."""
+    entry_pos = {(s[0], s[1]) for s in starts if world.collision(s[0], s[1]) == 0}
+
+    def is_exit(s):
+        return (not world.in_map(s[0], s[1]) or (s[0], s[1]) in entry_pos
+                or any(pred(s) for pred in warp_preds))
+
+    def exits_of(edges):
+        states = set(edges) | {ns for outs in edges.values() for ns, _, _ in outs}
+        return [s for s in states if is_exit(s)]
+
+    can_leave = _backward(foot_edges, exits_of(foot_edges) + [s for s in foot_starts if is_exit(s)])
+    good = [s for s in foot_starts if s in can_leave]
+    if not good:
+        return
+    reach, q = set(good), deque(good)
+    while q:
+        s = q.popleft()
+        for ns, _, _ in foot_edges.get(s, ()):
+            if ns not in reach:
+                reach.add(ns)
+                q.append(ns)
+    trapped = {s for s in reach if s not in can_leave and world.in_map(s[0], s[1])}
+    if not trapped:
+        return
+    can_leave_surf = _backward(surf_edges, exits_of(surf_edges))
+    ways_in = {}
+    for s in reach - trapped:
+        for ns, d, kind in foot_edges.get(s, ()):
+            if ns in trapped:
+                dx, dy = DIRS[d]
+                at = (s[0] + dx, s[1] + dy) if kind == "jump" else (ns[0], ns[1])
+                ways_in[world.to_map(*at)] = kind
+    hard = {world.to_map(s[0], s[1]) for s in trapped if s not in can_leave_surf}
+    soft = {world.to_map(s[0], s[1]) for s in trapped} - hard
+    how = "; ways in: " + ", ".join(f"{k} at {xy}" for xy, k in sorted(ways_in.items())[:4])
+    if hard:
+        E("trap", f"{len(hard)} tiles can be entered but never left (soft-lock), e.g. "
+                  f"{sorted(hard)[:4]}{how}")
+    if soft:
+        W("trap", f"{len(soft)} tiles can be entered on foot but only left with Surf, e.g. "
+                  f"{sorted(soft)[:4]}{how}")
+    if detail is not None:
+        detail["trapped"], detail["needs_surf"] = hard, soft
+
+
+def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
+    """mapdata: check this (possibly edited, unsaved) MapData instead of loading `name`.
+    detail: optional dict; filled with extra findings for overlays (e.g. 'trapped' tiles)."""
     issues = []
     E = lambda c, m: issues.append(("ERROR", c, m))
     W = lambda c, m: issues.append(("WARN", c, m))
     I = lambda c, m: issues.append(("INFO", c, m))
-    m = p.load_map(name)
+    m = mapdata or p.load_map(name)
     L, tp = m.layout, m.layout.tiles
 
     # ---- structure ----
@@ -125,6 +217,7 @@ def check_map(p, name, wild_maps=None, corpus=None):
 
     # ---- warps ----
     step_on, door, arrow, stair = _warp_kinds(p)
+    exit_down = p.behavior_set("Door")
     warp_needs = []                                  # (label, list of (state predicate))
     for i, wv in enumerate(m.events("warp_events")):
         x, y, el = wv["x"], wv["y"], wv.get("elevation", 0)
@@ -157,12 +250,21 @@ def check_map(p, name, wild_maps=None, corpus=None):
             # Legitimate as an arrival point (scripted warps, Dive, fly/escape targets), but the
             # player cannot leave through it. On water it is almost certainly a mistake.
             fl = p.tile_flags.get(b, 0)
-            (E if fl & TILE_FLAG_SURFABLE and m.j.get("map_type") != "MAP_TYPE_UNDERWATER" and
-             not str(wv.get("dest_map", "")).startswith("MAP_UNDERWATER") else W)(
-                "warp", f"warp {i} at ({x},{y}) is on {p.behavior_names.get(b, b)}: arrival-only, "
-                        "walking onto it does nothing")
-        # arriving through this warp puts the player on its tile
-        entries.append((f"warp {i}", [world.arrival_state(gx, gy)]))
+            wet = fl & TILE_FLAG_SURFABLE and m.j.get("map_type") != "MAP_TYPE_UNDERWATER" and \
+                not str(wv.get("dest_map", "")).startswith("MAP_UNDERWATER")
+            if not wet and wv.get("dest_map") == "MAP_DYNAMIC":
+                # deliberately an arrival point only (vanilla's link rooms; new_map.py's spawn)
+                I("warp", f"warp {i} at ({x},{y}) is an arrival point (to MAP_DYNAMIC)")
+            else:
+                (E if wet else W)("warp", f"warp {i} at ({x},{y}) is on {p.behavior_names.get(b, b)}: "
+                                          "arrival-only, walking onto it does nothing")
+        # arriving through this warp puts the player on its tile; arriving on a door, the game
+        # then walks the player one tile down (field_screen_effect.c SetUpWarpExitTask/Task_ExitDoor)
+        arrive = world.arrival_state(gx, gy)
+        if b in exit_down:
+            out, _ = world.step(arrive, "S")
+            arrive = out or arrive
+        entries.append((f"warp {i}", [arrive]))
 
     # ---- doors with nothing behind them ----
     # TryDoorWarp only fires if a warp event sits on the door tile; otherwise pressing into the
@@ -192,8 +294,10 @@ def check_map(p, name, wild_maps=None, corpus=None):
     # ---- reachability (on foot, and with Surf) ----
     starts = [s for _, ss in entries for s in ss]
     # "on foot" exploration starts only from land entrances; surfing arrivals are Surf content
-    foot = world.explore([s for s in starts if not world.surfing(s)], allow_surf=False) if starts else {}
-    surf = world.explore(starts, allow_surf=True) if starts else {}
+    foot_starts = [s for s in starts if not world.surfing(s)]
+    foot_edges, surf_edges = {}, {}
+    foot = world.explore(foot_starts, allow_surf=False, edges=foot_edges) if starts else {}
+    surf = world.explore(starts, allow_surf=True, edges=surf_edges) if starts else {}
     # Water must only be enterable by surfing. (Water at elevation 3 is fine if the land
     # around it is at another elevation; what matters is whether a walker can step onto it.)
     walk_water = sorted({world.to_map(s[0], s[1]) for s in foot if not world.surfing(s)
@@ -206,6 +310,9 @@ def check_map(p, name, wild_maps=None, corpus=None):
                 I("reach", f"{label}: reachable only with Surf")
             else:
                 E("reach", f"{label}: cannot be triggered from any entrance (position/elevation)")
+    check_ledges(world, foot_edges, E)
+    check_traps(world, starts, foot_starts, foot_edges, surf_edges,
+                [pred for _, pred in warp_needs], E, W, detail)
     # entrances split into separate areas?
     if len(entries) > 1:
         comp = {}

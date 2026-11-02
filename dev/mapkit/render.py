@@ -4,8 +4,11 @@ Overlays (combine freely):
   grid       5-tile grid with coordinates
   collision  red hatch on blocks with collision bits set
   elevation  elevation digit per block, coloured by level (15 = bridge, 0 = transition)
-  behavior   tall grass (green), surfable (blue), ledges (arrow), warp behaviours (W), encounter water
+  behavior   tall grass (green), surfable (blue), ledges (white arrow: the jump direction),
+             encounter water
   events     warps W#, objects O, triggers T, signs/bg S, with elevation where non-zero
+  traps      one-way traps from the checker: magenta = can be entered but never left,
+             orange = can only be left with Surf (checks.check_traps)
 """
 from PIL import Image, ImageDraw
 from .project import TILE_FLAG_HAS_ENCOUNTERS, TILE_FLAG_SURFABLE
@@ -46,7 +49,7 @@ class MetatileRenderer:
         return im
 
 
-def render_layout(project, layout, scale=1, overlays=(), mapdata=None):
+def render_layout(project, layout, scale=1, overlays=(), mapdata=None, detail=None):
     tiles = layout.tiles
     mr = MetatileRenderer(tiles)
     w, h = layout.width, layout.height
@@ -57,19 +60,39 @@ def render_layout(project, layout, scale=1, overlays=(), mapdata=None):
     if scale != 1:
         img = img.resize((w * 16 * scale, h * 16 * scale), Image.NEAREST)
     if overlays:
-        draw_overlays(project, img, layout, 16 * scale, overlays, mapdata)
+        if "traps" in overlays and detail is None and mapdata is not None:
+            from .checks import check_map
+            detail = {}
+            check_map(project, mapdata.name, mapdata=mapdata, detail=detail)
+        draw_overlays(project, img, layout, 16 * scale, overlays, mapdata, detail or {})
     return img
 
 
-def draw_overlays(project, img, layout, s, overlays, mapdata):
+def _arrow(d, x0, y0, s, direction):
+    """A filled triangle pointing the way a ledge jumps, outlined so it reads on any tile."""
+    c, a, b = s / 2, s * 0.22, s * 0.78
+    pts = {"S": [(x0 + a, y0 + a), (x0 + b, y0 + a), (x0 + c, y0 + b)],
+           "N": [(x0 + a, y0 + b), (x0 + b, y0 + b), (x0 + c, y0 + a)],
+           "E": [(x0 + a, y0 + a), (x0 + a, y0 + b), (x0 + b, y0 + c)],
+           "W": [(x0 + b, y0 + a), (x0 + b, y0 + b), (x0 + a, y0 + c)]}[direction]
+    d.polygon(pts, fill=(255, 255, 255, 230), outline=(0, 0, 0, 255))
+
+
+def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
     d = ImageDraw.Draw(img, "RGBA")
     w, h = layout.width, layout.height
     tiles = layout.tiles
-    jumps = {project.mb(n): a for n, a in (("MB_JUMP_SOUTH", "v"), ("MB_JUMP_NORTH", "^"),
-                                          ("MB_JUMP_EAST", ">"), ("MB_JUMP_WEST", "<"))}
+    detail = detail or {}
+    jumps = {project.mb(n): a for n, a in (("MB_JUMP_SOUTH", "S"), ("MB_JUMP_NORTH", "N"),
+                                          ("MB_JUMP_EAST", "E"), ("MB_JUMP_WEST", "W"))}
     for y in range(h):
         for x in range(w):
             x0, y0 = x * s, y * s
+            if "traps" in overlays:
+                if (x, y) in detail.get("trapped", ()):
+                    d.rectangle((x0, y0, x0 + s - 1, y0 + s - 1), fill=(255, 0, 255, 120))
+                elif (x, y) in detail.get("needs_surf", ()):
+                    d.rectangle((x0, y0, x0 + s - 1, y0 + s - 1), fill=(255, 150, 0, 110))
             if "collision" in overlays and layout.coll(x, y):
                 d.rectangle((x0, y0, x0 + s - 1, y0 + s - 1), fill=(255, 0, 0, 70))
                 d.line((x0, y0, x0 + s - 1, y0 + s - 1), fill=(255, 0, 0, 140))
@@ -81,7 +104,7 @@ def draw_overlays(project, img, layout, s, overlays, mapdata):
                 elif fl & TILE_FLAG_HAS_ENCOUNTERS:
                     d.rectangle((x0 + 2, y0 + 2, x0 + s - 3, y0 + s - 3), outline=(0, 200, 0, 220))
                 if b in jumps:
-                    d.text((x0 + s // 3, y0 + s // 4), jumps[b], fill=(255, 255, 255, 255))
+                    _arrow(d, x0, y0, s, jumps[b])
             if "elevation" in overlays:
                 e = layout.elev(x, y)
                 d.text((x0 + 2, y0 + 1), f"{e:X}", fill=ELEV_COLORS.get(e, (200, 200, 200)) + (255,))
@@ -108,9 +131,15 @@ def draw_overlays(project, img, layout, s, overlays, mapdata):
             mark(e, (190, 60, 255, 255), "S")
 
 
-def render_map(project, name, scale=1, overlays=()):
+def render_map(project, name, scale=1, overlays=(), crop=None):
+    """crop: (x0, y0, x1, y1) in tiles, inclusive, to render part of a big map."""
     m = project.load_map(name)
-    return render_layout(project, m.layout, scale, overlays, m)
+    img = render_layout(project, m.layout, scale, overlays, m)
+    if crop:
+        s = 16 * scale
+        x0, y0, x1, y1 = crop
+        img = img.crop((x0 * s, y0 * s, (x1 + 1) * s, (y1 + 1) * s))
+    return img
 
 
 def render_sheet(project, primary, secondary, start=0, count=None, cols=16, cell=32):

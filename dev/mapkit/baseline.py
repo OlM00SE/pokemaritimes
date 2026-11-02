@@ -15,4 +15,8 @@ KNOWN = {
     # Arrival points on water: the player arrives surfing (Sky Pillar exit / Aqua Hideout sub dock).
     ("AquaHideout_1F", "warp"): "arrival-only warp on water (player arrives surfing)",
     ("Route131", "warp"): "arrival-only warp on water (exit from Sky Pillar, player arrives surfing)",
+    # A real one-way pocket: the ledges below the north-east platform (arrived at from the inner
+    # room) drop into a dead end closed by solid rock at (30,18)/(31,18); the stair graphic at
+    # (25,8) is decorative. Caves allow Escape Rope/Dig, so vanilla gets away with it.
+    ("ShoalCave_LowTideEntranceRoom", "trap"): "genuine ledge dead end; escape by Escape Rope/Dig",
 }
