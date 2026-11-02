@@ -155,15 +155,16 @@ def render_diff(project, layout, old_blocks, scale=2, margin=2):
     new_blocks = layout.blocks
     layout.blocks = list(old_blocks)
     try:
-        before = render_layout(project, layout, scale)
+        before = render_layout(project, layout, 1)
     finally:
         layout.blocks = new_blocks
-    after = render_layout(project, layout, scale)
+    after = render_layout(project, layout, 1)
     s = 16 * scale
     x0 = max(0, min(x for x, _ in cells) - margin); x1 = min(layout.width - 1, max(x for x, _ in cells) + margin)
     y0 = max(0, min(y for _, y in cells) - margin); y1 = min(layout.height - 1, max(y for _, y in cells) + margin)
-    box = (x0 * s, y0 * s, (x1 + 1) * s, (y1 + 1) * s)
-    before, after = before.crop(box), after.crop(box)
+    box = (x0 * 16, y0 * 16, (x1 + 1) * 16, (y1 + 1) * 16)
+    size = ((x1 - x0 + 1) * s, (y1 - y0 + 1) * s)          # upscale only the cropped change
+    before, after = (im.crop(box).resize(size, Image.NEAREST) for im in (before, after))
     for im in (before, after):
         d = ImageDraw.Draw(im, "RGBA")
         for x, y in cells:
