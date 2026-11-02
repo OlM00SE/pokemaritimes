@@ -27,6 +27,13 @@
       "elevation": 0,
       "dest_map": "MAP_LITTLEROOT_TOWN_MY_HOUSE_1F_0",
       "dest_warp_id": "0"
+    },
+    {
+      "x": 27,
+      "y": 9,
+      "elevation": 0,
+      "dest_map": "MAP_HOME_TOWN_HOUSE2_1F",
+      "dest_warp_id": "0"
     }
   ],
   "coord_events": [],

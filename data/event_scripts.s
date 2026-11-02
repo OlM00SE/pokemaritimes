@@ -1751,3 +1751,8 @@ EventScript_PalletTown_PlayersHouse_2F_TurnOnPC::
 	.include "data/maps/Route203_1_2/scripts.inc"
 	.include "data/maps/Route101_2/scripts.inc"
 	.include "data/maps/Route102_2/scripts.inc"
+	.include "data/maps/HomeTown_House2_1F/scripts.inc"
+	.include "data/maps/HomeTown_House2_2F/scripts.inc"
+	.include "data/maps/Woodstock_House1/scripts.inc"
+	.include "data/maps/Woodstock_Lab/scripts.inc"
+	.include "data/maps/Woodstock_House2/scripts.inc"

@@ -74,7 +74,8 @@
     "gMapGroup_IndoorFiveIslandRoute_Frlg",
     "gMapGroup_IndoorTwoIslandRoute_Frlg",
     "gMapGroup_IndoorSixIslandRoute_Frlg",
-    "gMapGroup_IndoorSevenIslandRoute_Frlg"
+    "gMapGroup_IndoorSevenIslandRoute_Frlg",
+    "gMapGroup_IndoorMaritimes"
   ],
   "gMapGroup_TownsAndRoutes": [
     "PetalburgCity",
@@ -1171,5 +1172,12 @@
   ],
   "gMapGroup_IndoorSevenIslandRoute_Frlg": [
     "SevenIsland_SevaultCanyon_House_Frlg"
+  ],
+  "gMapGroup_IndoorMaritimes": [
+    "HomeTown_House2_1F",
+    "HomeTown_House2_2F",
+    "Woodstock_House1",
+    "Woodstock_Lab",
+    "Woodstock_House2"
   ]
 }
