@@ -1,6 +1,6 @@
 # How maps work in pokeemerald-expansion 1.17.2 (Emerald mode)
 
-These are notes from reading the engine source. Every rule cites where it comes from. They're encoded in `dev/mapkit/engine.py` and verified against the real game: `dev/tests/conformance.py` matched 439/439 single steps across 12 maps.
+These are notes from reading the engine source. Every rule cites where it comes from. They're encoded in `dev/mapkit/engine.py` and verified against the real game: `dev/tests/conformance.py` matched 482/482 single steps across 13 maps, and `dev/tests/ingame_ledges.py` matched every approach to every ledge on LedgeLab and four vanilla routes (280/280).
 
 ## 1. Data on disk
 | File | Contents |
@@ -61,7 +61,7 @@ Elevation bookkeeping (`ObjectEventUpdateElevation`):
   - **Pressing north into** an animated door (`TryDoorWarp`): the warp sits on the door tile, and the player stands below it.
   - **Pressing the arrow's direction** while standing on an arrow mat or directional stairs (`TryArrowWarp`).
   - A warp on any other tile is **arrival-only**: you can land on it, but walking onto it does nothing.
-- Landing on a door or arrow tile makes the player step out of it.
+- Landing on a door or arrow tile makes the player step out of it. Arriving on an animated door (`MetatileBehavior_IsDoor`), the game walks the player one tile **down** (`field_screen_effect.c` SetUpWarpExitTask → Task_ExitDoor). A non-animated door walks them on in the direction they face. The checker starts door arrivals below the door. Starting on the door tile itself made walkable roof tiles above some doors look reachable (Routes 110 and 111).
 - Encounter tiles and surfable water come from `sTileBitAttributes` (`TILE_FLAG_HAS_ENCOUNTERS`, `TILE_FLAG_SURFABLE`) in `metatile_behavior.c`.
 
 ## 7. How vanilla builds terrain (mined from 238 vanilla layouts on gTileset_General)
@@ -78,3 +78,36 @@ Elevation bookkeeping (`ObjectEventUpdateElevation`):
   - `0D1` looks like pond water but is `MB_PUDDLE`, which you walk through.
 - **Paths:** two 3×3 families. Light path `1D0–1E2`, sand/dirt `118–12A`.
 - **Grammar:** vanilla keeps a grass margin between water and tall grass, paths, or sand. Sand never touches trees. Shorelines use dedicated tiles (`11B–12D`), which aren't modelled yet.
+
+## 8. Ledges (engine source, plus 238 vanilla layouts; encoded in `dev/mapkit/ledges.py`)
+**Movement:**
+- **A jump needs only the behavior.** Moving in direction *d* into a tile whose behavior is `MB_JUMP_<d>` jumps two tiles. The ledge tile's collision is ignored (`field_player_avatar.c` CheckForObjectEventCollision → ShouldJumpLedge → `event_object_movement.c` GetLedgeJumpDirection).
+- **The landing tile is never checked.** A ledge that drops onto a tree, rock or water is a real bug. `mapgen` refuses such sketches, and `check_maps.py` reports `ledge`.
+- **Only four behaviors jump.** The predicates `MetatileBehavior_IsJump{North,South,East,West}` each match exactly one behavior. `MB_JUMP_SOUTHEAST/SOUTHWEST` (on the corner tiles) match none, so corners are plain solid tiles.
+- **Elevation during a jump.** The jump first moves the player's coordinates onto the ledge tile, then to the landing at the halfway point (InitJump, then UpdateJumpAnim → ShiftObjectEventCoords). So the landing's "previous" tile is the ledge tile, and elevation bookkeeping uses the ledge and landing tiles. `engine.py` already did this; `tests/ingame_ledges.py` confirms it, elevations included.
+
+**Pieces** (`gTileset_General`). All are collision 1. Elevation is 0 in 66% of vanilla uses (345/525) and 3 in the rest; a rebuilt map keeps a ledge cell's existing elevation.
+| Piece | Ids |
+|---|---|
+| Row (jumps south) | `0D5` left end, `087` middle, `0D6` right end |
+| West column (jumps west) | `0FE` top, `085` middle, `106` bottom |
+| East column (jumps east) | `0FF` top, `086` middle, `107` bottom |
+| Corners (solid) | `08D` west column above, row going east (a plateau's south-west corner) |
+| | `08E` east column above, row going west |
+| | `06F` row from the west, west column below |
+| | `06E` row from the east, east column below |
+
+- `06F` over `08D` makes a one-tile stair step down to the east (Route 103). `06E` over `08E` steps down to the west (Route 101).
+- There are no north-facing ledges in this tileset.
+- **Ends.** Next to ground or trees, a ledge end always gets a cap (83/83). At the map edge, the middle piece runs off the map (4/4). Against a secondary-tileset cliff or wall, it runs under it (35/35). Against a primary object such as a boulder, it gets a cap (26/29).
+- **Not modelled.** Route 118's mountain terraces and five other ledge-meets-cliff joints use cliff tiles (`070/071`, secondary cliffs). They're future vocabulary.
+
+## 9. One-way traps (`checks.check_traps`)
+**How the check works:** ledges make one-way moves, so the checker builds the full movement graph from every entrance (on foot) and finds tiles that can be reached but can't reach a way out.
+
+Ways out:
+- a connection edge;
+- any warp's trigger position;
+- a walkable arrival tile. A dev map's spawn point counts; solid arrival tiles such as Route 115's Terra Cave holes don't.
+
+**Vanilla result:** exactly one real trap, the ledge pocket in `ShoalCave_LowTideEntranceRoom`. All 50 moves out of it were confirmed blocked in mGBA. Escape Rope or Dig gets the player out.
