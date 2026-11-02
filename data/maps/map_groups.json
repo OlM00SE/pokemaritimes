@@ -75,7 +75,8 @@
     "gMapGroup_IndoorTwoIslandRoute_Frlg",
     "gMapGroup_IndoorSixIslandRoute_Frlg",
     "gMapGroup_IndoorSevenIslandRoute_Frlg",
-    "gMapGroup_IndoorMaritimes"
+    "gMapGroup_IndoorMaritimes",
+    "gMapGroup_DevMaritimes"
   ],
   "gMapGroup_TownsAndRoutes": [
     "PetalburgCity",
@@ -1179,5 +1180,8 @@
     "Woodstock_House1",
     "Woodstock_Lab",
     "Woodstock_House2"
+  ],
+  "gMapGroup_DevMaritimes": [
+    "LedgeLab"
   ]
 }

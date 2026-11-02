@@ -9433,6 +9433,16 @@
       "secondary_tileset": "gTileset_Petalburg",
       "border_filepath": "data/layouts/Route102_2/border.bin",
       "blockdata_filepath": "data/layouts/Route102_2/map.bin"
+    },
+    {
+      "id": "LAYOUT_LEDGE_LAB",
+      "name": "LedgeLab_Layout",
+      "width": 32,
+      "height": 28,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/LedgeLab/border.bin",
+      "blockdata_filepath": "data/layouts/LedgeLab/map.bin"
     }
   ]
 }

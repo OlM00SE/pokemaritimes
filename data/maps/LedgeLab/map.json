@@ -1,0 +1,28 @@
+{
+  "id": "MAP_LEDGE_LAB",
+  "name": "LedgeLab",
+  "layout": "LAYOUT_LEDGE_LAB",
+  "music": "MUS_DUMMY",
+  "region_map_section": "MAPSEC_ROUTE_203",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_ROUTE",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": null,
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 11,
+      "y": 3,
+      "elevation": 0,
+      "dest_map": "MAP_DYNAMIC",
+      "dest_warp_id": "WARP_ID_DYNAMIC"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": []
+}
