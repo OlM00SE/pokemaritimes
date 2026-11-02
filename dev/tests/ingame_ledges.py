@@ -8,11 +8,15 @@
 2. Round trip (maps with an arrival point, e.g. LedgeLab's spawn): walk the model's shortest
    route from the arrival point to the tile farthest away (which takes the ledges down), then
    back again (which must find the way around them), checking the tile after every move.
+3. Terrace tour (maps without NPCs): for every ledge group reachable from the entrance (the
+   spawn point, else the edge of the first connection), walk to the nearest takeoff, jump, and
+   walk back to the entrance, checking every move. Screenshots each landing.
 
 Tiles in an object event's wander box (+1) are skipped (NPCs block steps); tests run in test
 mode (no wild battles, no trainer sight). A map that yields no testable approach fails.
 
-  python dev/tests/ingame_ledges.py [Map ...]    default: LedgeLab Route102 Route103 Route116 Route123
+  python dev/tests/ingame_ledges.py [Map ...]
+      default: LedgeLab Route203_1 Route102 Route103 Route116 Route123
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +27,7 @@ from mapkit.engine import World, DIRS, DIR_NAME, OPPOSITE
 from mapkit import ledges
 from mapkit.checks import spawn_point
 
-DEFAULT_MAPS = ["LedgeLab", "Route102", "Route103", "Route116", "Route123"]
+DEFAULT_MAPS = ["LedgeLab", "Route203_1", "Route102", "Route103", "Route116", "Route123"]
 
 
 def elevations(e):
@@ -156,6 +160,108 @@ def round_trip(e, p, name):
     return bad
 
 
+def entrance(p, m, w):
+    """Where a tour starts: the spawn point, else the middle walkable tile along the map edge
+    of its first edge connection (where a player walking in from the neighbour arrives)."""
+    spawn = spawn_point(m)
+    if spawn:
+        return spawn
+    L = m.layout
+    for c in m.connections:
+        edge = {"left": [(0, y) for y in range(L.height)], "right": [(L.width - 1, y) for y in range(L.height)],
+                "up": [(x, 0) for x in range(L.width)], "down": [(x, L.height - 1) for x in range(L.width)]
+                }.get(c["direction"], [])
+        ok = [(x, y) for x, y in edge if not L.coll(x, y) and not w.surfing(w.arrival_state(*w.to_grid(x, y)))]
+        if ok:
+            return ok[len(ok) // 2]
+    return None
+
+
+def walk(e, w, name, route, origin, label):
+    """Press each move of a model route; the game must reach every predicted tile."""
+    s = origin
+    for i, (d, kind) in enumerate(route):
+        s, _ = w.step(s, d)
+        x, y = w.to_map(s[0], s[1])
+        px, py = e.player()[2:]
+        got = press_toward(e, d, px, py)
+        if got != (x, y):
+            print(f"{name}: {label} move {i} {d} ({kind}): expected {(x, y)}, game {got}")
+            return False
+    return True
+
+
+def tour(e, p, name):
+    """Terrace tour: for every ledge group the player can reach, walk from the entrance to the
+    nearest takeoff, jump down, then walk back to the entrance on foot. Proves in the game that
+    each terrace can be used and climbed back. Skipped on maps with NPCs (the model doesn't
+    route around them). Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png."""
+    m = p.load_map(name)
+    if m.events("object_events"):
+        print(f"{name}: tour skipped (the map has NPCs)")
+        return 0
+    w = World(p, m)
+    L = m.layout
+    at = entrance(p, m, w)
+    if at is None:
+        print(f"{name}: tour FAILED: no entrance to start from")
+        return 1
+    start = w.arrival_state(*w.to_grid(*at))
+    edges = {}
+    seen = w.explore([start], edges=edges)
+    depth = {start: 0}
+    for s, link in seen.items():
+        if link:
+            depth[s] = depth[link[0]] + 1
+    # ledge groups: 4-connected ledge cells
+    jump = set(w.beh_jump)
+    cells = {(x, y) for y in range(L.height) for x in range(L.width)
+             if L.tiles.behavior(L.mid(x, y)) in jump or
+             (L.primary == "gTileset_General" and L.mid(x, y) in ledges.PIECES)}
+    group, n = {}, 0
+    for c in sorted(cells):
+        if c in group:
+            continue
+        n += 1
+        stack = [c]
+        while stack:
+            x, y = stack.pop()
+            if (x, y) in group or (x, y) not in cells:
+                continue
+            group[(x, y)] = n
+            stack += [(x + dx, y + dy) for dx, dy in DIRS.values()]
+    takeoffs = {}                       # group -> (depth, takeoff state, dir, landing state)
+    for s, lst in edges.items():
+        for ns, d, kind in lst:
+            if kind != "jump":
+                continue
+            ox, oy = w.to_map(s[0] + DIRS[d][0], s[1] + DIRS[d][1])
+            g = group.get((ox, oy))
+            if g and (g not in takeoffs or depth[s] < takeoffs[g][0]):
+                takeoffs[g] = (depth[s], s, d, ns)
+    bad = 0
+    print(f"{name}: tour from {at}: {n} ledge groups, {len(takeoffs)} reachable")
+    for g in sorted(takeoffs):
+        _, s, d, landing = takeoffs[g]
+        there = World.path_to(seen, s) + [(d, "jump")]
+        back_seen = w.explore([landing])
+        home = next((t for t in back_seen if t[:2] == start[:2]), None)
+        tx, ty = w.to_map(s[0], s[1]); lx, ly = w.to_map(landing[0], landing[1])
+        if home is None:
+            print(f"{name}: group {g}: no way back from {(lx, ly)} (a trap)")
+            bad += 1
+            continue
+        e.warp(name, *at)
+        ok = walk(e, w, name, there, start, f"group {g} down")
+        if ok:
+            e.shot(os.path.join(OUT, f"ledges_{name}_tour{g}.png"))
+            ok = walk(e, w, name, World.path_to(back_seen, home), landing, f"group {g} back")
+        print(f"{name}: group {g}: jump {d} at {(tx, ty)} -> {(lx, ly)}, then back to {at}: "
+              f"{'OK' if ok else 'FAILED'}")
+        bad += not ok
+    return bad
+
+
 def main(argv):
     maps = argv or DEFAULT_MAPS
     p = Project()
@@ -166,6 +272,7 @@ def main(argv):
         for name in maps:
             bad += approaches(e, p, name)
             bad += round_trip(e, p, name)
+            bad += tour(e, p, name)
     print("PASS" if not bad else f"FAIL ({bad})")
     return 1 if bad else 0
 
