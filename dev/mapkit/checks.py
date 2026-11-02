@@ -164,6 +164,19 @@ def check_map(p, name, wild_maps=None, corpus=None):
         # arriving through this warp puts the player on its tile
         entries.append((f"warp {i}", [world.arrival_state(gx, gy)]))
 
+    # ---- doors with nothing behind them ----
+    # TryDoorWarp only fires if a warp event sits on the door tile; otherwise pressing into the
+    # door does nothing. Vanilla does this only in scripted interiors (Battle Frontier, Battle
+    # Tents) and once outdoors (Verdanturf), so outdoors it is almost always a missing warp.
+    warp_xy = {(wv["x"], wv["y"]) for wv in m.events("warp_events")}
+    dead = [(x, y) for y in range(h) for x in range(w)
+            if tp.behavior(L.mid(x, y)) in door and (x, y) not in warp_xy]
+    if dead:
+        outdoor = m.j.get("map_type") in ("MAP_TYPE_TOWN", "MAP_TYPE_CITY", "MAP_TYPE_ROUTE",
+                                          "MAP_TYPE_OCEAN_ROUTE")
+        (W if outdoor else I)("door", f"{len(dead)} door tiles have no warp event (the door does "
+                                      f"nothing), e.g. {dead[:6]}")
+
     # ---- other events ----
     for kind in ("object_events", "bg_events", "coord_events"):
         for i, ev in enumerate(m.events(kind)):

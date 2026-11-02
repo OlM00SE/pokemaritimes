@@ -7,6 +7,7 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 |---|---|
 | Build (fast) | `dev/fastbuild.py`: syncs changes to a WSL-native mirror and builds there (~10s for a typical edit). |
 | Static checks | `dev/check_maps.py [Map...]`. `--all` checks every map; `--baseline` checks that vanilla maps show only known exceptions. |
+| Completeness | `dev/section_status.py [--from <Map>] [Map...]`: what a slice still *lacks* (doors leading nowhere, missing encounters, no people or signs, map sections borrowed from Hoenn, silent music). By default it covers everything reachable from HomeTown_0. It only reports. |
 | Render | `dev/render_map.py <Map> --overlay collision,elevation,behavior,events,grid`. `--world` stitches the connected region; `--sheet <pri> <sec>` gives a labelled metatile index. |
 | Play-test | `dev/autowalk.py <Map> <Map> ...` walks map to map in mGBA from a new game. `dev/shoot.py <Map> x,y ...` warps and takes screenshots. |
 | Fix attributes | `dev/fix_attrs.py <Map> [--surfable] [--apply]` sets collision/elevation to vanilla's confident values. |
