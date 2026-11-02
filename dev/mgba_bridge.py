@@ -35,6 +35,14 @@ def species_ids(repo=REPO, _cache={}):
     return _cache
 
 
+def move_ids(repo=REPO, _cache={}):
+    """{'SURF': 57, ...} from the MOVE_* enum in include/constants/moves.h (cached)."""
+    if not _cache:
+        src = open(os.path.join(repo, "include", "constants", "moves.h"), encoding="utf-8").read()
+        _cache.update((k, int(v)) for k, v in re.findall(r"\bMOVE_(\w+)\s*=\s*(\d+)", src))
+    return _cache
+
+
 def flag_id(name, repo=REPO, _cache={}):
     """Value of a flag constant, evaluating flags.h expressions like (SYSTEM_FLAGS + 0x0).
     Where a header defines a name twice under #if (Emerald vs FRLG), the Emerald one wins.
@@ -338,6 +346,33 @@ class Emu:
         if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
             raise RuntimeError("MON0 request not serviced")
         return self.read16(base + 20), self.read16(base + 22)
+
+    def teach_move(self, move, slot=0, timeout_frames=300):
+        """Teach party slot 0 a move (dev mailbox 'MOVE'), e.g. teach_move('SURF')."""
+        if isinstance(move, str):
+            move = move_ids()[move.upper()]
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 12:x} {move}")
+        self.cmd(f"write16 {base + 14:x} {slot}")
+        self.cmd(f"write32 {base:x} {0x4D4F5645}")       # 'MOVE'
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError("MOVE request not serviced")
+
+    PLAYER_AVATAR_FLAG_SURFING = 1 << 3
+
+    def surfing(self):
+        return bool(self.read8(self.sym["gPlayerAvatar"]) & self.PLAYER_AVATAR_FLAG_SURFING)
+
+    def start_surf(self, max_presses=40):
+        """Facing surfable water with a Surf user in the party (and the badge flag set): press A,
+        answer YES, and wait until the player is surfing with control. Returns True on success."""
+        self.press("A", 3, 30)
+        for _ in range(max_presses):
+            if self.surfing() and self.in_overworld() and self.has_control():
+                return True
+            self.press("A", 3, 20)
+        return False
 
     def test_mode(self):
         """Movement-only testing: no wild encounters or trainer sight (expansion config flags),
