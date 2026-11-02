@@ -26,7 +26,12 @@ grass. 'r' is a 2x2 rock standing in water (150 151 / 158 159; it draws its own 
 Shapes the tiles can't draw are refused with the cells to fix, like ledges:
   * water one tile wide between two side banks (no piece has both side edges);
   * a corner where a grass bank turns into a beach (no mixed corner piece);
-  * water squeezed between a side bank and the opposite diagonal (e.g. land E and land NW).
+  * water squeezed between a side bank and the opposite diagonal (e.g. land E and land NW);
+  * a ledge directly below water (the south bank is drawn on the land tile; no ledge has it).
+Only grass draws the south bank. Tall grass, paths and trees below water get a grass margin from
+the grammar repair (terrain.enforce_grammar) in every mapgen build.
+A side bank that meets a beach on a straight vertical stretch is allowed, like the horizontal
+case: the join is a straight seam, since there is no transition piece.
 Kept '#' tiles (rocks, bridges, cliffs) and pond water count as "no land": vanilla draws those
 edges on the object itself.
 """
@@ -147,6 +152,9 @@ def resolve(cls, w, h):
             c = cls[y][x]
             if c == WATER_CLS:
                 mid, err = water_piece(cls, x, y, w, h)
+                if not err and y + 1 < h and cls[y + 1][x] == "LD":
+                    err = ("a ledge right below water: the bank on that side is drawn on the land "
+                           "tile, and no ledge piece has it; leave a grass row between them")
                 if err:
                     errors.append((x, y, err))
                 else:

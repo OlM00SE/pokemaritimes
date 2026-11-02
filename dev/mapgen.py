@@ -36,7 +36,10 @@ def main():
     corpus = Corpus(p)
     vocab = Vocabulary(p, corpus)
     if a.cmd == "extract":
-        sk = extract(p, vocab, a.target, learn(p, vocab, vanilla_maps(corpus)))
+        entries = vanilla_maps(corpus)
+        # shore cells are verified by compiling, with the same grammar a build uses
+        sk = extract(p, vocab, a.target, learn(p, vocab, entries),
+                     forbidden_pairs(class_adjacency(p, vocab, entries)), corpus)
         out = a.out or p.path("design", "maps", f"{a.target}.txt")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         sk.save(out)

@@ -87,12 +87,16 @@ class Sketch:
             self.rows[y][x] = ch
 
 
-def extract(project, vocab, map_name, rules=None):
+def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, verify_shores=True):
     """Existing map -> sketch. Cells outside the vocabulary become '#' (kept as-is). With
     `rules`, cells whose exact tile the generator could never produce also become '#', so
     hand-placed details (decorations, small trees, special variants) survive a round trip.
     Ledges extract as v/</>; any ledge group the resolver would not rebuild tile for tile
-    (e.g. Route 118's cliff pieces) is kept as '#'."""
+    (e.g. Route 118's cliff pieces) is kept as '#'.
+    Shores (General primary, with `rules`): any shore cell a compile wouldn't reproduce is kept
+    as '#'. Pass the `forbidden` pairs mapgen builds with, so the check compiles the way the
+    build will; verify_shores=False skips the compile-based check (tests use it to see what
+    the shape tables alone reproduce)."""
     m = project.load_map(map_name)
     L = m.layout
     lab = grid_labels(vocab, L.entry, L.blocks, L.width, L.height)
@@ -108,8 +112,9 @@ def extract(project, vocab, map_name, rules=None):
                 c = "SA"                    # beach sand; shores.keep_unrebuildable verifies it
             elif c == "F" and L.primary == PRIMARY and mid in shores.ROCK_PIECES:
                 c = shores.ROCK_CLS
-            elif rules and c not in ("F", "S", "TL", "TR", "BL", "BR") and mid not in rules.outputs(c):
-                c = "F"                     # (water is judged by shape, below)
+            elif rules and c not in ("F", "TL", "TR", "BL", "BR") and mid not in rules.outputs(c) \
+                    and not (c == "S" and L.primary == PRIMARY):
+                c = "F"                     # (General water is judged by shape, below)
             out.append(CLASS_TO_CHAR[c])
         rows.append(out)
     keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
@@ -117,29 +122,46 @@ def extract(project, vocab, map_name, rules=None):
     if L.primary == PRIMARY and rules:
         shores.keep_unrebuildable(sk.rows, L.width, L.height, lambda x, y: L.mid(x, y),
                                   lambda ch: CHAR_TO_CLASS[ch])
-        keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L)
+        if verify_shores:
+            keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus)
     return sk
 
 
-def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, max_rounds=6):
-    """Compile the extracted sketch and keep ('#') every shore cell (water, rocks, and sand or
-    grass beside water) whose block wouldn't come back exactly: e.g. vanilla beach sand that
-    meets grass without a rim, or sand at elevation 0. Repeats until a compile reproduces
-    them all, so extract -> compile never changes a shore block."""
-    from .corpus import Corpus
-    corpus = Corpus(project)
+def shore_owned(cls, x, y, w, h):
+    """The cells the shore resolver decides: water, rocks, and sand or grass beside water."""
+    c = cls[y][x]
+    return c in (shores.WATER_CLS, shores.ROCK_CLS) or (
+        c in (shores.SAND_CLS, "G") and shores.touches_water(cls, x, y, w, h))
+
+
+def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None):
+    """Compile the extracted sketch and keep ('#') every shore cell whose block wouldn't come
+    back exactly: e.g. vanilla beach sand that meets grass without a rim, or sand at elevation 0.
+    Cells a compile refuses are kept too. Every round keeps at least one more cell, so the loop
+    ends; it stops when a compile reproduces every shore block, which is what makes
+    extract -> compile never change one."""
+    if corpus is None:
+        from .corpus import Corpus
+        corpus = Corpus(project)
     w, h = sk.w, sk.h
-    for _ in range(max_rounds):
-        blocks, _ = compile_sketch(project, corpus, rules, sk, layout, vocab)
-        cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
-        bad = [(x, y) for y in range(h) for x in range(w)
-               if (cls[y][x] in ("S", shores.ROCK_CLS) or
-                   (cls[y][x] in ("SA", "G") and shores.touches_water(cls, x, y, w, h)))
-               and blocks[y * w + x] != layout.get(x, y)]
+    while True:
+        refused = None
+        try:
+            blocks, _ = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
+            cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
+            bad = [(x, y) for y in range(h) for x in range(w)
+                   if shore_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+        except SketchError as ex:
+            refused = ex
+            bad = [(x, y) for x, y, _ in ex.problems]
+        bad = [(x, y) for x, y in bad if 0 <= x < w and 0 <= y < h and sk.rows[y][x] != "#"]
         if not bad:
+            if refused:                 # refused, but nothing left to keep: can't be fixed here
+                raise RuntimeError(f"{sk.map_name}: extracted sketch can't be compiled: {refused}")
             return
         for x, y in bad:
             sk.rows[y][x] = "#"
+        keep_unrebuildable_ledges(sk.rows, w, h, lambda x, y: layout.mid(x, y))
         shores.keep_unrebuildable(sk.rows, w, h, lambda x, y: layout.mid(x, y), lambda ch: CHAR_TO_CLASS[ch])
 
 

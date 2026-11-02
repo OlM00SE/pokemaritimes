@@ -7,9 +7,10 @@
 2. Shapes: small hand-drawn grids that must resolve (with the expected pieces) or be refused
    (with the expected reason): straight banks, staircases, coves, beaches drawn on the water and
    on the sand, one-tile channels, bank/beach corners, squeezed water, and rocks.
-3. Round trip: extract -> compile leaves every shore block (water, beach sand, grass beside
-   water, rocks) unchanged, attributes included, on ShoreLab, Route 203, Woodstock, and the
-   vanilla beach and river routes.
+3. Round trip: extract -> compile (with mapgen's grammar) leaves every shore block (water,
+   beach sand, grass beside water, rocks) unchanged, attributes included, on ShoreLab, Route 203,
+   Woodstock, and the vanilla beach and river routes. Our generated maps (ShoreLab, Route 203)
+   must do it from the shape tables alone: nothing may be kept by extract's compile check.
 
   python dev/tests/shore_pieces.py [-v]
 """
@@ -116,6 +117,7 @@ CASES = [
     ("one-tile channel", [".~.", ".~.", ".~."], "one tile wide"),
     ("bank turns into a beach at a corner", ["...:", "~~~:", "~~~~"], "turns into"),
     ("water squeezed against the far corner", ["~~~~~~", ".~~~~~", "~~.~~~", "~~~~~~"], "squeezed"),
+    ("ledge right below water", ["~~~~", "~~~~", "vvvv", "...."], "ledge right below water"),
     ("rock in the river", ["~~~~", "~rr~", "~rr~", "~~~~"], {(1, 1): 0x150, (2, 2): 0x159}),
     ("half a rock", ["~~~~", "~r~~", "~~~~"], "whole 2x2"),
     ("rock on the bank", ["....", "~rr~", "~rr~", "~~~~"], "stand in water"),
@@ -149,33 +151,43 @@ ROUNDTRIP_MAPS = ["ShoreLab", "Route203_1", "Woodstock_2", "Route104", "Route105
                   "Route110", "Route115", "Route119", "Route120", "SlateportCity", "DewfordTown"]
 
 
+OWN_MAPS = {"ShoreLab", "Route203_1"}      # built by the shore compiler: nothing may need keeping
+
+
 def roundtrip(p):
     """Extracting a map and compiling the sketch back must leave every shore block exactly as it
-    was (metatile, collision, elevation)."""
-    from mapkit.terrain import learn
-    from mapkit.sketch import extract, compile_sketch
+    was (metatile, collision, elevation), compiling with the grammar a mapgen build uses.
+    extract() itself keeps ('#') shore cells a compile wouldn't reproduce, so on vanilla maps
+    the result is guaranteed and the interesting number is how many it had to keep. On our own
+    generated maps the check is independent of that: they are extracted WITHOUT the compile-based
+    keeping, and must still come back exactly, from the shape tables alone."""
+    from mapkit.terrain import learn, class_adjacency, forbidden_pairs
+    from mapkit.sketch import extract, compile_sketch, shore_owned
     corpus = Corpus(p)
     vocab = Vocabulary(p, corpus)
-    rules = learn(p, vocab, vanilla_maps(corpus))
+    entries = vanilla_maps(corpus)
+    rules = learn(p, vocab, entries)
+    forbidden = forbidden_pairs(class_adjacency(p, vocab, entries))
+    fmt = lambda b: f"{b & 0x3FF:03X}/{b >> 10 & 3}/{b >> 12}"
     ok = True
     for name in (n for n in ROUNDTRIP_MAPS if n in p.map_names):
-        m = p.load_map(name)
-        L = m.layout
+        L = p.load_map(name).layout
         if L.primary != PRIMARY:
             continue
-        sk = extract(p, vocab, name, rules)
-        blocks, _ = compile_sketch(p, corpus, rules, sk, L, vocab)
-        # the cells the shore resolver owns: water, rocks, sand and grass beside water
-        cls = grid(sk.rows)
         w, h = L.width, L.height
-        owned = lambda x, y: cls[y][x] in ("S", shores.ROCK_CLS) or (
-            cls[y][x] in ("SA", "G") and shores.touches_water(cls, x, y, w, h))
-        cells = [y * w + x for y in range(h) for x in range(w) if owned(x, y)]
+        own = name in OWN_MAPS
+        sk = extract(p, vocab, name, rules, forbidden, corpus, verify_shores=not own)
+        blocks, _ = compile_sketch(p, corpus, rules, sk, L, vocab, forbidden)
+        # shore cells of the original map, judged on a raw extract (nothing kept by the check)
+        raw = grid(extract(p, vocab, name, rules, verify_shores=False).rows)
+        cells = [y * w + x for y in range(h) for x in range(w) if shore_owned(raw, x, y, w, h)]
+        kept = [i for i in cells if sk.rows[i // w][i % w] == "#"]
         changed = [i for i in cells if blocks[i] != L.blocks[i]]
-        ok &= not changed
-        fmt = lambda b: f"{b & 0x3FF:03X}/{b >> 10 & 3}/{b >> 12}"
-        print(f"  roundtrip {name:14} {len(cells) - len(changed)}/{len(cells)} shore blocks unchanged"
-              + (f", {len(changed)} changed (tile/collision/elevation), e.g. " + ", ".join(
+        bad = changed or (own and kept)
+        ok &= not bad
+        print(f"  roundtrip {name:14} {len(cells) - len(changed)}/{len(cells)} shore blocks unchanged, "
+              f"{len(kept)} kept as '#' by the compile check{' (own map: must be 0)' if own else ''}"
+              + (f"; changed e.g. " + ", ".join(
                   f"({i % w},{i // w}) '{sk.rows[i // w][i % w]}' {fmt(L.blocks[i])}->{fmt(blocks[i])}"
                   for i in changed[:3]) if changed else ""))
     print(f"roundtrip: shore blocks {'unchanged' if ok else 'CHANGED'}")

@@ -110,8 +110,9 @@ def main(argv):
                 total += len(todo); bad += len(todo) - ok
                 print(f"{name}: {kind:4} {ok}/{len(todo)} as the model says")
             # real play: surf off the shore through the field-move prompt
+            layout = p.load_map(name).layout
             edges = [(x, y, d) for x, y, d, _, _ in cases["bump"]
-                     if p.load_map(name).layout.mid(x + DELTA[d][0], y + DELTA[d][1]) not in shores.ROCK_PIECES]
+                     if layout.mid(x + DELTA[d][0], y + DELTA[d][1]) not in shores.ROCK_PIECES]
             ok = 0
             sample = rng.sample(edges, min(n_surf, len(edges)))
             for i, (x, y, d) in enumerate(sample):

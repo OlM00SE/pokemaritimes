@@ -27,20 +27,24 @@ def config_flag(config_rel, define, repo=REPO):
     return int(f.group(1), 0) if f else 0
 
 
-def species_ids(repo=REPO, _cache={}):
-    """{'BIDOOF': 399, ...} from the SPECIES_* enum in include/constants/species.h (cached)."""
-    if not _cache:
-        src = open(os.path.join(repo, "include", "constants", "species.h"), encoding="utf-8").read()
-        _cache.update((k, int(v)) for k, v in re.findall(r"\bSPECIES_(\w+)\s*=\s*(\d+)", src))
-    return _cache
+def enum_ids(header, prefix, repo=REPO, _cache={}):
+    """{'NAME': value} for the explicitly numbered PREFIX_NAME = n entries of a constants header,
+    e.g. enum_ids('species.h', 'SPECIES') (cached per header)."""
+    key = (repo, header, prefix)
+    if key not in _cache:
+        src = open(os.path.join(repo, "include", "constants", header), encoding="utf-8").read()
+        _cache[key] = {k: int(v) for k, v in re.findall(rf"\b{prefix}_(\w+)\s*=\s*(\d+)", src)}
+    return _cache[key]
 
 
-def move_ids(repo=REPO, _cache={}):
-    """{'SURF': 57, ...} from the MOVE_* enum in include/constants/moves.h (cached)."""
-    if not _cache:
-        src = open(os.path.join(repo, "include", "constants", "moves.h"), encoding="utf-8").read()
-        _cache.update((k, int(v)) for k, v in re.findall(r"\bMOVE_(\w+)\s*=\s*(\d+)", src))
-    return _cache
+def species_ids(repo=REPO):
+    """{'BIDOOF': 399, ...} from the SPECIES_* enum in include/constants/species.h."""
+    return enum_ids("species.h", "SPECIES", repo)
+
+
+def move_ids(repo=REPO):
+    """{'SURF': 57, ...} from the MOVE_* enum in include/constants/moves.h."""
+    return enum_ids("moves.h", "MOVE", repo)
 
 
 def flag_id(name, repo=REPO, _cache={}):
