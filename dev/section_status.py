@@ -68,7 +68,8 @@ def status(p, name, mapsecs, wild):
     dead = [d for d in doors if d not in warp_xy]
     if dead:
         todo.append(f"{len(dead)} of {len(doors)} doors lead nowhere {dead[:4]}")
-    if grass and "land_mons" not in kinds:
+    # towns use tall grass as decoration (vanilla towns have no encounter tables)
+    if grass and "land_mons" not in kinds and m.j.get("map_type") not in ("MAP_TYPE_TOWN", "MAP_TYPE_CITY"):
         todo.append(f"{grass} grass tiles, no land encounters")
     if water and "water_mons" not in kinds and m.j.get("map_type") in OUTDOOR:
         todo.append(f"{water} water tiles, no surf encounters (fine until Surf)")

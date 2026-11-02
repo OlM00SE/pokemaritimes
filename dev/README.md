@@ -11,6 +11,7 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 | Render | `dev/render_map.py <Map> --overlay collision,elevation,behavior,events,grid`. `--world` stitches the connected region; `--sheet <pri> <sec>` gives a labelled metatile index. |
 | Play-test | `dev/autowalk.py <Map> <Map> ...` walks map to map in mGBA from a new game. `dev/shoot.py <Map> x,y ...` warps and takes screenshots. |
 | Fill a dead door | `dev/add_interior.py <Map> x,y <NewName> [--like <VanillaInterior>] [--apply]` identifies the building from its facade (`mapkit/doors.py`). It clones the interior vanilla uses behind it (all floors, same layout, events stripped) and wires the warps both ways. The default is a dry run. |
+| Name an area | `dev/name_area.py MAPSEC_X "NAME" <Map>... [--interiors] [--apply]` gives an area its own map section (the popup name). It creates the section by appending (no existing id moves), and `--interiors` also covers the area's houses. Gen 3 popups only; BW-style popups would need theme entries. |
 | Fix attributes | `dev/fix_attrs.py <Map> [--surfable] [--apply]` sets collision/elevation to vanilla's confident values. |
 
 ## Making or editing a map
