@@ -7,6 +7,8 @@ from collections import deque
 from .engine import World, DIRS, MAP_OFFSET
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
 
+EXPLORE_LIMIT = 200000      # states; a graph cut off at the limit is incomplete, so traps aren't judged
+
 
 def _warp_kinds(p):
     """Warp trigger behaviours, taken from the engine's own predicates (field_control_avatar.c)."""
@@ -96,18 +98,33 @@ def _backward(edges, targets):
     return out
 
 
-def check_traps(world, starts, foot_starts, foot_edges, surf_edges, warp_preds, E, W, detail=None):
+def spawn_point(m):
+    """new_map.py's spawn convention: a map with no edge connections whose only warp is an
+    arrival-only warp to MAP_DYNAMIC. Returns its (x, y), else None. Anywhere else a
+    MAP_DYNAMIC warp is an ordinary warp (an elevator or link-room exit) and is judged as one."""
+    warps = m.events("warp_events")
+    edges = [c for c in m.connections if c.get("direction") in ("up", "down", "left", "right")]
+    if not edges and len(warps) == 1 and warps[0].get("dest_map") == "MAP_DYNAMIC":
+        return warps[0]["x"], warps[0]["y"]
+    return None
+
+
+def check_traps(world, spawn, foot_starts, foot_edges, surf_edges, warp_preds, E, W, I,
+                detail=None, truncated=False):
     """One-way traps: places a player can walk (or jump) into but never leave. Ledges make
     one-way moves, so a careless ledge can soft-lock the game. A way out is an exit (a map edge
-    with a connection, or any warp's trigger position) or a return to a walkable tile the player
-    can arrive on (so a dev map with only a spawn point is judged relative to it; solid arrival
-    tiles, like Route 115's Terra Cave holes, are never re-entered and don't count).
+    with a connection, or any warp's trigger position). On a dev map with only a spawn point
+    (spawn_point()), returning to the spawn counts as a way out; other arrival-only tiles
+    (fly targets, scripted arrivals, Route 115's Terra Cave holes) never do.
     Only places reachable from an entrance that itself has a way out are judged, so maps the
     engine model can't leave (scripted interiors) aren't reported."""
-    entry_pos = {(s[0], s[1]) for s in starts if world.collision(s[0], s[1]) == 0}
+    if truncated:
+        I("trap", "not checked: the movement graph hit the exploration limit")
+        return
+    spawn_cell = world.to_grid(*spawn) if spawn else None
 
     def is_exit(s):
-        return (not world.in_map(s[0], s[1]) or (s[0], s[1]) in entry_pos
+        return (not world.in_map(s[0], s[1]) or (s[0], s[1]) == spawn_cell
                 or any(pred(s) for pred in warp_preds))
 
     def exits_of(edges):
@@ -218,6 +235,7 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
     # ---- warps ----
     step_on, door, arrow, stair = _warp_kinds(p)
     exit_down = p.behavior_set("Door")
+    spawn = spawn_point(m)
     warp_needs = []                                  # (label, list of (state predicate))
     for i, wv in enumerate(m.events("warp_events")):
         x, y, el = wv["x"], wv["y"], wv.get("elevation", 0)
@@ -252,17 +270,21 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
             fl = p.tile_flags.get(b, 0)
             wet = fl & TILE_FLAG_SURFABLE and m.j.get("map_type") != "MAP_TYPE_UNDERWATER" and \
                 not str(wv.get("dest_map", "")).startswith("MAP_UNDERWATER")
-            if not wet and wv.get("dest_map") == "MAP_DYNAMIC":
-                # deliberately an arrival point only (vanilla's link rooms; new_map.py's spawn)
-                I("warp", f"warp {i} at ({x},{y}) is an arrival point (to MAP_DYNAMIC)")
+            if not wet and spawn == (x, y):
+                I("warp", f"warp {i} at ({x},{y}) is the map's spawn point (new_map.py); remove it "
+                          "once the map has real connections or doors")
             else:
                 (E if wet else W)("warp", f"warp {i} at ({x},{y}) is on {p.behavior_names.get(b, b)}: "
                                           "arrival-only, walking onto it does nothing")
         # arriving through this warp puts the player on its tile; arriving on a door, the game
-        # then walks the player one tile down (field_screen_effect.c SetUpWarpExitTask/Task_ExitDoor)
+        # then walks the player one tile down (field_screen_effect.c SetUpWarpExitTask/Task_ExitDoor),
+        # a scripted move that ignores collision. (Non-animated doors walk on in the direction the
+        # player faces, which isn't known statically; they keep the arrival tile.)
         arrive = world.arrival_state(gx, gy)
         if b in exit_down:
             out, _ = world.step(arrive, "S")
+            if out is None and world.cell(gx, gy + 1) is not None:
+                out = world.arrival_state(gx, gy + 1)
             arrive = out or arrive
         entries.append((f"warp {i}", [arrive]))
 
@@ -296,8 +318,8 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
     # "on foot" exploration starts only from land entrances; surfing arrivals are Surf content
     foot_starts = [s for s in starts if not world.surfing(s)]
     foot_edges, surf_edges = {}, {}
-    foot = world.explore(foot_starts, allow_surf=False, edges=foot_edges) if starts else {}
-    surf = world.explore(starts, allow_surf=True, edges=surf_edges) if starts else {}
+    foot = world.explore(foot_starts, allow_surf=False, limit=EXPLORE_LIMIT, edges=foot_edges) if starts else {}
+    surf = world.explore(starts, allow_surf=True, limit=EXPLORE_LIMIT, edges=surf_edges) if starts else {}
     # Water must only be enterable by surfing. (Water at elevation 3 is fine if the land
     # around it is at another elevation; what matters is whether a walker can step onto it.)
     walk_water = sorted({world.to_map(s[0], s[1]) for s in foot if not world.surfing(s)
@@ -311,8 +333,9 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
             else:
                 E("reach", f"{label}: cannot be triggered from any entrance (position/elevation)")
     check_ledges(world, foot_edges, E)
-    check_traps(world, starts, foot_starts, foot_edges, surf_edges,
-                [pred for _, pred in warp_needs], E, W, detail)
+    truncated = max(len(foot), len(surf)) >= EXPLORE_LIMIT
+    check_traps(world, spawn, foot_starts, foot_edges, surf_edges,
+                [pred for _, pred in warp_needs], E, W, I, detail, truncated)
     # entrances split into separate areas?
     if len(entries) > 1:
         comp = {}

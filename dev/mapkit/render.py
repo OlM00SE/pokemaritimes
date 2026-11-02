@@ -8,7 +8,7 @@ Overlays (combine freely):
              encounter water
   events     warps W#, objects O, triggers T, signs/bg S, with elevation where non-zero
   traps      one-way traps from the checker: magenta = can be entered but never left,
-             orange = can only be left with Surf (checks.check_traps)
+             orange = can only be left with Surf. Needs `detail` from checks.check_map.
 """
 from PIL import Image, ImageDraw
 from .project import TILE_FLAG_HAS_ENCOUNTERS, TILE_FLAG_SURFABLE
@@ -60,10 +60,7 @@ def render_layout(project, layout, scale=1, overlays=(), mapdata=None, detail=No
     if scale != 1:
         img = img.resize((w * 16 * scale, h * 16 * scale), Image.NEAREST)
     if overlays:
-        if "traps" in overlays and detail is None and mapdata is not None:
-            from .checks import check_map
-            detail = {}
-            check_map(project, mapdata.name, mapdata=mapdata, detail=detail)
+        # detail: the checker's findings (checks.check_map(..., detail=d)); 'traps' draws them
         draw_overlays(project, img, layout, 16 * scale, overlays, mapdata, detail or {})
     return img
 
@@ -131,10 +128,11 @@ def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
             mark(e, (190, 60, 255, 255), "S")
 
 
-def render_map(project, name, scale=1, overlays=(), crop=None):
-    """crop: (x0, y0, x1, y1) in tiles, inclusive, to render part of a big map."""
+def render_map(project, name, scale=1, overlays=(), crop=None, detail=None):
+    """crop: (x0, y0, x1, y1) in tiles, inclusive, to render part of a big map.
+    detail: checker findings for the 'traps' overlay (see render_layout)."""
     m = project.load_map(name)
-    img = render_layout(project, m.layout, scale, overlays, m)
+    img = render_layout(project, m.layout, scale, overlays, m, detail)
     if crop:
         s = 16 * scale
         x0, y0, x1, y1 = crop

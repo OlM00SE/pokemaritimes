@@ -38,7 +38,12 @@ elif a.world:
     print(f"{len(pos)} maps:", ", ".join(pos))
 else:
     crop = tuple(int(v) for v in a.crop.split(",")) if a.crop else None
-    img = render.render_map(p, args[0], a.scale, overlays, crop)
+    detail = None
+    if "traps" in overlays:              # the overlay draws what the checker found
+        from mapkit.checks import check_map
+        detail = {}
+        check_map(p, args[0], detail=detail)
+    img = render.render_map(p, args[0], a.scale, overlays, crop, detail)
     out = a.out or f"{args[0]}.png"
 img.save(out)
 print(out, img.size)

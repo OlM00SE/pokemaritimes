@@ -22,7 +22,7 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 2. **Edit the sketch.** Each character is a terrain type: `.` grass, `,` tall grass, `=` path, `:` sand, `~` river/sea, `o` pond, `T` forest, `v` `<` `>` ledges (below), `#` keep the existing block.
 3. **Preview.** `dev/mapgen.py build design/maps/<Map>.txt [--fresh]` is a dry run. It runs the checker on the result in memory and writes `dev/out/<Map>_preview.png` and `_preview_overlay.png`.
    - Use `--fresh` for new designs. It ignores the old map's tree placement.
-4. **Apply.** `... --apply` writes `map.bin`, but only if the checker reports no errors.
+4. **Apply.** `... --apply` writes `map.bin`, but only if the result has no *new* checker errors. Errors the map already had don't block a rebuild; `--force` overrides.
 5. **Build, then play-test.** Use `fastbuild.py`, then `autowalk.py`, `tests/conformance.py <Map>` and `shoot.py`. If the map has ledges, also run `tests/ingame_ledges.py <Map>`.
 
 How compiling works:
@@ -56,7 +56,7 @@ The checker (`check_maps.py`) adds two map-level checks for any map, hand-painte
 - **`ledge`:** a reachable jump that lands on a solid tile or in water.
 - **`trap`:** tiles a player can walk or jump into but never leave. This is an ERROR. If Surf is the only way out, it's a WARN.
 
-Ways out are connections, warp triggers, and walkable arrival tiles. Only one vanilla map has a trap: Shoal Cave's ledge pocket. It's confirmed in-game and listed in `mapkit/baseline.py`.
+Ways out are connections and warp triggers. On a map whose only warp is a `new_map.py` spawn point, returning to the spawn also counts. Only one vanilla map has a trap: Shoal Cave's ledge pocket. It's confirmed in-game and listed in `mapkit/baseline.py`.
 
 ## Test suites
 | Test | What it proves |
@@ -64,8 +64,8 @@ Ways out are connections, warp triggers, and walkable arrival tiles. Only one va
 | `tests/conformance.py [Map...]` | The engine model predicts single steps exactly like the game. Result: 482/482 on 13 maps. |
 | `tests/reconstruction.py` | Leave-one-out regeneration of 238 vanilla maps reproduces 87.8% of terrain tiles exactly. |
 | `tests/roundtrip.py` | Extracting and recompiling our maps keeps 88–100% of metatiles identical. |
-| `tests/ledge_pieces.py` | No emulator, about 2 minutes. It runs four checks:<br>• Every vanilla ledge outside 16 known cliff constructions is rebuilt piece for piece (66/66 groups).<br>• 25 sketch shapes build or are refused as expected.<br>• Extract→compile leaves every ledge block unchanged on 8 vanilla routes and LedgeLab.<br>• The checker catches a soft-lock in a sealed copy of LedgeLab. |
-| `tests/ingame_ledges.py [Map...]` | For every ledge tile, the test presses toward it from each free neighbour. The game must jump, or refuse to move, exactly as the model says, elevations included. On maps with a spawn point it also walks down the ledges and back. LedgeLab: 150/150. Vanilla Routes 102, 103, 116 and 123: 130/130. |
+| `tests/ledge_pieces.py` | No emulator, under a minute. It runs four checks:<br>• Every vanilla ledge outside 16 known cliff constructions is rebuilt piece for piece (66/66 groups).<br>• 25 sketch shapes build or are refused as expected.<br>• Extract→compile leaves every ledge block unchanged on 8 vanilla routes and LedgeLab.<br>• The checker catches a soft-lock in a sealed copy of LedgeLab. |
+| `tests/ingame_ledges.py [Map...]` | For every ledge tile, the test presses toward it from each free neighbour. The game must jump, or refuse to move, exactly as the model says, elevations included. On maps with a spawn point it also walks down the ledges and back. LedgeLab: 150/150. Vanilla Routes 102, 103, 116 and 123: 228/228. A warp that fails or lands elsewhere counts as a failure. |
 | `check_maps.py --baseline` | The checker raises no false errors on vanilla. Known special cases are listed in `mapkit/baseline.py`. |
 | `tests/playthrough_slice1.py` | End-to-end, wild battles on: a new player is stopped at HomeTown's exit, gets a starter from the researcher, walks Route 201 to Woodstock fleeing battles, and returns to be healed. |
 | `tests/ingame_doors.py <Map>...` | Every door warp enters its interior (stairs followed), and walking out returns to the door. |

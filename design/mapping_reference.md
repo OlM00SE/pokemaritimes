@@ -1,6 +1,6 @@
 # How maps work in pokeemerald-expansion 1.17.2 (Emerald mode)
 
-These are notes from reading the engine source. Every rule cites where it comes from. They're encoded in `dev/mapkit/engine.py` and verified against the real game: `dev/tests/conformance.py` matched 482/482 single steps across 13 maps, and `dev/tests/ingame_ledges.py` matched every approach to every ledge on LedgeLab and four vanilla routes (280/280).
+These are notes from reading the engine source. Every rule cites where it comes from. They're encoded in `dev/mapkit/engine.py` and verified against the real game: `dev/tests/conformance.py` matched 482/482 single steps across 13 maps, and `dev/tests/ingame_ledges.py` matched every approach to every ledge on LedgeLab and four vanilla routes (378/378).
 
 ## 1. Data on disk
 | File | Contents |
@@ -108,6 +108,6 @@ Elevation bookkeeping (`ObjectEventUpdateElevation`):
 Ways out:
 - a connection edge;
 - any warp's trigger position;
-- a walkable arrival tile. A dev map's spawn point counts; solid arrival tiles such as Route 115's Terra Cave holes don't.
+- a dev map's spawn point (checks.spawn_point: the only warp, to MAP_DYNAMIC, on a map with no connections). Other arrival-only tiles, such as fly targets, scripted arrivals and Route 115's Terra Cave holes, never count.
 
 **Vanilla result:** exactly one real trap, the ledge pocket in `ShoalCave_LowTideEntranceRoom`. All 50 moves out of it were confirmed blocked in mGBA. Escape Rope or Dig gets the player out.

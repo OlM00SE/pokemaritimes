@@ -21,6 +21,7 @@ from playtest import prepare_rom, OUT
 from mapkit.project import Project
 from mapkit.engine import World, DIRS, DIR_NAME, OPPOSITE
 from mapkit import ledges
+from mapkit.checks import spawn_point
 
 DEFAULT_MAPS = ["LedgeLab", "Route102", "Route103", "Route116", "Route123"]
 
@@ -78,20 +79,24 @@ def cases_for(p, name):
 
 
 def approaches(e, p, name):
+    """Returns the number of failures. A warp that errors, or lands somewhere else, is a
+    failure: every case counted as run was really run in the game."""
     cases = cases_for(p, name)
-    bad, done = [], 0
-    jumps = sum(1 for c in cases if c[4] == "jump")
+    bad, done, jumps = [], 0, 0
     for ledge, (sx, sy), d, exp, kind, elev in cases:
         try:
-            if e.warp(name, sx, sy)[2:] != (sx, sy):
-                continue
+            landed = e.warp(name, sx, sy)[2:]
         except RuntimeError as ex:
-            print(f"{name}: SKIPPED ({ex})")
+            print(f"{name}: ABORTED, a warp failed ({ex}) after {done} of {len(cases)} cases")
             for _ in range(30):
                 e.press("B", 3, 10)
-            return None
+            return len(bad) + 1
+        if landed != (sx, sy):
+            bad.append(f"    warp to {(sx, sy)} landed on {landed}: case not run")
+            continue
         got = press_toward(e, d, sx, sy)
         done += 1
+        jumps += kind == "jump"
         ok = got == exp
         if ok and elev is not None:
             ok = elevations(e) == elev
@@ -100,7 +105,7 @@ def approaches(e, p, name):
         if not ok:
             bad.append(f"    ledge {ledge} from {(sx, sy)} press {d}: model {kind}->{exp}, game ->{got}")
     print(f"{name}: {done - len(bad)}/{done} ledge approaches agree ({jumps} jumps, "
-          f"{done - jumps} refusals expected)")
+          f"{done - jumps} refusals expected; {len(cases) - done} not run)")
     for line in bad[:8]:
         print(line)
     if not done:
@@ -113,12 +118,17 @@ def round_trip(e, p, name):
     """Walk the model's route from the arrival point to the farthest tile and back."""
     m = p.load_map(name)
     w = World(p, m)
-    spawns = [(wv["x"], wv["y"]) for wv in m.events("warp_events") if wv["dest_map"] == "MAP_DYNAMIC"]
-    if not spawns:
+    spawn = spawn_point(m)
+    if not spawn:
         return 0
+    spawns = [spawn]
     start = w.arrival_state(*w.to_grid(*spawns[0]))
     seen = w.explore([start])
-    far = max(seen, key=lambda s: len(World.path_to(seen, s)))
+    depth = {start: 0}                       # BFS order: a state's parent always comes first
+    for s, link in seen.items():
+        if link:
+            depth[s] = depth[link[0]] + 1
+    far = max((s for s in seen if w.in_map(s[0], s[1])), key=depth.get)
     there = World.path_to(seen, far)
     back_seen = w.explore([far])
     home = next((s for s in back_seen if s[:2] == start[:2]), None)
@@ -154,8 +164,7 @@ def main(argv):
         assert e.boot_new_game()
         e.test_mode()
         for name in maps:
-            r = approaches(e, p, name)
-            bad += 1 if r is None and name == "LedgeLab" else (r or 0)
+            bad += approaches(e, p, name)
             bad += round_trip(e, p, name)
     print("PASS" if not bad else f"FAIL ({bad})")
     return 1 if bad else 0
