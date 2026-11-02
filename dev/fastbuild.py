@@ -12,7 +12,7 @@ source of truth (Porymap, git, editing all happen there). This script:
   python dev/fastbuild.py --reseed   # rebuild the mirror from scratch
   python dev/fastbuild.py clean      # extra args go to make
 """
-import json, os, shutil, subprocess, sys, time
+import filecmp, json, os, shutil, subprocess, sys, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DISTRO, MIRROR_LINUX = "Debian", "~/maritimes-build"
@@ -110,11 +110,16 @@ def main(argv):
                 shutil.copyfile(src, os.path.join(REPO, p))
         # Poryscript output (scripts.pory -> scripts.inc) is generated in the mirror but tracked
         # in git: copy it back when it changed, so E: never holds a stale .inc.
+        # Only outputs that can be stale are compared: the .pory changed this sync, or the .inc
+        # on E: is missing or older than its .pory (e.g. a previous build failed after an edit).
+        changed_set = set(changed)
         for p in (q for q in now if q.startswith("data/") and q.endswith(".pory")):
             inc = p[:-5] + ".inc"
             src, dst = os.path.join(unc, inc.replace("/", "\\")), os.path.join(REPO, inc)
-            if os.path.exists(src) and (not os.path.exists(dst)
-                                        or open(src, "rb").read() != open(dst, "rb").read()):
+            stale = (p in changed_set or reseed or not os.path.exists(dst)
+                     or os.path.getmtime(dst) < os.path.getmtime(os.path.join(REPO, p)))
+            if stale and os.path.exists(src) and not (os.path.exists(dst)
+                                                     and filecmp.cmp(src, dst, shallow=False)):
                 shutil.copyfile(src, dst)
                 print("    generated:", inc)
         now = scan()   # copied-back files must not bounce back next sync

@@ -34,6 +34,9 @@ def main():
     ap.add_argument("--continue", dest="cont", action="store_true", help="continue test save")
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--tag", default="pt", help="screenshot filename prefix")
+    ap.add_argument("--story", action="store_true",
+                    help="play as a real new player (wild battles on, story gates closed); "
+                         "default is test mode, which only tests movement")
     a = ap.parse_args()
 
     rom = prepare_rom(fresh=not a.cont)
@@ -43,6 +46,8 @@ def main():
             e.shot(os.path.join(OUT, f"{a.tag}_FAILED.png"))
             print("FAIL: never reached the overworld")
             return 1
+        if not a.story:
+            e.test_mode()
         loc = e.player()
         print(f"start: {e.map_name(loc)} {loc[2:]}")
         e.shot(os.path.join(OUT, f"{a.tag}_00_start.png"))

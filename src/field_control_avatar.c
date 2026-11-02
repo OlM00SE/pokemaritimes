@@ -53,9 +53,11 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 // arguments, then write `request`. It is serviced the next frame the player has control.
 //   'WARP': warp to mapGroup/mapNum at x,y      'FLAG': set (value!=0) or clear flagId
 //   'GIVE': give the player species flagId at level flagValue (tests that need a party)
+//   'MON0': party slot 0 -> outHp/outMaxHp; if flagValue != 0xFFFF, first set its HP to flagValue
 #define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
 #define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
 #define DEV_BRIDGE_GIVE 0x47495645 // 'GIVE'
+#define DEV_BRIDGE_MON0 0x4D4F4E30 // 'MON0'
 struct DevBridgeMailbox
 {
     u32 request;
@@ -67,6 +69,8 @@ struct DevBridgeMailbox
     u16 flagId;
     u16 flagValue;
     u32 controlFrames; // frames in which the player had free control (tests wait on this)
+    u16 outHp;         // results of 'MON0'
+    u16 outMaxHp;
 };
 EWRAM_DATA struct DevBridgeMailbox gDevBridge = {0};
 
@@ -97,6 +101,20 @@ static bool32 TryDevBridgeRequest(void)
         ScriptGiveMon(gDevBridge.flagId, gDevBridge.flagValue, ITEM_NONE);
         gDevBridge.done++;
         return FALSE;
+    case DEV_BRIDGE_MON0:
+    {
+        struct Pokemon *mon = &gParties[B_TRAINER_PLAYER][0];
+        gDevBridge.request = 0;
+        if (gDevBridge.flagValue != 0xFFFF)
+        {
+            u16 hp = gDevBridge.flagValue;
+            SetMonData(mon, MON_DATA_HP, &hp);
+        }
+        gDevBridge.outHp = GetMonData(mon, MON_DATA_HP);
+        gDevBridge.outMaxHp = GetMonData(mon, MON_DATA_MAX_HP);
+        gDevBridge.done++;
+        return FALSE;
+    }
     }
     return FALSE;
 }

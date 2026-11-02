@@ -287,21 +287,57 @@ class Emu:
 
     def flee_battle(self, max_tries=600):
         """Run from a wild battle: RUN is bottom-right of the action menu. B clears messages.
-        Returns once the overworld is back and the player has control."""
-        for _ in range(max_tries):
+        Returns once the overworld is back and the player has control. The field is checked
+        before every single press, so no stray direction reaches the overworld."""
+        seq = (("RIGHT", 3), ("DOWN", 3), ("A", 12), ("B", 12))
+        for i in range(max_tries * len(seq)):
             if self.in_overworld():
                 break
-            self.press("RIGHT", 3, 3); self.press("DOWN", 3, 3); self.press("A", 3, 12); self.press("B", 3, 12)
+            key, gap = seq[i % len(seq)]
+            self.press(key, 3, gap)
         self.wait_for_control()
 
-    def advance_text(self, key="B", max_presses=400):
+    def in_battle(self):
+        return self.callback2() in (self.sym["BattleMainCB2"], self.sym["CB2_InitBattle"])
+
+    def settle(self, timeout_frames=900):
+        """After the overworld was lost mid-walk: wait until it is clear what happened.
+        Returns 'battle' (a battle is running) or 'field' (a warp/transition finished and the
+        player has control again). Presses nothing."""
+        for _ in range(timeout_frames // 5):
+            if self.in_battle():
+                return "battle"
+            if self.in_overworld() and self.has_control(4):
+                return "field"
+            self.wait(1)
+        raise RuntimeError(f"neither a battle nor free control after {timeout_frames} frames "
+                           f"(callback2={self.callback2():#x})")
+
+    def advance_text(self, key="B", max_presses=400, wait_for_lock=60):
         """Press `key` until the player has control again (B closes message boxes without
-        re-talking to the NPC in front). Returns the number of presses."""
+        re-talking to the NPC in front). Returns the number of presses.
+        First waits up to `wait_for_lock` frames for a script to take control, so a call that
+        comes a frame before a triggered script starts doesn't return immediately."""
+        for _ in range(wait_for_lock // 4):
+            if not self.has_control(4):
+                break
+        else:
+            return 0                     # nothing took control: no text to advance
         for i in range(max_presses):
             if self.in_overworld() and self.has_control():
                 return i
             self.press(key, 3, 10)
         raise RuntimeError("text never finished (stuck in a menu or script?)")
+
+    def mon0(self, set_hp=None, timeout_frames=300):
+        """(hp, maxHp) of party slot 0 via the dev mailbox; set_hp first sets its HP."""
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 14:x} {0xFFFF if set_hp is None else set_hp}")
+        self.cmd(f"write32 {base:x} {0x4D4F4E30}")       # 'MON0'
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError("MON0 request not serviced")
+        return self.read16(base + 20), self.read16(base + 22)
 
     def test_mode(self):
         """Movement-only testing: no wild encounters or trainer sight (expansion config flags),

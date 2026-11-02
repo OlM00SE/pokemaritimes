@@ -10,6 +10,7 @@ from playtest import prepare_rom
 OUT = os.path.join(REPO, "dev", "out")
 with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
     assert e.boot_new_game()
+    e.test_mode()           # movement test: no battles, and HomeTown's exit gate open
     wk = Walker(e)
     for m in ("LittlerootTown_MyHouse_1F_0", "HomeTown_0", "Route201_1", "Woodstock_2"):
         assert wk.go_to_map(m), f"could not reach {m}"

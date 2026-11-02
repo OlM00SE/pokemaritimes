@@ -14,27 +14,13 @@ Names are uppercase, at most 16 characters (popup width).
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
+from mapkit.mapjson import dump_json, indoor_closure
 
 SECTIONS = "src/data/region_map/region_map_sections.json"
 MAX_NAME = 16
 
 
-def dump(path, obj):
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-
-
-def interiors(p, names):
-    out, queue = [], list(names)
-    seen = set(names)
-    while queue:
-        m = p.load_map(queue.pop(0))
-        for w in m.events("warp_events"):
-            n = p.const_to_map.get(w["dest_map"])
-            if n and n not in seen and p.load_map(n).j.get("map_type") == "MAP_TYPE_INDOOR":
-                seen.add(n); out.append(n); queue.append(n)
-    return out
+dump = dump_json
 
 
 def main(argv):
@@ -51,7 +37,7 @@ def main(argv):
     for m in maps:
         if m not in p.map_names:
             sys.exit(f"unknown map {m}")
-    targets = maps + (interiors(p, maps) if "--interiors" in flags else [])
+    targets = maps + (indoor_closure(p, maps) if "--interiors" in flags else [])
 
     spath = p.path(SECTIONS)
     data = json.load(open(spath, encoding="utf-8"))

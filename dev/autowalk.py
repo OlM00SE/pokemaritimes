@@ -15,11 +15,12 @@ from mgba_bridge import Emu, REPO, UNTHROTTLED
 
 class Walker:
     def __init__(self, emu, project=None, log=print, on_interrupt=None):
-        """on_interrupt: called when the overworld is lost mid-path (e.g. a wild battle);
-        the walker then re-plans from wherever the player is. None = walk blindly (test mode)."""
+        """on_interrupt: called when a battle starts mid-path (e.g. e.flee_battle); the walker
+        then re-plans from wherever the player is. None = walk blindly (test mode).
+        self.battles counts the battles handled over the walker's life (for reports)."""
         self.e, self.p, self.log = emu, project or Project(), log
         self.on_interrupt = on_interrupt
-        self.interruptions = 0
+        self.battles = 0
         self._worlds = {}
         self.step_on, self.door, self.arrow, self.stair = _warp_kinds(self.p)
 
@@ -77,23 +78,27 @@ class Walker:
             self.e.press(DIR_NAME[d], 16 if kind != "jump" else 4, 2)
             self.e.wait(20 if kind == "jump" else 0)
             if self.on_interrupt and not self.e.in_overworld():
-                self.interruptions += 1
-                self.on_interrupt()
+                # A warp mid-path also leaves the overworld briefly: only a battle is handed
+                # to on_interrupt. Either way, re-plan from where the player now is.
+                if self.e.settle() == "battle":
+                    self.battles += 1
+                    self.on_interrupt()
                 return "interrupted"
         if hit[1]:
             self.e.press(DIR_NAME[hit[1]], 16, 2)
         return True
 
     def go_to_map(self, target, max_legs=4, max_interruptions=60):
-        legs = 0
+        legs = interruptions = 0
         while legs < max_legs:
             name, pos = self.here()
             if name == target:
                 return True
             r = self._walk(self.world(name), self._goals(name, target))
             if r == "interrupted":
-                if self.interruptions > max_interruptions:
-                    self.log(f"  gave up after {self.interruptions} interruptions")
+                interruptions += 1
+                if interruptions > max_interruptions:
+                    self.log(f"  gave up after {interruptions} interruptions on the way to {target}")
                     return False
                 continue                      # re-plan from the new position; not a new leg
             if not r:
@@ -104,13 +109,16 @@ class Walker:
             self.e.wait_until(self.e.in_overworld, 600)
         return self.here()[0] == target
 
-    def go_to_tile(self, x, y, allow_surf=False):
-        name, _ = self.here()
-        w = self.world(name)
-        gx, gy = w.to_grid(x, y)
-        ok = self._walk(w, [(lambda s: (s[0], s[1]) == (gx, gy), None)], allow_surf)
+    def go_to_tile(self, x, y, allow_surf=False, max_interruptions=60):
+        for _ in range(max_interruptions + 1):
+            name, _ = self.here()
+            w = self.world(name)
+            gx, gy = w.to_grid(x, y)
+            ok = self._walk(w, [(lambda s: (s[0], s[1]) == (gx, gy), None)], allow_surf)
+            if ok != "interrupted":
+                break
         self.e.wait(20)
-        return ok and self.here()[1] == (x, y)
+        return ok is True and self.here()[1] == (x, y)
 
 
 def main(argv):

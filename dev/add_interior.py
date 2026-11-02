@@ -15,6 +15,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
 from mapkit.doors import door_tiles, identify, map_const
+from mapkit.mapjson import dump_json, indoor_closure
 
 GROUP = "gMapGroup_IndoorMaritimes"
 STRIP_KEYS = ("shared_events_map", "shared_scripts_map")
@@ -26,21 +27,12 @@ def load(p, name):
 
 def dump(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    dump_json(path, obj)
 
 
-def floors(p, first, exterior_const):
-    """Vanilla interiors reachable from `first` without going back outside (BFS order)."""
-    out, queue = [first], [first]
-    while queue:
-        for w in load(p, queue.pop(0)).get("warp_events") or []:
-            n = p.const_to_map.get(w["dest_map"])
-            if n and w["dest_map"] != exterior_const and n not in out \
-                    and load(p, n).get("map_type") == "MAP_TYPE_INDOOR":
-                out.append(n); queue.append(n)
-    return out
+def floors(p, first):
+    """`first` plus the vanilla interiors reachable from it without going back outside."""
+    return [first] + indoor_closure(p, [first])
 
 
 def plan(p, outdoor, x, y, base, like=None):
@@ -67,7 +59,7 @@ def plan(p, outdoor, x, y, base, like=None):
         score, vmap, vx, vy, dest = hit
         vint, vext = p.const_to_map[dest], load(p, vmap)["id"]
         why = f"facade matches {vmap} ({vx},{vy}) {score}/20"
-    fl = floors(p, vint, vext)
+    fl = floors(p, vint)
     if len(fl) == 1:
         names = {fl[0]: base}
     else:

@@ -35,8 +35,7 @@ def main():
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         try:
             check(e.boot_new_game(), "new game reaches the overworld")
-            battles = []
-            wk = Walker(e, on_interrupt=lambda: (battles.append(wk.here()[1]), e.flee_battle()))
+            wk = Walker(e, on_interrupt=e.flee_battle)
             check(e.party_count() == 0, "a new player has no Pokémon")
 
             for m in ("LittlerootTown_MyHouse_1F_0", "HomeTown_0"):
@@ -66,20 +65,27 @@ def main():
             e.advance_text("B")                       # Poké Balls + goodbye text
 
             # 4. the way is open; wild battles are real now
+            hp, max_hp = e.mon0()
+            check(hp == max_hp > 0, f"the starter starts at full HP ({hp}/{max_hp})")
             for m in ("Route201_1", "Woodstock_2"):
-                check(wk.go_to_map(m), f"walk to {m} (wild battles so far: {len(battles)})")
+                check(wk.go_to_map(m), f"walk to {m} (wild battles so far: {wk.battles})")
             e.shot(os.path.join(OUT, "play_03_woodstock.png"))
-            check(e.party_count() == 1, "the starter survived the trip")
+            hp, max_hp = e.mon0()
+            check(hp > 0, f"the starter survived the trip ({hp}/{max_hp} HP)")
 
-            # 5. back to the researcher to heal
+            # 5. back to the researcher to heal: hurt the starter first so the heal is real
             for m in ("Route201_1", "HomeTown_0"):
                 check(wk.go_to_map(m), f"walk back to {m}")
             check(wk.go_to_tile(RESEARCHER[0], RESEARCHER[1] + 1), "back below the researcher")
+            hp, max_hp = e.mon0(set_hp=1)
+            check(hp == 1, "test setup: starter HP set to 1")
             e.press("UP", 3, 6)
             e.press("A", 3, 30)
             e.advance_text("B")
             check(e.has_control(), "the heal dialogue ends and the player has control")
-            print(f"wild battles fled on the way: {len(battles)} at {battles}")
+            hp, max_hp = e.mon0()
+            check(hp == max_hp, f"the researcher healed the starter ({hp}/{max_hp} HP)")
+            print(f"wild battles fled on the way: {wk.battles}")
             print("RESULT: PASS")
             return 0
         except Fail:
