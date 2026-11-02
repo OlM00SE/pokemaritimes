@@ -19,7 +19,7 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 1. **Get a sketch.**
    - From an existing map: `dev/mapgen.py extract <Map>` writes `design/maps/<Map>.txt`.
    - For a new design: write a design script like `design/maps/route203_design.py` or `ledgelab_design.py`. For a brand-new map, run `dev/new_map.py` first. `route203_design.py` is the worked example of ledges on a real route (a levee terrace and a wooded bench).
-2. **Edit the sketch.** Each character is a terrain type: `.` grass, `,` tall grass, `=` path, `:` sand, `~` river/sea, `o` pond, `T` forest, `v` `<` `>` ledges (below), `#` keep the existing block.
+2. **Edit the sketch.** Each character is a terrain type: `.` grass, `,` tall grass, `=` path, `:` sand (a beach where it meets `~`), `~` river/sea, `o` pond, `T` forest, `r` rock in water, `v` `<` `>` ledges (below), `#` keep the existing block.
 3. **Preview.** `dev/mapgen.py build design/maps/<Map>.txt [--fresh]` is a dry run. It runs the checker on the result in memory and writes `dev/out/<Map>_preview.png` and `_preview_overlay.png`.
    - It also reports how many cells differ from the current `map.bin`, and where. `_preview_diff.png` shows before and after side by side, cropped to the change, with changed cells outlined. When you edit an existing map, check that the change stays where you meant it to.
    - Use `--fresh` for new designs. It ignores the old map's tree placement.
@@ -60,6 +60,25 @@ The checker (`check_maps.py`) adds two map-level checks for any map, hand-painte
 
 Ways out are connections and warp triggers. On a map whose only warp is a `new_map.py` spawn point, returning to the spawn also counts. Only one vanilla map has a trap: Shoal Cave's ledge pocket. It's confirmed in-game and listed in `mapkit/baseline.py`.
 
+### Shores (riverbanks, lake shores, beaches)
+Where `~` water meets land, `mapkit/shores.py` builds the edge from the shape, like ledges. It doesn't use the learned vote, which only knew straight banks and drew plain edges on coves and corners. `gTileset_General` has the same structure in two materials:
+- **Grass bank:** `189` top, `190`/`192` sides, `188`/`18A` corners, `178`/`179` bank ends, `198`/`19A` inner corners, and `002` on the grass below the water.
+- **Beach:** draw `:` sand against the water. The pieces are `12C`, `123`/`125`, `146`/`145`, `11B`/`11D`, `12D`/`12B`, and `11C`/`13D`/`13E` on the sand below the water. On its land side the sand keeps the sand patch's grassy rim.
+- **Rocks:** `r` is a 2×2 rock standing in water (`150 151 / 158 159`). It must be a whole 2×2 with water on every side.
+
+Tips for natural shapes (see `design/maps/route203_design.py` and `shorelab_design.py`):
+- Vary the width, and change the bank one row at a time, every two to five columns. Long flat runs and big jumps look rectangular.
+- Give promontories a rounded tip (4 → 5 → 4).
+- For a beach in a bay, let the water bulge into the sand. Run the sand one tile past the water on each side, so the ends get `13E`/`13D`.
+
+The compiler refuses shapes the tiles can't draw, naming the cells:
+- water one tile wide between two side banks;
+- a grass bank that turns into a beach at a corner (start the beach on a straight stretch);
+- water squeezed between a side bank and the opposite corner;
+- half a rock, or a rock touching land.
+
+Kept `#` tiles and pond water count as "no land", because vanilla draws those edges on the object itself. `extract` keeps (`#`) any shore cell that a compile wouldn't reproduce exactly (special water such as waterfalls, vanilla's unusual joins), so extract → compile never changes a shore block. `design/maps/ShoreLab.txt` uses every piece.
+
 ## Test suites
 | Test | What it proves |
 |---|---|
@@ -68,6 +87,8 @@ Ways out are connections and warp triggers. On a map whose only warp is a `new_m
 | `tests/roundtrip.py` | Extracting and recompiling our maps keeps 88–100% of metatiles identical. |
 | `tests/ledge_pieces.py` | No emulator, under a minute. It runs four checks:<br>• Every vanilla ledge outside 16 known cliff constructions is rebuilt piece for piece (66/66 groups).<br>• 25 sketch shapes build or are refused as expected.<br>• Extract→compile leaves every ledge block unchanged on 8 vanilla routes, LedgeLab and Route 203.<br>• The checker catches a soft-lock in a sealed copy of LedgeLab. |
 | `tests/ingame_ledges.py [Map...]` | For every ledge tile, the test presses toward it from each free neighbour. The game must jump, or refuse to move, exactly as the model says, elevations included. On maps with a spawn point it also walks down the ledges and back. On maps without NPCs it runs a **terrace tour**: from the entrance (the spawn point, else the first connection's edge) it jumps down each ledge group and walks back on foot, and screenshots each landing (`dev/out/ledges_<Map>_tour<N>.png`). LedgeLab: 150/150, 6/6 groups. Route 203: 92/92, 2/2 groups. Vanilla Routes 102, 103, 116 and 123: 228/228 (they have NPCs, so no tour). A warp that fails or lands elsewhere counts as a failure. |
+| `tests/shore_pieces.py [-v]` | No emulator. It runs three checks:<br>• Every vanilla place where water meets only grass or beach sand is rebuilt from its shape: 99.9% exact; beach-sand edges and grass banks 100%.<br>• 17 sketch shapes build or are refused as expected.<br>• Extract→compile, with mapgen's grammar, leaves every shore block unchanged on ShoreLab, Route 203, Woodstock and 9 vanilla beach/river maps. Our generated maps must do it from the shape tables alone, with nothing kept by extract's compile check. |
+| `tests/ingame_shores.py [--max N] [--surf N] [Map...]` | At every land/water edge, in mGBA: on foot, pressing toward the water doesn't move the player. Surfing, pressing toward land comes ashore exactly where the engine model says. Rocks block. For a sample of shores, Surf works through the real field-move prompt (a party Pokémon taught Surf via the dev bridge, plus the badge flag). ShoreLab 276/276, Route 203 352/352. Screenshots: `dev/out/shores_<Map>_*.png`. |
 | `check_maps.py --baseline` | The checker raises no false errors on vanilla. Known special cases are listed in `mapkit/baseline.py`. |
 | `tests/playthrough_slice1.py` | End-to-end, wild battles on: a new player is stopped at HomeTown's exit, gets a starter from the researcher, walks Route 201 to Woodstock fleeing battles, and returns to be healed. |
 | `tests/ingame_doors.py <Map>...` | Every door warp enters its interior (stairs followed), and walking out returns to the door. |
@@ -82,6 +103,6 @@ Ways out are connections and warp triggers. On a map whose only warp is a `new_m
 Map scripts may be written in Poryscript (`scripts.pory`). `fastbuild.py` copies the generated `scripts.inc` back so git tracks the current output.
 
 ## Known limits (v1)
-- **Vocabulary:** route terrain and ledges on `gTileset_General` only. Rocks, cliffs/elevation changes, shorelines, buildings and town pieces stay literal (`#`) or are hand-painted in Porymap. The 16 vanilla ledge groups that meet cliffs (Route 118's terraces and five others, listed in `tests/ledge_pieces.py`) extract as `#`.
+- **Vocabulary:** route terrain, ledges, and shores (grass banks, beaches, water rocks) on `gTileset_General` only. Land rocks, cliffs/elevation changes, rocky shores, pond shores by shape, buildings and town pieces stay literal (`#`) or are hand-painted in Porymap. The 16 vanilla ledge groups that meet cliffs (Route 118's terraces and five others, listed in `tests/ledge_pieces.py`) extract as `#`.
 - **Engine model:** doesn't cover sideways stairs, ice, currents, bikes, boulders, or NPC movement. Story maps can take control on warp-in, and conformance skips those.
 - **Exact match:** isn't the same as looking right. Always review renders and in-game shots.

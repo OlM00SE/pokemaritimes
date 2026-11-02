@@ -1757,3 +1757,4 @@ EventScript_PalletTown_PlayersHouse_2F_TurnOnPC::
 	.include "data/maps/Woodstock_Lab/scripts.inc"
 	.include "data/maps/Woodstock_House2/scripts.inc"
 	.include "data/maps/LedgeLab/scripts.inc"
+	.include "data/maps/ShoreLab/scripts.inc"

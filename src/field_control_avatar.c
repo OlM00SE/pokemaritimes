@@ -54,10 +54,12 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 //   'WARP': warp to mapGroup/mapNum at x,y      'FLAG': set (value!=0) or clear flagId
 //   'GIVE': give the player species flagId at level flagValue (tests that need a party)
 //   'MON0': party slot 0 -> outHp/outMaxHp; if flagValue != 0xFFFF, first set its HP to flagValue
+//   'MOVE': teach party slot 0 move flagId in move slot flagValue (full PP), e.g. Surf for tests
 #define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
 #define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
 #define DEV_BRIDGE_GIVE 0x47495645 // 'GIVE'
 #define DEV_BRIDGE_MON0 0x4D4F4E30 // 'MON0'
+#define DEV_BRIDGE_MOVE 0x4D4F5645 // 'MOVE'
 struct DevBridgeMailbox
 {
     u32 request;
@@ -115,6 +117,11 @@ static bool32 TryDevBridgeRequest(void)
         gDevBridge.done++;
         return FALSE;
     }
+    case DEV_BRIDGE_MOVE:
+        gDevBridge.request = 0;
+        SetMonMoveSlot(&gParties[B_TRAINER_PLAYER][0], gDevBridge.flagId, gDevBridge.flagValue & 3);
+        gDevBridge.done++;
+        return FALSE;
     }
     return FALSE;
 }

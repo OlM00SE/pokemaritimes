@@ -27,12 +27,24 @@ def config_flag(config_rel, define, repo=REPO):
     return int(f.group(1), 0) if f else 0
 
 
-def species_ids(repo=REPO, _cache={}):
-    """{'BIDOOF': 399, ...} from the SPECIES_* enum in include/constants/species.h (cached)."""
-    if not _cache:
-        src = open(os.path.join(repo, "include", "constants", "species.h"), encoding="utf-8").read()
-        _cache.update((k, int(v)) for k, v in re.findall(r"\bSPECIES_(\w+)\s*=\s*(\d+)", src))
-    return _cache
+def enum_ids(header, prefix, repo=REPO, _cache={}):
+    """{'NAME': value} for the explicitly numbered PREFIX_NAME = n entries of a constants header,
+    e.g. enum_ids('species.h', 'SPECIES') (cached per header)."""
+    key = (repo, header, prefix)
+    if key not in _cache:
+        src = open(os.path.join(repo, "include", "constants", header), encoding="utf-8").read()
+        _cache[key] = {k: int(v) for k, v in re.findall(rf"\b{prefix}_(\w+)\s*=\s*(\d+)", src)}
+    return _cache[key]
+
+
+def species_ids(repo=REPO):
+    """{'BIDOOF': 399, ...} from the SPECIES_* enum in include/constants/species.h."""
+    return enum_ids("species.h", "SPECIES", repo)
+
+
+def move_ids(repo=REPO):
+    """{'SURF': 57, ...} from the MOVE_* enum in include/constants/moves.h."""
+    return enum_ids("moves.h", "MOVE", repo)
 
 
 def flag_id(name, repo=REPO, _cache={}):
@@ -338,6 +350,33 @@ class Emu:
         if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
             raise RuntimeError("MON0 request not serviced")
         return self.read16(base + 20), self.read16(base + 22)
+
+    def teach_move(self, move, slot=0, timeout_frames=300):
+        """Teach party slot 0 a move (dev mailbox 'MOVE'), e.g. teach_move('SURF')."""
+        if isinstance(move, str):
+            move = move_ids()[move.upper()]
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 12:x} {move}")
+        self.cmd(f"write16 {base + 14:x} {slot}")
+        self.cmd(f"write32 {base:x} {0x4D4F5645}")       # 'MOVE'
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError("MOVE request not serviced")
+
+    PLAYER_AVATAR_FLAG_SURFING = 1 << 3
+
+    def surfing(self):
+        return bool(self.read8(self.sym["gPlayerAvatar"]) & self.PLAYER_AVATAR_FLAG_SURFING)
+
+    def start_surf(self, max_presses=40):
+        """Facing surfable water with a Surf user in the party (and the badge flag set): press A,
+        answer YES, and wait until the player is surfing with control. Returns True on success."""
+        self.press("A", 3, 30)
+        for _ in range(max_presses):
+            if self.surfing() and self.in_overworld() and self.has_control():
+                return True
+            self.press("A", 3, 20)
+        return False
 
     def test_mode(self):
         """Movement-only testing: no wild encounters or trainer sight (expansion config flags),
