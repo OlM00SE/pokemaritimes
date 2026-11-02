@@ -12,18 +12,22 @@ Classes (gTileset_General primary; v1 covers route terrain):
   W   pond water (MB_POND_WATER family, brown banks)
   S   river/sea water (other surfable General water, blue banks)
   TL TR BL BR   tree quarters (Emerald trees are 2x2 metatiles)
-  F   anything else: kept literally (buildings, rocks, signs, ledges...)
+  LD  ledge pieces (mapkit/ledges.py). Their tiles are resolved by shape, not learned here;
+      the class exists so that the tiles around a ledge are learned in ledge context.
+  F   anything else: kept literally (buildings, rocks, signs...)
 """
 import os, pickle, struct
 from collections import Counter, defaultdict
 from .project import NUM_METATILES_IN_PRIMARY, TILE_FLAG_SURFABLE
+from .ledges import PIECES as LEDGE_PIECES
 
 PRIMARY = "gTileset_General"
 TREE = {"TL": {0x1D4, 0x1D6}, "TR": {0x1D5, 0x1D7},
         "BL": {0x1DC, 0x1E4, 0x1E6, 0x1F3}, "BR": {0x1DD, 0x1E5, 0x1E7, 0x1F2}}
 PATH = {0x1D0, 0x1D1, 0x1D2, 0x1D8, 0x1D9, 0x1DA, 0x1E0, 0x1E1, 0x1E2}
 SAND = {0x118, 0x119, 0x11A, 0x120, 0x121, 0x122, 0x128, 0x129, 0x12A}
-CLASSES = ["G", "TG", "P", "SA", "W", "S", "TL", "TR", "BL", "BR"]
+CLASSES = ["G", "TG", "P", "SA", "W", "S", "TL", "TR", "BL", "BR"]   # learned (auto-tiled) classes
+KEPT = ("F", "LD")          # classes whose tiles are not chosen by the learned rules
 NEIGH8 = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]   # N NE E SE S SW W NW
 NEIGH4_IDX = [0, 2, 4, 6]
 OUT = "X"   # outside the map
@@ -91,6 +95,8 @@ class Vocabulary:
         for q, ids in TREE.items():
             if m in ids:
                 return q
+        if m in LEDGE_PIECES:
+            return "LD"
         if m in PATH:
             return "P"
         if m in SAND:
@@ -239,7 +245,7 @@ def learn(p, vocab, entries, exclude=None):
         for y in range(h):
             for x in range(w):
                 c = lab[y][x]
-                if c != "F":
+                if c not in KEPT:
                     rules.add(c, signature(lab, x, y, w, h), b[y * w + x] & 0x3FF)
     return rules
 
@@ -303,13 +309,13 @@ def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4):
 
 
 def autotile(rules, lab, w, h, keep=None):
-    """lab: class grid (F cells need `keep[y][x]` metatile). Returns (metatile grid, stats)."""
+    """lab: class grid (F and LD cells need `keep[y][x]` metatile). Returns (metatile grid, stats)."""
     out = [[0] * w for _ in range(h)]
     levels = Counter()
     for y in range(h):
         for x in range(w):
             c = lab[y][x]
-            if c == "F":
+            if c in KEPT:
                 out[y][x] = keep[y][x] if keep else 0x001
                 continue
             mid, lvl = rules.pick(c, signature(lab, x, y, w, h))
@@ -336,7 +342,7 @@ def reconstruction_test(p, corpus, vocab, only=None):
         for y in range(h):
             for x in range(w):
                 c = lab[y][x]
-                if c == "F":
+                if c in KEPT:
                     continue
                 ok = gen[y][x] == keep[y][x]
                 per_class[c][0] += ok

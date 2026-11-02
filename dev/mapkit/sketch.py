@@ -9,16 +9,28 @@ File format (design/maps/<Map>.txt):
 Legend (one character per metatile):
     .  grass            ,  tall grass (encounters)     =  light path      :  sand / dirt
     ~  river/sea water  o  pond water                  T  forest (auto 2x2 trees)
-    #  keep the map's current block unchanged (buildings, signs, rocks, ledges, ...)
+    v  ledge, jump south   <  ledge, jump west          >  ledge, jump east   (mapkit/ledges.py)
+    #  keep the map's current block unchanged (buildings, signs, rocks, ...)
 """
 from .terrain import TREE, Rules, autotile, Vocabulary, grid_labels
 from .layout import pack
+from .project import TILE_FLAG_SURFABLE
+from . import ledges
 
-CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F"}
+CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F",
+                 "v": "LD", "<": "LD", ">": "LD"}
 CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
-                 "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#"}
+                 "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#"}       # LD: ledges.piece_char
 CLASS_ATTRS = {"G": (0, 3), "TG": (0, 3), "P": (0, 3), "SA": (0, 3), "S": (0, 1), "W": (0, 1),
-               "TL": (1, 0), "TR": (1, 0), "BL": (1, 0), "BR": (1, 0)}
+               "TL": (1, 0), "TR": (1, 0), "BL": (1, 0), "BR": (1, 0), "LD": ledges.LEDGE_ATTRS}
+
+
+class SketchError(ValueError):
+    """The sketch can't be built as drawn; .problems lists (x, y, message)."""
+
+    def __init__(self, problems):
+        self.problems = problems
+        super().__init__("\n".join(f"  ({x},{y}) {m}" for x, y, m in problems))
 
 
 class Sketch:
@@ -73,7 +85,9 @@ class Sketch:
 def extract(project, vocab, map_name, rules=None):
     """Existing map -> sketch. Cells outside the vocabulary become '#' (kept as-is). With
     `rules`, cells whose exact tile the generator could never produce also become '#', so
-    hand-placed details (decorations, small trees, special variants) survive a round trip."""
+    hand-placed details (decorations, small trees, special variants) survive a round trip.
+    Ledges extract as v/</>; any ledge group the resolver would not rebuild tile for tile
+    (e.g. Route 118's cliff pieces) is kept as '#'."""
     m = project.load_map(map_name)
     L = m.layout
     lab = grid_labels(vocab, L.entry, L.blocks, L.width, L.height)
@@ -81,11 +95,36 @@ def extract(project, vocab, map_name, rules=None):
     for y, row in enumerate(lab):
         out = []
         for x, c in enumerate(row):
+            if c == "LD":
+                out.append(ledges.piece_char(L.mid(x, y)))
+                continue
             if rules and c not in ("F", "TL", "TR", "BL", "BR") and L.mid(x, y) not in rules.outputs(c):
                 c = "F"
             out.append(CLASS_TO_CHAR[c])
-        rows.append("".join(out))
-    return Sketch(map_name, rows)
+        rows.append(out)
+    keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
+    return Sketch(map_name, ["".join(r) for r in rows])
+
+
+def keep_unrebuildable_ledges(rows, w, h, mid_at):
+    """Turn every connected ledge group that resolve() would not reproduce exactly into '#'.
+    Groups are never adjacent, so one pass is enough; the loop re-checks to make the guarantee
+    explicit. Returns the number of cells kept."""
+    kept = 0
+    while True:
+        pieces, errors = ledges.resolve(rows, w, h, ledges.runs_into_kept(rows, w, h, mid_at))
+        bad = {(x, y) for x, y, _ in errors}
+        bad |= {xy for xy, mid in pieces.items() if mid != mid_at(*xy)}
+        if not bad:
+            return kept
+        stack = list(bad)
+        while stack:
+            x, y = stack.pop()
+            if not (0 <= x < w and 0 <= y < h) or rows[y][x] not in ledges.LEDGE_CHARS:
+                continue
+            rows[y][x] = "#"
+            kept += 1
+            stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
 
 
 def assign_tree_quarters(cls_grid, w, h, hint=None):
@@ -139,16 +178,32 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
 def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden=None, fresh=False):
     """Sketch -> new block list for `layout` (same size). Returns (blocks, report dict).
     vocab + not fresh: keep the layout's existing tree placement where the sketch keeps forest.
-    forbidden: class pairs to repair with a grass margin (terrain.enforce_grammar)."""
-    from .terrain import enforce_grammar
+    forbidden: class pairs to repair with a grass margin (terrain.enforce_grammar).
+    Raises SketchError if the ledges can't be built as drawn (shape, or a landing that isn't
+    walkable). Ledge warnings (a ledge nobody can reach) go in the report."""
+    from .terrain import enforce_grammar, PRIMARY
     w, h = sketch.w, sketch.h
     if (w, h) != (layout.width, layout.height):
         raise ValueError(f"sketch is {w}x{h} but layout is {layout.width}x{layout.height}")
+    pieces, problems = ledges.resolve(sketch.rows, w, h, ledges.runs_into_kept(sketch.rows, w, h, layout.mid))
+    if pieces and layout.primary != PRIMARY:
+        raise SketchError([(0, 0, f"ledges need {PRIMARY} as the primary tileset, not {layout.primary}")])
+    if problems:
+        raise SketchError(problems)
+    if pieces:
+        ledges.verify_tileset(project, layout.tiles)
     cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sketch.rows]
     grammar = dict(enforce_grammar(cls, w, h, forbidden)) if forbidden else {}
     hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
     dropped = assign_tree_quarters(cls, w, h, hint)
-    keep = [[layout.mid(x, y) for x in range(w)] for y in range(h)]
+    # judged on the final classes: grammar repair and leftover forest can change a landing tile
+    tp = layout.tiles
+    kept_walkable = lambda x, y: layout.coll(x, y) == 0 and not \
+        project.tile_flags.get(tp.behavior(layout.mid(x, y)), 0) & TILE_FLAG_SURFABLE
+    ledge_errors, ledge_warnings = ledges.design_issues(cls, pieces, w, h, kept_walkable)
+    if ledge_errors:
+        raise SketchError(ledge_errors)
+    keep = [[pieces.get((x, y)) or layout.mid(x, y) for x in range(w)] for y in range(h)]
     mids, levels = autotile(rules, cls, w, h, keep)
     blocks = []
     for y in range(h):
@@ -158,6 +213,18 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
                 blocks.append(layout.get(x, y))
                 continue
             mid = mids[y][x]
-            attrs = corpus.default_attrs(layout.entry, mid) or CLASS_ATTRS[c]
+            if c == "LD":
+                # always solid; vanilla uses elevation 0 or 3 for ledges, so a cell that already
+                # holds a ledge keeps its elevation (re-building a map doesn't touch it)
+                old = layout.get(x, y)
+                elev = old >> 12 if (old & 0x3FF) in ledges.PIECES else CLASS_ATTRS["LD"][1]
+                attrs = (CLASS_ATTRS["LD"][0], elev)
+            else:
+                attrs = corpus.default_attrs(layout.entry, mid) or CLASS_ATTRS[c]
             blocks.append(pack(mid, *attrs))
-    return blocks, {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels)}
+    report = {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels)}
+    if pieces:
+        report["ledge_tiles"] = len(pieces)
+    if ledge_warnings:
+        report["ledge_warnings"] = [f"({x},{y}) {m}" for x, y, m in ledge_warnings]
+    return blocks, report
