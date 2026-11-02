@@ -1,2 +1,51 @@
+// HomeTown: a quiet forestry/mill village (provisional).
+// TEMPORARY INTRO: a field researcher from the Woodstock wildlife station gives the starter.
+// It is self-contained (one NPC, one trigger pair, FLAG_SYS_POKEMON_GET), so a real story
+// intro can replace it later without touching anything else.
+
 mapscripts HomeTown_0_MapScripts {
+    MAP_SCRIPT_ON_TRANSITION {
+        // VAR_TEMP_1 == 0 arms the exit trigger; it stays disarmed once the player has a Pokémon.
+        if (flag(FLAG_SYS_POKEMON_GET)) {
+            setvar(VAR_TEMP_1, 1)
+        }
+    }
+}
+
+script HomeTown_EventScript_Researcher {
+    lock
+    faceplayer
+    if (flag(FLAG_SYS_POKEMON_GET)) {
+        msgbox(format("Let me check on your Pokémon... There, all rested up!\pThe wildlife station is in Woodstock, just down Route 201."))
+        special(HealPlayerParty)
+        release
+        end
+    }
+    msgbox(format("Oh, hello! I'm a field researcher from the wildlife station in Woodstock.\pI'm surveying the Pokémon that live in these woods.\pHeading out on Route 201? Wild Pokémon hide in the tall grass, so you'll want a partner.\pHere, choose one of these!"))
+    closemessage
+    special(ChooseStarterNoBattle)
+    setflag(FLAG_SYS_POKEMON_GET)
+    setvar(VAR_TEMP_1, 1)
+    msgbox(format("Take these Poké Balls too, so you can catch Pokémon of your own."))
+    giveitem(ITEM_POKE_BALL, 5)
+    msgbox(format("If your Pokémon get tired, come back and see me. Good luck out there!"))
+    release
+    end
+}
+
+// Stepping onto the exit path without a Pokémon: the researcher calls the player back.
+script HomeTown_EventScript_ExitWithoutPokemon {
+    lockall
+    applymovement(LOCALID_HOMETOWN_RESEARCHER, Common_Movement_ExclamationMark)
+    waitmovement(0)
+    msgbox(format("Wait! Wild Pokémon live in the tall grass on Route 201.\pIt isn't safe without a Pokémon of your own. Come talk to me first!"))
+    closemessage
+    applymovement(LOCALID_PLAYER, HomeTown_Movement_StepBack)
+    waitmovement(0)
+    releaseall
+    end
+}
+
+movement HomeTown_Movement_StepBack {
+    walk_up
 }
