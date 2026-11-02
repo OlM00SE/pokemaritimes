@@ -315,6 +315,11 @@ static bool32 CanFish(void)
     s16 x, y;
     u16 tileBehavior;
 
+    // Maritimes: a bite would start a wild battle, so no fishing before the player has a
+    // Pokémon (pairs with the empty-party guard in StandardWildEncounter).
+    if (gPartiesCount[B_TRAINER_PLAYER] == 0)
+        return FALSE;
+
     GetXYCoordsOneStepInFrontOfPlayer(&x, &y);
     tileBehavior = MapGridGetMetatileBehaviorAt(x, y);
 
