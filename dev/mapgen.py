@@ -9,7 +9,7 @@ import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
 from mapkit.corpus import Corpus
-from mapkit.terrain import Vocabulary, learn, vanilla_maps
+from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import Sketch, extract, compile_sketch
 from mapkit.render import render_layout
 from mapkit.checks import check_map
@@ -21,6 +21,8 @@ def main():
     ap.add_argument("target")
     ap.add_argument("-o", "--out")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--fresh", action="store_true",
+                    help="new design: ignore the existing map's tree placement")
     a = ap.parse_args()
     p = Project()
     corpus = Corpus(p)
@@ -35,8 +37,10 @@ def main():
 
     sk = Sketch.load(a.target)
     m = p.load_map(sk.map_name)
-    rules = learn(p, vocab, vanilla_maps(corpus))
-    blocks, report = compile_sketch(p, corpus, rules, sk, m.layout, vocab)
+    entries = vanilla_maps(corpus)
+    rules = learn(p, vocab, entries)
+    forbidden = forbidden_pairs(class_adjacency(p, vocab, entries))
+    blocks, report = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden, fresh=a.fresh)
     print(f"{sk.map_name}: compiled {sk.w}x{sk.h}; {report}")
     old = list(m.layout.blocks)
     m.layout.blocks = blocks

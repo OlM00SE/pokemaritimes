@@ -142,9 +142,12 @@ class Rules:
     Exact levels capture type-specific details (canopy overhang above a tree, bank shadow below
     water); binary levels generalise edges to neighbour types vanilla never paired."""
 
-    def __init__(self):
+    def __init__(self, fallback="nb"):
         self.t = {lvl: defaultdict(lambda: defaultdict(Counter)) for lvl in (8, 7, 4, 3)}
         self.base = defaultdict(Counter)
+        # naive-Bayes statistics: per tile, per direction, neighbour-class counts
+        self.nb = defaultdict(lambda: defaultdict(Counter))
+        self.fallback = fallback
 
     @staticmethod
     def keys(cls, sig):
@@ -156,6 +159,31 @@ class Rules:
         for lvl, k in self.keys(cls, sig).items():
             self.t[lvl][cls][k][mid] += 1
         self.base[cls][mid] += 1
+        for d, n in enumerate(sig):
+            self.nb[mid][d][n] += 1
+
+    def pick_nb(self, cls, sig, min_count=None):
+        """argmax_t  log P(t | cls) + sum_d log P(neighbour_d | t)   (Laplace-smoothed).
+        Each neighbour votes independently, so known edge cues (e.g. water to the north ->
+        bank-shadow grass) carry over to neighbour combinations vanilla never used.
+        Candidates need enough examples for reliable likelihoods: 1% of the class, clamped to
+        [10, 60] (a brown-edged grass seen 20 times otherwise won in a 1-wide grass strip,
+        while legitimately rare pond corners need the lower bound)."""
+        import math
+        best, best_s = None, -1e18
+        total = sum(self.base[cls].values())
+        if min_count is None:
+            min_count = min(60, max(10, int(total * 0.01)))
+        for t, n_t in self.base[cls].items():
+            if n_t < min_count:
+                continue
+            s = math.log(n_t / total)
+            for d, nbr in enumerate(sig):
+                cnt = self.nb[t][d]
+                s += math.log((cnt[nbr] + 0.1) / (n_t + 0.1 * 12))
+            if s > best_s:
+                best, best_s = t, s
+        return best
 
     MIN_SUPPORT = 3   # a neighbourhood seen fewer times than this is a one-off design choice
 
@@ -174,7 +202,14 @@ class Rules:
 
     def pick(self, cls, sig):
         keys = self.keys(cls, sig)
-        for lvl in (8, 7, 4, 3):
+        c = self.t[8][cls].get(keys[8])
+        if c and sum(c.values()) >= self.MIN_SUPPORT:
+            return c.most_common(1)[0][0], 8
+        if self.fallback == "nb":
+            t = self.pick_nb(cls, sig)
+            if t is not None:
+                return t, 5
+        for lvl in (7, 4, 3):
             c = self.t[lvl][cls].get(keys[lvl])
             if c and (sum(c.values()) >= self.MIN_SUPPORT or lvl == 3):
                 return c.most_common(1)[0][0], lvl
@@ -207,6 +242,64 @@ def learn(p, vocab, entries, exclude=None):
                 if c != "F":
                     rules.add(c, signature(lab, x, y, w, h), b[y * w + x] & 0x3FF)
     return rules
+
+
+def coarse(c):
+    return "T" if c in TREE_Q else c
+
+
+def class_adjacency(p, vocab, entries):
+    """Counter of (class_a, class_b) for orthogonally adjacent cells in vanilla (trees merged)."""
+    adj = Counter()
+    for e in entries:
+        w, h = e["width"], e["height"]
+        lab = grid_labels(vocab, e, load_blocks(p, e), w, h)
+        for y in range(h):
+            for x in range(w):
+                a = coarse(lab[y][x])
+                if x + 1 < w:
+                    adj[(a, coarse(lab[y][x + 1]))] += 1
+                    adj[(coarse(lab[y][x + 1]), a)] += 1
+                if y + 1 < h:
+                    adj[(a, coarse(lab[y + 1][x]))] += 1
+                    adj[(coarse(lab[y + 1][x]), a)] += 1
+    return adj
+
+
+def forbidden_pairs(adj, min_count=30):
+    """Class pairs that vanilla (almost) never places side by side anywhere in the corpus
+    (e.g. tall grass touching water, path touching water, sand touching river water: vanilla
+    always leaves a grass margin or uses dedicated shoreline tiles)."""
+    classes = {"G", "TG", "P", "SA", "W", "S", "T"}
+    return {(a, b) for a in classes for b in classes if a != b and adj[(a, b)] < min_count}
+
+
+KEEP_PRIORITY = {"S": 6, "W": 6, "T": 5, "SA": 4, "P": 3, "TG": 2, "G": 0}
+
+
+def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4):
+    """Repair forbidden adjacencies by turning the lower-priority cell into grass.
+    Operates on sketch classes ('T' = forest). Returns Counter of repaired pairs."""
+    fixed = Counter()
+    for _ in range(max_passes):
+        changed = False
+        for y in range(h):
+            for x in range(w):
+                for dx, dy in ((1, 0), (0, 1)):
+                    nx, ny = x + dx, y + dy
+                    if nx >= w or ny >= h:
+                        continue
+                    a, b = cls_grid[y][x], cls_grid[ny][nx]
+                    if (a, b) in forbidden and a in KEEP_PRIORITY and b in KEEP_PRIORITY:
+                        if KEEP_PRIORITY[a] >= KEEP_PRIORITY[b]:
+                            cls_grid[ny][nx] = "G"
+                        else:
+                            cls_grid[y][x] = "G"
+                        fixed[f"{a}|{b}"] += 1
+                        changed = True
+        if not changed:
+            break
+    return fixed
 
 
 def autotile(rules, lab, w, h, keep=None):

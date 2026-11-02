@@ -136,14 +136,17 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
     return dropped
 
 
-def compile_sketch(project, corpus, rules, sketch, layout, vocab=None):
+def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden=None, fresh=False):
     """Sketch -> new block list for `layout` (same size). Returns (blocks, report dict).
-    With `vocab`, existing tree placement in the layout is preserved where the sketch keeps forest."""
+    vocab + not fresh: keep the layout's existing tree placement where the sketch keeps forest.
+    forbidden: class pairs to repair with a grass margin (terrain.enforce_grammar)."""
+    from .terrain import enforce_grammar
     w, h = sketch.w, sketch.h
     if (w, h) != (layout.width, layout.height):
         raise ValueError(f"sketch is {w}x{h} but layout is {layout.width}x{layout.height}")
     cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sketch.rows]
-    hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab else None
+    grammar = dict(enforce_grammar(cls, w, h, forbidden)) if forbidden else {}
+    hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
     dropped = assign_tree_quarters(cls, w, h, hint)
     keep = [[layout.mid(x, y) for x in range(w)] for y in range(h)]
     mids, levels = autotile(rules, cls, w, h, keep)
@@ -157,4 +160,4 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None):
             mid = mids[y][x]
             attrs = corpus.default_attrs(layout.entry, mid) or CLASS_ATTRS[c]
             blocks.append(pack(mid, *attrs))
-    return blocks, {"dropped_tree_cells": dropped, "rule_levels": dict(levels)}
+    return blocks, {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels)}
