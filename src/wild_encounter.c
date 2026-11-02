@@ -671,6 +671,11 @@ bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
     if (sWildEncountersDisabled == TRUE)
         return FALSE;
 
+    // Maritimes: no wild battles before the player has a Pokémon. Vanilla relies on story
+    // scripts to keep a party-less player out of grass; this makes that impossible to get wrong.
+    if (gPlayerPartyCount == 0)
+        return FALSE;
+
     headerId = GetCurrentMapWildMonHeaderId();
     if (headerId == HEADER_NONE)
     {
