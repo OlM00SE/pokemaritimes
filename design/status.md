@@ -4,7 +4,43 @@
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 4 done: Route 203 terraces, the first real route built with ledges** (branch `milestone4-route203-terraces`, merged into `develop`).
+**Milestone 5 done: natural riverbanks, lake shores and beaches** (branch `milestone5-shorelines`, merged into `develop`).
+
+Route 203's river used to be a straight four-row band with ruler-straight banks. Now:
+- **Width:** it varies from 3 to 6 tiles.
+- **Banks:** grass promontories with rounded tips and reeds push in from the north. The south bank swings out into a bay on the outside of the bend, and a small creek-mouth bay sits below the east trail.
+- **Beach:** the old sand flat is now a point-bar beach that the river bulges into.
+- **Rocks:** two rocks stand mid-stream.
+- **Scope:** the seams (rows 3–6 at both ends), the trail, the trees and the terraces are untouched. 181 cells changed, all within x 5–56, y 2–11.
+
+Before/after: `dev/out/Route203_1_river_compare.png` (regenerate with `mapgen build`; `dev/out` is gitignored).
+
+What was built (`dev/mapkit/shores.py`), using the ledge recipe: mine the pieces, resolve by shape, test against vanilla, a lab map, then an in-game test:
+- **Shape resolver.** `gTileset_General` draws shores with one structure in two materials, a grass bank and a beach (table in `mapping_reference.md` §10). The resolver picks each water, beach-sand and grass-bank tile from its neighbours' shape. It replaces the learned vote at the water's edge, which only knew straight banks: it drew coves and convex corners with plain edges and stubs.
+- **Sketch vocabulary.** `:` sand that touches `~` water becomes a beach, with the sand patch's grassy rim on its land side. `r` is a 2×2 rock in water. Shapes with no tiles are refused, naming the cells: one-tile channels, a bank turning into a beach at a corner, squeezed water, half rocks.
+- **Extraction.** `extract` keeps (`#`) any shore cell that a compile wouldn't reproduce, so extract → compile never changes a shore block. That covers special water and vanilla's odd joins.
+- **ShoreLab** (`design/maps/shorelab_design.py`): a dev-only 40×32 lakeside map with a river, a lake, an island, a cove, two kinds of beach and rocks. It uses every piece.
+- **Dev bridge `MOVE`** (debug builds only): teaches party slot 0 a move. `Emu.teach_move`, `Emu.start_surf()` and `Emu.surfing()` let tests use Surf through the real field-move prompt.
+
+Research first: no Gen 3 shoreline autotiler or free shore tileset turned up (Porymap has none; Porytiles compiles tilesets but doesn't place them). Vanilla's own General pieces cover banks, beaches and rocks, so no new art was needed for this step.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Vanilla agreement | 25,556/25,589 (99.9%) of vanilla's water/land meetings rebuilt from shape alone; all 265 beach-sand edges and 73 grass banks exact. |
+| Shapes | 17/17 sketch shapes build or are refused as expected. |
+| Round trip | Extract → compile leaves every shore block unchanged on ShoreLab, Route 203, Woodstock and 9 vanilla beach/river maps; ShoreLab and Route 203 do it from the shape tables alone (nothing kept). General round trip is at or above `develop` on every map (Woodstock 95.2→95.9%, Route 202 92.4→92.6%); ShoreLab, LedgeLab and Route 203 100%. |
+| Checker | 18 maps, 0 errors. Vanilla baseline: 0 unexpected. |
+| In-game shores | ShoreLab 276/276, Route 203 352/352: every land/water edge bumps on foot, comes ashore exactly where the model says, rocks block, and Surf works off sampled shores through the prompt. |
+| Renders and play | Previews and in-game shots reviewed at each iteration (three design passes on Route 203). Conformance 516/516 (ShoreLab added), ledges unchanged (470/470, tours 8/8), the playthrough, doors, encounters and all three autowalks pass. Reconstruction unchanged at 87.8%. |
+| Code review | `/code-review medium` raised 10 candidates; 8 fixed. Extraction could crash on a refused shape, its fixpoint loop could stop silently, and it compiled without the build's grammar. The round-trip test was circular; now our own maps must round-trip from the shape tables alone. A ledge directly below water is now refused. A commit mixed engine and tooling (split before merging). Two were not bugs: non-General layouts never have the water class, and a vertical bank/beach join on a straight stretch is the allowed seam. |
+
+Known limits:
+- Where a grass bank meets a beach on a straight shore, the join is a straight seam: there's no transition tile.
+- Banks still step in whole tiles, because General has no diagonal bank pieces. "Natural" comes from varied widths, frequent one-row steps, rounded corners, beaches and rocks.
+- Pond water (`o`, the brown-edged family) is still learned, not shape-resolved.
+
+**Milestone 4: Route 203 terraces, the first real route built with ledges** (branch `milestone4-route203-terraces`, merged).
 
 The design is in `design/maps/route203_design.py`:
 - **Levee terrace:** the riverside meadow is a natural levee, one step above the valley floor. Its scarp has a west flank over the trail's first climb, a south edge with one stair step, and an east flank over the second climb. You can hop down onto the valley trail anywhere along it; the trail's two climbs (x 16–17 and x 38–39) are the ways back up.
@@ -82,15 +118,15 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | No wild battles while the party is empty | `src/wild_encounter.c` (StandardWildEncounter) |
 | No fishing while the party is empty | `src/item_use.c` (CanFish) |
 | `ChooseStarterNoBattle` special: the starter bag without Birch's rescue battle | `src/battle_setup.c`, appended to `data/specials.inc` |
-| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0 | `src/field_control_avatar.c` |
+| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0, MOVE | `src/field_control_avatar.c` |
 | Own map sections, appended so no MAPSEC id moves | `src/data/region_map/region_map_sections.json` |
 
 ## Regression set (run before merging anything)
 ```
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 7 known
-dev/check_maps.py                     # 17 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/conformance.py              # 480/480 (seeded samples; the count moves when a map changes)
+dev/check_maps.py                     # 18 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
+dev/tests/conformance.py              # 516/516 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
@@ -98,18 +134,18 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route203_1_2
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route101_2 Route203_1 Fredericton_0
 dev/tests/ingame_ledges.py            # LedgeLab, Route 203 + 4 vanilla routes: 470/470 approaches, tours 8/8 groups
+dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
+dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 88-100%; only when mapgen/terrain code changes
 ```
 
 ## Next milestone (proposed, not started)
-1. **Shorelines and riverbanks (`11B–12D`)**, using the same recipe: mine the pieces → resolve by shape → test against vanilla → a lab map → in-game test.
-   - Route 203 shows why this comes next. The river meets the grass with a hard straight edge, and the sand flat has to sit a row back from the water.
-   - Riverbank pieces would let the levee meet the water naturally, and give us beaches.
-2. **Rocks and boulders:** small and self-contained. Good for breaking up open meadows like Route 203's upper terrace strip.
-3. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, and taller terraces than one ledge step.
-4. **NPC/sign scaffolding tool:** close the slice's people and sign gaps without hand-editing JSON. Route 203 now has natural spots for a hiker or a sign on the levee.
+1. **Breaking up open grass:** land rocks and boulders, flower and tuft accents (vanilla's decoration tiles are already identified in `terrain.Vocabulary.decorations`), and irregular forest edges. Tom's review named "large uniform grassy areas" and "rectangular forest groupings". Route 203's levee meadow and upper strip are the testbed.
+2. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, and terraces taller than one ledge step. Rocky shores (`17A–184`) fit here too.
+3. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers (separate, reviewable diffs); resolve pond shores by shape; a bank-to-beach transition tile (Porytiles) to soften the straight seam.
+4. **NPC/sign scaffolding tool:** close the slice's people and sign gaps without hand-editing JSON. Route 203 now has natural spots for a hiker, a fisher on the beach, or a sign.
 5. Later: Porytiles for Maritime tiles (log piles, covered bridge); a Maritimes Town Map.
 
 Ideas for the ledge design, not done:
@@ -127,4 +163,6 @@ Ideas for the ledge design, not done:
 - **Dev maps:** LedgeLab sits in `gMapGroup_DevMaritimes`. It ships in the ROM but nothing links to it. Its only warp is a spawn point (`MAP_DYNAMIC`, arrival-only), which gives the checker an entrance. `new_map.py` adds that spawn to every new map; delete it once the map has real connections.
 - **Editing an existing map with mapgen:** build without `--fresh` so the existing trees stay put. Read the diff report and `_preview_diff.png` before `--apply`. Move groves by an even number of tiles; an odd shift falls off the 2×2 tree grid and drops trees (`dropped_tree_cells`).
 - **Commit order:** a test that expects new map content goes in a commit *after* that content, so every commit passes the regression set.
+- **Shores:** draw water at least two tiles wide, and start beaches on straight stretches of shore, not at corners; the compiler names the cells otherwise. To look natural, change a bank by one row at a time and often. Sand next to water becomes a beach automatically. Tall grass, paths and trees still get a grass margin from water.
+- **Surf in tests:** warping onto water starts Surf by itself. To surf off a shore as a player would: `give_mon`, `teach_move("SURF")`, set `FLAG_BADGE05_GET`, face the water, then `start_surf()`.
 - **Commit messages from PowerShell:** `Out-File -Encoding utf8` writes a BOM into the subject line. Write message files with `[IO.File]::WriteAllText(path, text, (New-Object System.Text.UTF8Encoding($false)))`.
