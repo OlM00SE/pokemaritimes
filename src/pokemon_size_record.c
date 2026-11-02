@@ -4,10 +4,15 @@
 #include "pokedex.h"
 #include "pokemon.h"
 #include "pokemon_size_record.h"
+#include "pokemon_storage_system.h"
 #include "string_util.h"
 #include "text.h"
+#include "constants/party_menu.h"
+#include "constants/pokemon_size_record.h"
 
 #define DEFAULT_MAX_SIZE 0x8000 // was 0x8100 in Ruby/Sapphire
+#define DEFAULT_MAX_SIZE_MAGIKARP 0
+static u8* ReturnHeightStringNoWhitespace(u32 size);
 
 struct UnknownStruct
 {
@@ -36,28 +41,26 @@ static const struct UnknownStruct sBigMonSizeTable[] =
     { 1700,   1,   -26 },
 };
 
-// - 4 for unused gift ribbon bits in MON_DATA_UNUSED_RIBBONS
-static const u8 sGiftRibbonsMonDataIds[GIFT_RIBBONS_COUNT - 4] =
+enum
 {
-    MON_DATA_MARINE_RIBBON, MON_DATA_LAND_RIBBON, MON_DATA_SKY_RIBBON,
-    MON_DATA_COUNTRY_RIBBON, MON_DATA_NATIONAL_RIBBON, MON_DATA_EARTH_RIBBON,
-    MON_DATA_WORLD_RIBBON
+    POKEMON_NONE,
+    POKEMON_INCORRECT_SPECIES,
+    POKEMON_SIZE_SMALLER,
+    POKEMON_SIZE_LARGER
 };
 
 extern const u8 gText_DecimalPoint[];
 extern const u8 gText_Marco[];
 
-#define CM_PER_INCH 2.54
-
-static u32 GetMonSizeHash(struct Pokemon *pkmn)
+static u32 GetBoxMonSizeHash(struct BoxPokemon *pkmn)
 {
-    u16 personality = GetMonData(pkmn, MON_DATA_PERSONALITY);
-    u16 hpIV = GetMonData(pkmn, MON_DATA_HP_IV) & 0xF;
-    u16 attackIV = GetMonData(pkmn, MON_DATA_ATK_IV) & 0xF;
-    u16 defenseIV = GetMonData(pkmn, MON_DATA_DEF_IV) & 0xF;
-    u16 speedIV = GetMonData(pkmn, MON_DATA_SPEED_IV) & 0xF;
-    u16 spAtkIV = GetMonData(pkmn, MON_DATA_SPATK_IV) & 0xF;
-    u16 spDefIV = GetMonData(pkmn, MON_DATA_SPDEF_IV) & 0xF;
+    u16 personality = GetBoxMonData(pkmn, MON_DATA_PERSONALITY);
+    u16 hpIV = GetBoxMonData(pkmn, MON_DATA_HP_IV) & 0xF;
+    u16 attackIV = GetBoxMonData(pkmn, MON_DATA_ATK_IV) & 0xF;
+    u16 defenseIV = GetBoxMonData(pkmn, MON_DATA_DEF_IV) & 0xF;
+    u16 speedIV = GetBoxMonData(pkmn, MON_DATA_SPEED_IV) & 0xF;
+    u16 spAtkIV = GetBoxMonData(pkmn, MON_DATA_SPATK_IV) & 0xF;
+    u16 spDefIV = GetBoxMonData(pkmn, MON_DATA_SPDEF_IV) & 0xF;
     u32 hibyte = ((attackIV ^ defenseIV) * hpIV) ^ (personality & 0xFF);
     u32 lobyte = ((spAtkIV ^ spDefIV) * speedIV) ^ (personality >> 8);
 
@@ -76,7 +79,7 @@ static u8 TranslateBigMonSizeTableIndex(u16 a)
     return i;
 }
 
-static u32 GetMonSize(u16 species, u16 b)
+static u32 GetMonSize(enum Species species, u16 b)
 {
     u64 unk2;
     u64 unk4;
@@ -84,7 +87,7 @@ static u32 GetMonSize(u16 species, u16 b)
     u32 height;
     u32 var;
 
-    height = GetPokedexHeightWeight(SpeciesToNationalPokedexNum(species), 0);
+    height = GetSpeciesHeight(species);
     var = TranslateBigMonSizeTableIndex(b);
     unk0 = sBigMonSizeTable[var].unk0;
     unk2 = sBigMonSizeTable[var].unk2;
@@ -95,60 +98,71 @@ static u32 GetMonSize(u16 species, u16 b)
 
 static void FormatMonSizeRecord(u8 *string, u32 size)
 {
-#ifdef UNITS_IMPERIAL
-    //Convert size from centimeters to inches
-    size = (f64)(size * 10) / (CM_PER_INCH * 10);
-#endif
-
-    string = ConvertIntToDecimalStringN(string, size / 10, STR_CONV_MODE_LEFT_ALIGN, 8);
-    string = StringAppend(string, gText_DecimalPoint);
-    ConvertIntToDecimalStringN(string, size % 10, STR_CONV_MODE_LEFT_ALIGN, 1);
+    size = (f64)(size / 100);
+    StringCopy(string,ReturnHeightStringNoWhitespace(size));
 }
 
-static u8 CompareMonSize(u16 species, u16 *sizeRecord)
+static u8* ReturnHeightStringNoWhitespace(u32 size)
 {
-    if (gSpecialVar_Result == 0xFF)
+    u8* heightStr = ConvertMonHeightToString(size);
+    u32 length = StringLength(heightStr);
+    u32 i =  0, j =  0;
+
+    while (i < length && !(heightStr[i] >= CHAR_0 && heightStr[i] <= CHAR_9))
+        i++;
+
+    while (i < length)
+        heightStr[j++] = heightStr[i++];
+
+    heightStr[j] = EOS;
+    return heightStr;
+}
+
+static u8 CompareMonSize(enum Species species, u16 *sizeRecord)
+{
+    if (gSpecialVar_Result == PARTY_NOTHING_CHOSEN)
     {
-        return 0;
+        return POKEMON_NONE;
+    }
+
+    struct BoxPokemon *boxmon = GetSelectedBoxMonFromPcOrParty();
+    if (GetBoxMonData(boxmon, MON_DATA_IS_EGG) == TRUE || GetBoxMonData(boxmon, MON_DATA_SPECIES) != species)
+    {
+        return POKEMON_INCORRECT_SPECIES;
     }
     else
     {
-        struct Pokemon *pkmn = &gPlayerParty[gSpecialVar_Result];
+        u32 oldSize;
+        u32 newSize;
+        u16 sizeParams;
 
-        if (GetMonData(pkmn, MON_DATA_IS_EGG) == TRUE || GetMonData(pkmn, MON_DATA_SPECIES) != species)
+        *(&sizeParams) = GetBoxMonSizeHash(boxmon);
+        newSize = GetMonSize(species, sizeParams);
+        oldSize = GetMonSize(species, *sizeRecord);
+        FormatMonSizeRecord(gStringVar2, newSize);
+        if (newSize <= oldSize)
         {
-            return 1;
+            return POKEMON_SIZE_SMALLER;
         }
         else
         {
-            u32 oldSize;
-            u32 newSize;
-            u16 sizeParams;
-
-            *(&sizeParams) = GetMonSizeHash(pkmn);
-            newSize = GetMonSize(species, sizeParams);
-            oldSize = GetMonSize(species, *sizeRecord);
-            FormatMonSizeRecord(gStringVar2, newSize);
-            if (newSize <= oldSize)
-            {
-                return 2;
-            }
-            else
-            {
-                *sizeRecord = sizeParams;
-                return 3;
-            }
+            *sizeRecord = sizeParams;
+            return POKEMON_SIZE_LARGER;
         }
     }
 }
 
 // Stores species name in gStringVar1, trainer's name in gStringVar2, and size in gStringVar3
-static void GetMonSizeRecordInfo(u16 species, u16 *sizeRecord)
+static void GetMonSizeRecordInfo(enum Species species, u16 *sizeRecord)
 {
     u32 size = GetMonSize(species, *sizeRecord);
 
     FormatMonSizeRecord(gStringVar3, size);
-    StringCopy(gStringVar1, gSpeciesNames[species]);
+    StringCopy(gStringVar1, GetSpeciesName(species));
+
+    if (species == SPECIES_MAGIKARP)
+        return;
+
     if (*sizeRecord == DEFAULT_MAX_SIZE)
         StringCopy(gStringVar2, gText_Marco);
     else
@@ -193,28 +207,30 @@ void CompareLotadSize(void)
     gSpecialVar_Result = CompareMonSize(SPECIES_LOTAD, sizeRecord);
 }
 
-void GiveGiftRibbonToParty(u8 index, u8 ribbonId)
+void GetHeracrossSizeRecordInfo(void)
 {
-    s32 i;
-    bool32 gotRibbon = FALSE;
-    u8 data = 1;
-    u8 array[ARRAY_COUNT(sGiftRibbonsMonDataIds)];
-    memcpy(array, sGiftRibbonsMonDataIds, sizeof(sGiftRibbonsMonDataIds));
+    u16 *sizeRecord = GetVarPointer(VAR_HERACROSS_SIZE_RECORD);
 
-    if (index < GIFT_RIBBONS_COUNT && ribbonId <= MAX_GIFT_RIBBON)
-    {
-        gSaveBlock1Ptr->giftRibbons[index] = ribbonId;
-        for (i = 0; i < PARTY_SIZE; i++)
-        {
-            struct Pokemon *mon = &gPlayerParty[i];
+    GetMonSizeRecordInfo(SPECIES_HERACROSS, sizeRecord);
+}
 
-            if (GetMonData(mon, MON_DATA_SPECIES) != 0 && GetMonData(mon, MON_DATA_SANITY_IS_EGG) == 0)
-            {
-                SetMonData(mon, array[index], &data);
-                gotRibbon = TRUE;
-            }
-        }
-        if (gotRibbon)
-            FlagSet(FLAG_SYS_RIBBON_GET);
-    }
+void CompareHeracrossSize(void)
+{
+    u16 *sizeRecord = GetVarPointer(VAR_HERACROSS_SIZE_RECORD);
+
+    gSpecialVar_Result = CompareMonSize(SPECIES_HERACROSS, sizeRecord);
+}
+
+void GetMagikarpSizeRecordInfo(void)
+{
+    u16 *sizeRecord = GetVarPointer(VAR_MAGIKARP_SIZE_RECORD);
+
+    GetMonSizeRecordInfo(SPECIES_MAGIKARP, sizeRecord);
+}
+
+void CompareMagikarpSize(void)
+{
+    u16 *sizeRecord = GetVarPointer(VAR_MAGIKARP_SIZE_RECORD);
+
+    gSpecialVar_Result = CompareMonSize(SPECIES_MAGIKARP, sizeRecord);
 }

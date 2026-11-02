@@ -28,6 +28,7 @@ Route113_GlassWorkshop_EventScript_GlassWorker::
 	goto_if_eq VAR_GLASS_WORKSHOP_STATE, 1, Route113_GlassWorkshop_EventScript_ExplainSootSack
 	msgbox Route113_GlassWorkshop_Text_GoCollectAshWithThis, MSGBOX_DEFAULT
 	giveitem ITEM_SOOT_SACK
+	goto_if_eq VAR_RESULT, FALSE, Common_EventScript_ShowBagIsFull
 	setvar VAR_GLASS_WORKSHOP_STATE, 1
 	msgbox Route113_GlassWorkshop_Text_ExplainSootSack, MSGBOX_DEFAULT
 	release
@@ -57,7 +58,6 @@ Route113_GlassWorkshop_EventScript_ChooseGlassItem::
 	setvar VAR_0x8009, 0
 	setvar VAR_0x8004, SCROLL_MULTI_GLASS_WORKSHOP_VENDOR
 	special ShowScrollableMultichoice
-	waitstate
 	switch VAR_RESULT
 	case 0, Route113_GlassWorkshop_EventScript_BlueFlute
 	case 1, Route113_GlassWorkshop_EventScript_YellowFlute
