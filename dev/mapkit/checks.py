@@ -27,7 +27,39 @@ def _warp_kinds(p):
     return step_on, door, arrow, stair
 
 
-def check_map(p, name, wild_maps=None):
+def check_attributes(p, corpus, m, E, W):
+    """Design-intent check: collision that contradicts how vanilla confidently uses a metatile.
+    Walkable where vanilla is solid (walk through trees/rocks) is an ERROR; solid where vanilla
+    is walkable (invisible wall) is a WARN. Elevation-only differences are left to the
+    movement checks, which judge their actual effect."""
+    from .terrain import TREE, PRIMARY
+    L = m.layout
+    tree_ids = set().union(*TREE.values()) if L.primary == PRIMARY else set()
+    trees, walk_through, walls = [], [], []
+    for y in range(L.height):
+        for x in range(L.width):
+            want = corpus.default_attrs(L.entry, L.mid(x, y), min_count=20, min_share=0.9)
+            if not want:
+                continue
+            have = L.coll(x, y)
+            if want[0] and not have:
+                (trees if L.mid(x, y) in tree_ids else walk_through).append((x, y))
+            elif have and not want[0]:
+                walls.append((x, y))
+    # Vanilla never makes trees walkable; it does deliberately make some rocks/cave tiles
+    # walkable (hidden paths), so those are only a warning.
+    if trees:
+        E("attrs", f"{len(trees)} tree tiles are walkable (walk-through forest), e.g. {trees[:4]}; "
+                   "fix with dev/fix_attrs.py")
+    if walk_through:
+        W("attrs", f"{len(walk_through)} tiles are walkable where vanilla usually makes that metatile "
+                   f"solid (intended?), e.g. {walk_through[:4]}")
+    if walls:
+        W("attrs", f"{len(walls)} tiles are solid but vanilla makes that metatile walkable "
+                   f"(invisible walls?), e.g. {walls[:4]}")
+
+
+def check_map(p, name, wild_maps=None, corpus=None):
     issues = []
     E = lambda c, m: issues.append(("ERROR", c, m))
     W = lambda c, m: issues.append(("WARN", c, m))
@@ -45,6 +77,9 @@ def check_map(p, name, wild_maps=None):
         E("metatile", f"metatile ids not in tileset pair: {sorted(hex(i) for i in missing)[:8]}")
     if len(L.border) != 4:
         W("border", f"border has {len(L.border)} blocks (Emerald uses 2x2)")
+
+    if corpus is not None:
+        check_attributes(p, corpus, m, E, W)
 
     world = World(p, m)
     w, h = L.width, L.height

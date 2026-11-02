@@ -11,6 +11,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
 from mapkit.checks import check_map, wild_encounter_maps
+from mapkit.corpus import Corpus
 
 UPSTREAM = "expansion/1.17.2"
 
@@ -27,10 +28,11 @@ def baseline(p):
     from mapkit.baseline import KNOWN
     upstream = set(p.map_names) - set(maritimes_maps(p))
     unexpected, seen = [], set()
+    corpus = Corpus(p)
     for n in sorted(upstream):
         if n.endswith("_Frlg"):
             continue
-        for s, c, msg in check_map(p, n):
+        for s, c, msg in check_map(p, n, None, corpus):
             if s == "ERROR":
                 if (n, c) in KNOWN:
                     seen.add((n, c))
@@ -55,10 +57,11 @@ def main(argv):
     if "--all" in flags:   # FRLG maps are not built in Emerald mode
         names = [n for n in names if not n.endswith("_Frlg")]
     wild = wild_encounter_maps(p)
+    corpus = Corpus(p)
     totals, codes, failed = Counter(), Counter(), []
     for n in names:
         try:
-            issues = check_map(p, n, wild)
+            issues = check_map(p, n, wild, corpus)
         except Exception as ex:          # a crash on a map is itself a finding
             issues = [("ERROR", "crash", f"{type(ex).__name__}: {ex}")]
         sev = Counter(s for s, _, _ in issues)
