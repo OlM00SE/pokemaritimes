@@ -27,6 +27,14 @@ def config_flag(config_rel, define, repo=REPO):
     return int(f.group(1), 0) if f else 0
 
 
+def species_ids(repo=REPO, _cache={}):
+    """{'BIDOOF': 399, ...} from the SPECIES_* enum in include/constants/species.h (cached)."""
+    if not _cache:
+        src = open(os.path.join(repo, "include", "constants", "species.h"), encoding="utf-8").read()
+        _cache.update((k, int(v)) for k, v in re.findall(r"\bSPECIES_(\w+)\s*=\s*(\d+)", src))
+    return _cache
+
+
 def flag_id(name, repo=REPO, _cache={}):
     """Value of a flag constant, evaluating flags.h expressions like (SYSTEM_FLAGS + 0x0).
     Where a header defines a name twice under #if (Emerald vs FRLG), the Emerald one wins.
@@ -256,11 +264,9 @@ class Emu:
     def give_mon(self, species, level=5, timeout_frames=300):
         """Add a Pokémon to the player's party via the dev mailbox. species: 'BIDOOF' or an id."""
         if isinstance(species, str):
-            src = open(os.path.join(REPO, "include", "constants", "species.h"), encoding="utf-8").read()
-            m = re.search(rf"\bSPECIES_{species.upper()}\s*=\s*(\d+)", src)
-            if not m:
+            if species.upper() not in species_ids():
                 raise ValueError(f"unknown species {species}")
-            species = int(m.group(1))
+            species = species_ids()[species.upper()]
         base = self.sym["gDevBridge"]
         done = self.read32(base + 8)
         self.cmd(f"write16 {base + 12:x} {species}")

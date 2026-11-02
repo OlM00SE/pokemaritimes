@@ -33,12 +33,14 @@ def main(maps):
                     continue
                 inside = name_of(p, w["dest_map"])
                 label = f"{outdoor} door ({x},{y}) -> {inside}"
+                if not inside:
+                    fails.append(f"{label}: destination {w['dest_map']} is not a known map"); continue
                 e.warp(outdoor, x, y + 1)
                 e.press("UP", 16, 4)
                 e.wait_for_control()
                 where = e.map_name()
                 e.shot(os.path.join(OUT, f"door_{outdoor}_{x}_{y}.png"))
-                if where != json.load(open(p.path("data/maps", inside, "map.json"), encoding="utf-8"))["id"][4:]:
+                if where != p.load_map(inside).id[4:]:
                     fails.append(f"{label}: pressing UP left the player on {where}"); continue
                 # stairs/other step-on warps inside: step onto each from below, check, come back
                 for sw in p.load_map(inside).events("warp_events"):
@@ -50,12 +52,14 @@ def main(maps):
                     e.wait_for_control()
                     got = e.map_name()
                     e.shot(os.path.join(OUT, f"door_{up}.png"))
-                    want = json.load(open(p.path("data/maps", up, "map.json"), encoding="utf-8"))["id"][4:]
+                    want = p.load_map(up).id[4:]
                     print(f"  {inside} ({sw['x']},{sw['y']}) -> {got}", "ok" if got == want else "FAIL")
                     if got != want:
                         fails.append(f"{inside} warp at ({sw['x']},{sw['y']}) went to {got}, not {up}")
                 # walk back out through the exit mat
-                exit_w = next(sw for sw in p.load_map(inside).events("warp_events") if sw["dest_map"] == m.id)
+                exit_w = next((sw for sw in p.load_map(inside).events("warp_events") if sw["dest_map"] == m.id), None)
+                if exit_w is None:
+                    fails.append(f"{label}: {inside} has no warp back to {outdoor}"); continue
                 e.warp(inside, exit_w["x"], exit_w["y"] - 1)
                 e.press("DOWN", 16, 4)
                 e.press("DOWN", 16, 4)

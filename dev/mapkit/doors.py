@@ -26,6 +26,9 @@ def facade(L, x, y):
 def _upstream_maps(root):
     r = subprocess.run(["git", "-C", root, "ls-tree", "-d", "--name-only", f"{UPSTREAM}:data/maps"],
                        capture_output=True, text=True)
+    if r.returncode or not r.stdout.strip():
+        raise RuntimeError(f"cannot list vanilla maps from git ref {UPSTREAM} (fetch the expansion "
+                           f"remote's tags?): {r.stderr.strip()}")
     return frozenset(r.stdout.split())
 
 
@@ -65,7 +68,8 @@ def identify(p, m, x, y):
 
 
 def map_const(name):
-    """HomeTown_House2_1F -> MAP_HOME_TOWN_HOUSE2_1F (the naming Porymap uses)."""
+    """HomeTown_House2_1F -> MAP_HOME_TOWN_HOUSE2_1F. Follows vanilla's names (SSTidal -> SS_TIDAL);
+    Porymap may differ on runs of capitals, which is harmless because map.json stores the id."""
     s = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", name)       # "1F" and "House2" stay joined
     s = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", s)
     return "MAP_" + s.upper()

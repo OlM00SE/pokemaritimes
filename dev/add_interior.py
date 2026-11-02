@@ -50,9 +50,15 @@ def plan(p, outdoor, x, y, base, like=None):
     if any((w["x"], w["y"]) == (x, y) for w in m.events("warp_events")):
         sys.exit(f"the door at ({x},{y}) on {outdoor} already has a warp")
     if like:
+        if like not in p.map_names:
+            sys.exit(f"--like {like}: no such map")
         vint = like
-        vext = next((w["dest_map"] for w in load(p, like)["warp_events"]
-                     if load(p, p.const_to_map[w["dest_map"]]).get("map_type") != "MAP_TYPE_INDOOR"), None)
+        outs = [w["dest_map"] for w in load(p, like).get("warp_events") or []
+                if p.const_to_map.get(w["dest_map"])
+                and load(p, p.const_to_map[w["dest_map"]]).get("map_type") != "MAP_TYPE_INDOOR"]
+        if not outs:
+            sys.exit(f"--like {like}: none of its warps leads outdoors, so there is no exit to rewire")
+        vext = outs[0]
         why = f"--like {like}"
     else:
         hit = identify(p, m, x, y)
@@ -71,6 +77,16 @@ def plan(p, outdoor, x, y, base, like=None):
     for n in names.values():
         if n in p.map_names:
             sys.exit(f"map {n} already exists")
+        if map_const(n) in p.const_to_map:
+            sys.exit(f"{n} would get id {map_const(n)}, which {p.const_to_map[map_const(n)]} already uses")
+    # Every warp on a cloned floor must lead outside (rewired to this door) or to another
+    # cloned floor; anything else (a second exit, MAP_DYNAMIC) would still point into Hoenn.
+    vconsts = {load(p, v)["id"] for v in fl}
+    for v in fl:
+        for w in load(p, v).get("warp_events") or []:
+            if w["dest_map"] != vext and w["dest_map"] not in vconsts:
+                sys.exit(f"{v} has a warp at ({w['x']},{w['y']}) to {w['dest_map']}, which this tool "
+                         "cannot rewire (a second exit?); clone this building by hand in Porymap")
     return m, vint, vext, names, why
 
 

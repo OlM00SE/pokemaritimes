@@ -8,7 +8,7 @@ Exit code 1 if no battle starts or a species outside the table appears.
 """
 import collections, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from mgba_bridge import Emu, REPO, UNTHROTTLED
+from mgba_bridge import Emu, REPO, UNTHROTTLED, species_ids
 from playtest import prepare_rom
 from mapkit.project import Project, TILE_FLAG_HAS_ENCOUNTERS, TILE_FLAG_SURFABLE
 
@@ -40,20 +40,24 @@ def battle_mon_size(e):
     """sizeof(struct BattlePokemon) from the linker map: gBattleMons spans 4 battlers."""
     base = e.sym["gBattleMons"]
     nxt = min(a for a in e.sym.values() if a > base)
-    return (nxt - base) // 4
+    span = nxt - base
+    if span % 4 or not 64 <= span // 4 <= 256:
+        raise RuntimeError(f"gBattleMons spans {span} bytes; cannot infer sizeof(BattlePokemon)")
+    return span // 4
 
 
 def main(argv):
     name = argv[0]
     battles = int(argv[argv.index("--battles") + 1]) if "--battles" in argv else 12
     p = Project()
-    map_id = json.load(open(p.path("data/maps", name, "map.json"), encoding="utf-8"))["id"]
+    map_id = p.load_map(name).id
     table = land_table(p, map_id)
     if not table:
         print(f"{name} has no land encounter table"); return 1
-    species_src = open(p.path("include/constants/species.h"), encoding="utf-8").read()
-    ids = {int(v): k for k, v in re.findall(r"\bSPECIES_(\w+)\s*=\s*(\d+)", species_src)}
+    ids = {v: k for k, v in species_ids().items()}
     spot = grass_pair(p, name)
+    if spot is None:
+        print(f"{name}: no two side-by-side walkable grass tiles to pace on"); return 1
     seen, fails = collections.Counter(), []
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
