@@ -15,7 +15,7 @@ from mapkit.engine import World, DIR_NAME
 
 DEFAULT_MAPS = ["HomeTown_0", "Route201_1", "Woodstock_2", "Route202_1", "Fredericton_0",
                 "Route203_1", "Route102", "Route104", "Route110", "Route116", "Route117", "Route119",
-                "LedgeLab"]
+                "LedgeLab", "ShoreLab"]
 
 
 def samples_for(p, name, n, rng):
