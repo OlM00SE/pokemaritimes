@@ -27,7 +27,7 @@ TREE = {"TL": {0x1D4, 0x1D6}, "TR": {0x1D5, 0x1D7},
 PATH = {0x1D0, 0x1D1, 0x1D2, 0x1D8, 0x1D9, 0x1DA, 0x1E0, 0x1E1, 0x1E2}
 SAND = {0x118, 0x119, 0x11A, 0x120, 0x121, 0x122, 0x128, 0x129, 0x12A}
 CLASSES = ["G", "TG", "P", "SA", "W", "S", "TL", "TR", "BL", "BR"]   # learned (auto-tiled) classes
-KEPT = ("F", "LD")          # classes whose tiles are not chosen by the learned rules
+KEPT = ("F", "LD", "RK")    # classes whose tiles are not chosen by the learned rules (RK: water rock)
 NEIGH8 = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]   # N NE E SE S SW W NW
 NEIGH4_IDX = [0, 2, 4, 6]
 OUT = "X"   # outside the map
@@ -277,7 +277,11 @@ def forbidden_pairs(adj, min_count=30):
     (e.g. tall grass touching water, path touching water, sand touching river water: vanilla
     always leaves a grass margin or uses dedicated shoreline tiles)."""
     classes = {"G", "TG", "P", "SA", "W", "S", "T"}
-    return {(a, b) for a in classes for b in classes if a != b and adj[(a, b)] < min_count}
+    # sand touching river/sea water is a beach, built from vanilla's beach pieces (shores.py);
+    # vanilla's beach sand is a different family from the sand patch, so the counts miss it
+    allowed = {("SA", "S"), ("S", "SA")}
+    return {(a, b) for a in classes for b in classes
+            if a != b and adj[(a, b)] < min_count and (a, b) not in allowed}
 
 
 KEEP_PRIORITY = {"S": 6, "W": 6, "T": 5, "SA": 4, "P": 3, "TG": 2, "G": 0}
