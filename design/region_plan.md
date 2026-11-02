@@ -80,7 +80,7 @@ The existing maps already fit this arc:
 
 ## What the vision asks of the pipeline (priority order)
 1. **Completeness tooling** (done: `section_status.py`, the dead-door check, and the end-to-end `playthrough_slice1.py`). It keeps small areas honest.
-2. **Vocabulary for river-valley and forest maps:** ledges, rocks, shoreline/riverbank edges, bridges. These cover the whole early-game arc. *Ledges are proposed as the next milestone.*
+2. **Vocabulary for river-valley and forest maps:** ledges, rocks, shoreline/riverbank edges, bridges. These cover the whole early-game arc. *Ledges done (milestone 3: sketch characters `v < >`, trap-checked, tested in-game). Rocks or riverbanks next.*
 3. **Stamps for town pieces** (houses, PC, Mart) with their door warps placed automatically, so a new town never ships with dead doors. (Part done: `add_interior.py` fills a dead door with the matching vanilla interior; `name_area.py` gives an area its own name.)
 4. **Porytiles** for Maritime-specific tiles (log piles, covered bridge, red sand, lighthouses). Only once a map actually needs one.
 5. Later: cliff/elevation vocabulary for the coast; fog and tide mechanics.
