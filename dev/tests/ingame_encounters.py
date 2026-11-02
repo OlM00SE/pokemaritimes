@@ -93,12 +93,10 @@ def main(argv):
                 fails.append(f"battle {b}: gBattleMons[0] is {player_sp}, expected {PLAYER_MON} (bad offset?)"); break
             seen[wild] += 1
             print(f"battle {b + 1}: wild {wild} after {steps} steps")
-            # Run: action menu cursor starts on FIGHT; RUN is bottom-right.
-            for _ in range(600):
-                if e.in_overworld():
-                    break
-                e.press("RIGHT", 3, 3); e.press("DOWN", 3, 3); e.press("A", 3, 12); e.press("B", 3, 12)
-            e.wait_for_control()
+            # Run. flee_battle checks for the field before every press, so no stray direction
+            # walks the player off the grass (that made this test flaky); re-warp to be sure.
+            e.flee_battle()
+            e.warp(name, *spot)
             # clear battle mons so the next read waits for fresh data
             e.cmd(f"write16 {e.sym['gBattleMons'] + size:x} 0")
     bad = [s for s in seen if s not in table]
