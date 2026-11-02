@@ -97,6 +97,7 @@ enum BattleTransition GetWildBattleTransition(void);
 enum BattleTransition GetTrainerBattleTransition(void);
 enum BattleTransition GetSpecialBattleTransition(enum BattleTransitionGroup id);
 void ChooseStarter(void);
+void ChooseStarterNoBattle(void);
 void SetMapVarsToTrainerA(void);
 void SetMapVarsToTrainerB(void);
 void ConfigureTrainerBattle(struct ScriptContext *ctx);

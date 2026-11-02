@@ -638,3 +638,5 @@ gSpecials::
 	def_special UpdateTrainerCardPhotoIcons
 	def_special StickerManGetBragFlags
 	def_special CheckAddCoins
+	@ ---- PokéMaritimes ----
+	def_special ChooseStarterNoBattle, waitstate=1

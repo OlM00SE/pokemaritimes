@@ -1017,6 +1017,21 @@ static void CB2_GiveStarter(void)
     BattleTransition_Start(B_TRANSITION_BLUR);
 }
 
+// Maritimes: the same starter bag, but the chosen Pokémon is simply handed over and the
+// calling script continues (vanilla's ChooseStarter always starts Birch's rescue battle).
+static void CB2_GiveStarterNoBattle(void)
+{
+    *GetVarPointer(VAR_STARTER_MON) = gSpecialVar_Result;
+    ScriptGiveMon(GetStarterPokemon(gSpecialVar_Result), 5, ITEM_NONE);
+    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+}
+
+void ChooseStarterNoBattle(void)
+{
+    SetMainCallback2(CB2_ChooseStarter);
+    gMain.savedCallback = CB2_GiveStarterNoBattle;
+}
+
 static void CB2_StartFirstBattle(void)
 {
     UpdatePaletteFade();
