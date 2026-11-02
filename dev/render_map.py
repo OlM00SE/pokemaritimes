@@ -21,7 +21,8 @@ def parse_tileset_paths(proj):
     mt = open(os.path.join(proj, "src/data/tilesets/metatiles.h")).read()
     gc = open(os.path.join(proj, "src/graphics.c")).read()  # primary tilesets live here
     inc = {}
-    for sym, path in re.findall(r'(\w+)\[\]\s*=\s*INC\w+\("([^"]+)"\)', gfx + mt + gc):
+    # Matches INCBIN_U16("path") and expansion's INCGFX_U32("path", ".4bpp", ...)
+    for sym, path in re.findall(r'(\w+)\[\]\s*=\s*INC\w+\("([^"]+)"', gfx + mt + gc):
         inc[sym] = path
     out = {}
     for name, body in re.findall(r"const struct Tileset (\w+)\s*=\s*\{(.*?)\};", hdr, re.S):
@@ -159,6 +160,46 @@ def render_map(proj, map_name, grid, events, scale):
     return img
 
 
+def render_world(proj, start, shrink=2):
+    """Follow map connections outward from `start` and stitch every reachable map
+    into one image, with names and outlines. `shrink` divides the size (1 = full res)."""
+    by_const = {}
+    for d in os.listdir(os.path.join(proj, "data/maps")):
+        p = os.path.join(proj, "data/maps", d, "map.json")
+        if os.path.exists(p):
+            by_const[json.load(open(p))["id"]] = d
+    pos, size, queue = {start: (0, 0)}, {}, [start]
+    while queue:
+        name = queue.pop(0)
+        mj = json.load(open(os.path.join(proj, "data/maps", name, "map.json")))
+        lay = load_layout(proj, mj["layout"])
+        size[name] = (lay["width"], lay["height"])
+        for c in mj.get("connections") or []:
+            other = by_const.get(c["map"])
+            if not other or other in pos:
+                continue
+            ol = load_layout(proj, json.load(open(os.path.join(proj, "data/maps", other, "map.json")))["layout"])
+            ow, oh = ol["width"], ol["height"]
+            ax, ay = pos[name]; aw, ah = size[name]; o = c["offset"]
+            pos[other] = {"up": (ax + o, ay - oh), "down": (ax + o, ay + ah),
+                          "left": (ax - ow, ay + o), "right": (ax + aw, ay + o)}[c["direction"]]
+            queue.append(other)
+    minx = min(p[0] for p in pos.values()); miny = min(p[1] for p in pos.values())
+    maxx = max(pos[n][0] + size[n][0] for n in pos); maxy = max(pos[n][1] + size[n][1] for n in pos)
+    world = Image.new("RGB", ((maxx - minx) * 16 // shrink, (maxy - miny) * 16 // shrink), (24, 24, 32))
+    d = ImageDraw.Draw(world)
+    for name, (x, y) in pos.items():
+        img = render_map(proj, name, False, False, 1)
+        if shrink > 1:
+            img = img.resize((img.width // shrink, img.height // shrink), Image.LANCZOS)
+        px, py = (x - minx) * 16 // shrink, (y - miny) * 16 // shrink
+        world.paste(img, (px, py))
+        d.rectangle((px, py, px + img.width - 1, py + img.height - 1), outline=(255, 255, 255))
+        d.rectangle((px + 2, py + 2, px + 8 + 6 * len(name), py + 14), fill=(0, 0, 0))
+        d.text((px + 5, py + 3), name, fill=(255, 255, 0))
+    return world, pos
+
+
 def render_sheet(proj, primary, secondary, scale):
     r = Renderer(proj, primary, secondary)
     ids = list(range(len(r.pri.metatiles))) + [NUM_PRI_METATILES + i for i in range(len(r.sec.metatiles))]
@@ -184,8 +225,14 @@ if __name__ == "__main__":
     ap.add_argument("--grid", action="store_true")
     ap.add_argument("--events", action="store_true")
     ap.add_argument("--scale", type=int, default=1)
+    ap.add_argument("--world", action="store_true", help="stitch all maps connected to MAP")
+    ap.add_argument("--shrink", type=int, default=2, help="--world downscale factor")
     a = ap.parse_args()
-    if a.sheet:
+    if a.world:
+        img, pos = render_world(a.project, a.map, a.shrink)
+        out = a.out or f"world_{a.map}.png"
+        print(f"{len(pos)} maps:", ", ".join(pos))
+    elif a.sheet:
         img = render_sheet(a.project, *a.sheet, max(a.scale, 2))
         out = a.out or f"sheet_{a.sheet[1]}.png"
     else:
