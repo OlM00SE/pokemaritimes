@@ -10,6 +10,32 @@ def dump_json(path, obj):
         f.write("\n")
 
 
+def add_to_group(p, group, names):
+    """Append maps to a map group (created at the end of group_order if new), so no existing
+    map's group/number id moves."""
+    gpath = p.path("data/maps/map_groups.json")
+    groups = json.load(open(gpath, encoding="utf-8"))
+    if group not in groups:
+        groups["group_order"].append(group)
+        groups[group] = []
+    groups[group].extend(names)
+    dump_json(gpath, groups)
+
+
+def add_script_includes(p, names):
+    """Include each map's scripts.inc from data/event_scripts.s, at the end of the
+    PokéMaritimes block."""
+    spath = p.path("data/event_scripts.s")
+    lines = open(spath, encoding="utf-8").read().split("\n")
+    marker = next(i for i, l in enumerate(lines) if l.startswith("@ ---- Pok") and "Maritimes" in l)
+    end = marker + 1
+    while end < len(lines) and lines[end].strip().startswith(".include"):
+        end += 1
+    lines[end:end] = [f'\t.include "data/maps/{n}/scripts.inc"' for n in names]
+    with open(spath, "w", encoding="utf-8", newline="") as f:
+        f.write("\n".join(lines))
+
+
 def indoor_closure(p, starts):
     """Indoor maps reachable from `starts` through warps, never passing through a map that is
     not MAP_TYPE_INDOOR (so a town's houses, and their upper floors, but not the next town).

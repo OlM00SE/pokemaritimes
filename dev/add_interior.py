@@ -15,7 +15,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
 from mapkit.doors import door_tiles, identify, map_const
-from mapkit.mapjson import dump_json, indoor_closure
+from mapkit.mapjson import dump_json, indoor_closure, add_to_group, add_script_includes
 
 GROUP = "gMapGroup_IndoorMaritimes"
 STRIP_KEYS = ("shared_events_map", "shared_scripts_map")
@@ -113,24 +113,8 @@ def apply(p, m, x, y, vint, vext, names):
     ext["warp_events"] = ext_warps
     dump(p.path("data/maps", m.name, "map.json"), ext)
 
-    gpath = p.path("data/maps/map_groups.json")
-    groups = json.load(open(gpath, encoding="utf-8"))
-    if GROUP not in groups:
-        groups["group_order"].append(GROUP)
-        groups[GROUP] = []
-    groups[GROUP].extend(names.values())
-    dump(gpath, groups)
-
-    spath = p.path("data/event_scripts.s")
-    src = open(spath, encoding="utf-8").read()
-    lines = src.split("\n")
-    marker = next(i for i, l in enumerate(lines) if l.startswith("@ ---- Pok") and "Maritimes" in l)
-    end = marker + 1
-    while end < len(lines) and lines[end].strip().startswith(".include"):
-        end += 1
-    lines[end:end] = [f'\t.include "data/maps/{n}/scripts.inc"' for n in names.values()]
-    with open(spath, "w", encoding="utf-8", newline="") as f:
-        f.write("\n".join(lines))
+    add_to_group(p, GROUP, list(names.values()))
+    add_script_includes(p, list(names.values()))
 
 
 def main(argv):
