@@ -55,7 +55,12 @@ class World:
                     self.blocked[d].add(B.mb(name))
         self.unsupported = {B.behaviors[n] for n in B.behaviors if
                             n.startswith("MB_SIDEWAYS_STAIRS") or "ICE" in n or "CURRENT" in n
-                            or n.startswith("MB_ACRO_BIKE") or "ROTATING" in n or "MUDDY_SLOPE" in n}
+                            or "ROTATING" in n or "MUDDY_SLOPE" in n}
+        # field_player_avatar.c CheckAcroBikeCollision (sAcroBikeTrickMetatiles): entering these
+        # yields a special collision in every player state; only the Acro Bike acts on it, so on
+        # foot they are simply solid.
+        self.acro_only = B.behavior_set("BumpySlope", "IsolatedVerticalRail", "IsolatedHorizontalRail",
+                                        "VerticalRail", "HorizontalRail")
 
     def _fill(self, direction, offset, other, name):
         """Copy the neighbour's edge strip into the margin (fieldmap.c Fill*Connection)."""
@@ -154,6 +159,8 @@ class World:
                 e = self.elevation(nx, ny)
                 return (nx, ny, e, e, True), "surf_on"
             return None, "elevation"
+        if nb in self.acro_only:
+            return None, "acro_bike"
         if nb in self.unsupported:
             return None, "unsupported"
         return (nx, ny, *self._new_elev(elev, prev, gx, gy, nx, ny), surfing), "walk"

@@ -29,6 +29,10 @@ def samples_for(p, name, n, rng):
     out = []
     for s in rng.sample(starts, min(n, len(starts))):
         d = rng.choice("NSWE")
+        dx, dy = {"N": (0, -1), "S": (0, 1), "W": (-1, 0), "E": (1, 0)}[d]
+        tx, ty = w.to_map(s[0] + dx, s[1] + dy)
+        if (tx, ty) in warps:          # stepping into a door/warp starts a warp: tested elsewhere
+            continue
         ns, kind = w.step(s, d)
         if kind in ("surf_on", "unsupported"):     # Surf needs the field move; skip
             continue
