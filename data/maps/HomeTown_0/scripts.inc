@@ -26,18 +26,20 @@ HomeTown_EventScript_Researcher::
 # 25 "data/maps/HomeTown_0/scripts.pory"
 	closemessage
 # 26 "data/maps/HomeTown_0/scripts.pory"
-	special ChooseStarterNoBattle
+	fadescreen FADE_TO_BLACK
 # 27 "data/maps/HomeTown_0/scripts.pory"
-	setflag FLAG_SYS_POKEMON_GET
+	special ChooseStarterNoBattle
 # 28 "data/maps/HomeTown_0/scripts.pory"
-	setvar VAR_TEMP_1, 1
+	setflag FLAG_SYS_POKEMON_GET
 # 29 "data/maps/HomeTown_0/scripts.pory"
-	msgbox HomeTown_EventScript_Researcher_Text_2
+	setvar VAR_TEMP_1, 1
 # 30 "data/maps/HomeTown_0/scripts.pory"
-	giveitem ITEM_POKE_BALL, 5
+	msgbox HomeTown_EventScript_Researcher_Text_2
 # 31 "data/maps/HomeTown_0/scripts.pory"
-	msgbox HomeTown_EventScript_Researcher_Text_3
+	giveitem ITEM_POKE_BALL, 5
 # 32 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_EventScript_Researcher_Text_3
+# 33 "data/maps/HomeTown_0/scripts.pory"
 	release
 	end
 
@@ -52,28 +54,28 @@ HomeTown_EventScript_Researcher_2:
 
 
 HomeTown_EventScript_ExitWithoutPokemon::
-# 38 "data/maps/HomeTown_0/scripts.pory"
-	lockall
 # 39 "data/maps/HomeTown_0/scripts.pory"
-	applymovement LOCALID_HOMETOWN_RESEARCHER, Common_Movement_ExclamationMark
+	lockall
 # 40 "data/maps/HomeTown_0/scripts.pory"
-	waitmovement 0
+	applymovement LOCALID_HOMETOWN_RESEARCHER, Common_Movement_ExclamationMark
 # 41 "data/maps/HomeTown_0/scripts.pory"
-	msgbox HomeTown_EventScript_ExitWithoutPokemon_Text_0
-# 42 "data/maps/HomeTown_0/scripts.pory"
-	closemessage
-# 43 "data/maps/HomeTown_0/scripts.pory"
-	applymovement LOCALID_PLAYER, HomeTown_Movement_StepBack
-# 44 "data/maps/HomeTown_0/scripts.pory"
 	waitmovement 0
+# 42 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_EventScript_ExitWithoutPokemon_Text_0
+# 43 "data/maps/HomeTown_0/scripts.pory"
+	closemessage
+# 44 "data/maps/HomeTown_0/scripts.pory"
+	applymovement LOCALID_PLAYER, HomeTown_Movement_StepBack
 # 45 "data/maps/HomeTown_0/scripts.pory"
+	waitmovement 0
+# 46 "data/maps/HomeTown_0/scripts.pory"
 	releaseall
 	end
 
 
-# 49 "data/maps/HomeTown_0/scripts.pory"
-HomeTown_Movement_StepBack:
 # 50 "data/maps/HomeTown_0/scripts.pory"
+HomeTown_Movement_StepBack:
+# 51 "data/maps/HomeTown_0/scripts.pory"
 	walk_up
 	step_end
 
@@ -96,17 +98,17 @@ HomeTown_EventScript_Researcher_Text_1:
 	.string "Here, choose one of these!$"
 
 HomeTown_EventScript_Researcher_Text_2:
-# 29 "data/maps/HomeTown_0/scripts.pory"
+# 30 "data/maps/HomeTown_0/scripts.pory"
 	.string "Take these Poké Balls too, so you can\n"
 	.string "catch Pokémon of your own.$"
 
 HomeTown_EventScript_Researcher_Text_3:
-# 31 "data/maps/HomeTown_0/scripts.pory"
+# 32 "data/maps/HomeTown_0/scripts.pory"
 	.string "If your Pokémon get tired, come back\n"
 	.string "and see me. Good luck out there!$"
 
 HomeTown_EventScript_ExitWithoutPokemon_Text_0:
-# 41 "data/maps/HomeTown_0/scripts.pory"
+# 42 "data/maps/HomeTown_0/scripts.pory"
 	.string "Wait! Wild Pokémon live in the tall grass\n"
 	.string "on Route 201.\p"
 	.string "It isn't safe without a Pokémon of your\n"

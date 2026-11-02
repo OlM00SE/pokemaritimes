@@ -23,6 +23,7 @@ script HomeTown_EventScript_Researcher {
     }
     msgbox(format("Oh, hello! I'm a field researcher from the wildlife station in Woodstock.\pI'm surveying the Pokémon that live in these woods.\pHeading out on Route 201? Wild Pokémon hide in the tall grass, so you'll want a partner.\pHere, choose one of these!"))
     closemessage
+    fadescreen(FADE_TO_BLACK)
     special(ChooseStarterNoBattle)
     setflag(FLAG_SYS_POKEMON_GET)
     setvar(VAR_TEMP_1, 1)
