@@ -18,10 +18,12 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 ## Making or editing a map
 1. **Get a sketch.**
    - From an existing map: `dev/mapgen.py extract <Map>` writes `design/maps/<Map>.txt`.
-   - For a new design: write a design script like `design/maps/route203_design.py` or `ledgelab_design.py`. For a brand-new map, run `dev/new_map.py` first.
+   - For a new design: write a design script like `design/maps/route203_design.py` or `ledgelab_design.py`. For a brand-new map, run `dev/new_map.py` first. `route203_design.py` is the worked example of ledges on a real route (a levee terrace and a wooded bench).
 2. **Edit the sketch.** Each character is a terrain type: `.` grass, `,` tall grass, `=` path, `:` sand, `~` river/sea, `o` pond, `T` forest, `v` `<` `>` ledges (below), `#` keep the existing block.
 3. **Preview.** `dev/mapgen.py build design/maps/<Map>.txt [--fresh]` is a dry run. It runs the checker on the result in memory and writes `dev/out/<Map>_preview.png` and `_preview_overlay.png`.
+   - It also reports how many cells differ from the current `map.bin`, and where. `_preview_diff.png` shows before and after side by side, cropped to the change, with changed cells outlined. When you edit an existing map, check that the change stays where you meant it to.
    - Use `--fresh` for new designs. It ignores the old map's tree placement.
+   - Without `--fresh`, trees are kept on the existing 2×2 grid. A grove moved by an odd number of tiles loses trees (`dropped_tree_cells` in the report). Move groves by even amounts.
 4. **Apply.** `... --apply` writes `map.bin`, but only if the result has no *new* checker errors. Errors the map already had don't block a rebuild; `--force` overrides.
 5. **Build, then play-test.** Use `fastbuild.py`, then `autowalk.py`, `tests/conformance.py <Map>` and `shoot.py`. If the map has ledges, also run `tests/ingame_ledges.py <Map>`.
 
@@ -64,8 +66,8 @@ Ways out are connections and warp triggers. On a map whose only warp is a `new_m
 | `tests/conformance.py [Map...]` | The engine model predicts single steps exactly like the game. Result: 482/482 on 13 maps. |
 | `tests/reconstruction.py` | Leave-one-out regeneration of 238 vanilla maps reproduces 87.8% of terrain tiles exactly. |
 | `tests/roundtrip.py` | Extracting and recompiling our maps keeps 88–100% of metatiles identical. |
-| `tests/ledge_pieces.py` | No emulator, under a minute. It runs four checks:<br>• Every vanilla ledge outside 16 known cliff constructions is rebuilt piece for piece (66/66 groups).<br>• 25 sketch shapes build or are refused as expected.<br>• Extract→compile leaves every ledge block unchanged on 8 vanilla routes and LedgeLab.<br>• The checker catches a soft-lock in a sealed copy of LedgeLab. |
-| `tests/ingame_ledges.py [Map...]` | For every ledge tile, the test presses toward it from each free neighbour. The game must jump, or refuse to move, exactly as the model says, elevations included. On maps with a spawn point it also walks down the ledges and back. LedgeLab: 150/150. Vanilla Routes 102, 103, 116 and 123: 228/228. A warp that fails or lands elsewhere counts as a failure. |
+| `tests/ledge_pieces.py` | No emulator, under a minute. It runs four checks:<br>• Every vanilla ledge outside 16 known cliff constructions is rebuilt piece for piece (66/66 groups).<br>• 25 sketch shapes build or are refused as expected.<br>• Extract→compile leaves every ledge block unchanged on 8 vanilla routes, LedgeLab and Route 203.<br>• The checker catches a soft-lock in a sealed copy of LedgeLab. |
+| `tests/ingame_ledges.py [Map...]` | For every ledge tile, the test presses toward it from each free neighbour. The game must jump, or refuse to move, exactly as the model says, elevations included. On maps with a spawn point it also walks down the ledges and back. On maps without NPCs it runs a **terrace tour**: from the entrance (the spawn point, else the first connection's edge) it jumps down each ledge group and walks back on foot, and screenshots each landing (`dev/out/ledges_<Map>_tour<N>.png`). LedgeLab: 150/150, 6/6 groups. Route 203: 92/92, 2/2 groups. Vanilla Routes 102, 103, 116 and 123: 228/228 (they have NPCs, so no tour). A warp that fails or lands elsewhere counts as a failure. |
 | `check_maps.py --baseline` | The checker raises no false errors on vanilla. Known special cases are listed in `mapkit/baseline.py`. |
 | `tests/playthrough_slice1.py` | End-to-end, wild battles on: a new player is stopped at HomeTown's exit, gets a starter from the researcher, walks Route 201 to Woodstock fleeing battles, and returns to be healed. |
 | `tests/ingame_doors.py <Map>...` | Every door warp enters its interior (stairs followed), and walking out returns to the door. |
