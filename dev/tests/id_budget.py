@@ -10,16 +10,19 @@ Ids are global and never move (dev/events.py appends them), so their budget is c
     is used by exactly one event on any map (a shared flag makes one pickup hide the other) and
     lies in a saved, non-temporary, non-daily range (hidden items: at or above
     FLAG_HIDDEN_ITEMS_START);
-  - save block: the room left in SaveBlock1, for information (approximate: measured between
-    two symbols in pokeemerald.map). The build enforces the limit: STATIC_ASSERT in src/save.c.
+  - vars: how many saved vars are still unused (VAR_UNUSED_*), for information: story state
+    lives in vars, and there are only 256;
+  - save block: the room left in each save block, exact: include/save_layout.h records the
+    sizes (dev/save_layout.py measures them) and src/save.c asserts them at build time.
 Prints what's left of each budget. Exit code 1 on any failure.
 """
 import glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import REPO, flag_id
 
-SECTOR_DATA_SIZE, SAVEBLOCK1_SECTORS, SAVEBLOCK_MOVE_RANGE = 3968, 4, 128   # save.h, load_save.h
+SECTOR_DATA_SIZE, SAVEBLOCK1_SECTORS = 3968, 4   # include/save.h
 SAVE_ROOM_WARN = 64                    # bytes; below this, think before spending more
+VARS_WARN = 16                         # unused saved vars; below this, plan a var block or reclaim Hoenn's
 
 
 def read(rel):
@@ -123,20 +126,28 @@ def main():
             bad.append(f"{f} ({u[0][0]}) is below FLAG_HIDDEN_ITEMS_START")
     check(not bad, "item flags are defined, saved and permanent" + (f": {bad[:4]}" if bad else ""))
 
+    # ---- vars ----
+    lay = {k: int(n) for k, n in re.findall(r"^#define (SAVE_LAYOUT_\w+)\s+(\d+)\s*$",
+                                            read("include/save_layout.h"), re.M)}
+    print("vars:")
+    vars_h = read("include/constants/vars.h")
+    free_vars = re.findall(r"^#define (VAR_UNUSED_0x[0-9A-Fa-f]+)\s", vars_h, re.M)
+    print(f"  info: {len(free_vars)} of {lay['SAVE_LAYOUT_VARS_COUNT']} saved vars unused (VAR_UNUSED_*: rename "
+          "one for a map's story state; each extra var costs 2 save bytes)")
+    if len(free_vars) < VARS_WARN:
+        print(f"  WARN: under {VARS_WARN} unused vars left")
+
     # ---- save block ----
     print("save block:")
-    mp = read("pokeemerald.map")
-    m = re.search(r"^\s+0x([0-9a-f]+)\s+gSaveblock1\n\s+0x([0-9a-f]+)\s+\w+", mp, re.M)
-    if not m:
-        print("  info: couldn't measure SaveBlock1 from pokeemerald.map (the build's STATIC_ASSERT in "
-              "src/save.c still enforces the limit)")
-    else:
-        sb1 = int(m.group(2), 16) - int(m.group(1), 16) - SAVEBLOCK_MOVE_RANGE
-        room = SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS - sb1
-        print(f"  info: SaveBlock1 is about {sb1} bytes of {SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS}: about "
-              f"{room} bytes left (8 trainers or 8 flags cost 1 byte; enforced by src/save.c)")
-        if room < SAVE_ROOM_WARN:
-            print(f"  WARN: under {SAVE_ROOM_WARN} bytes left in SaveBlock1")
+    sb1 = lay["SAVE_LAYOUT_SAVEBLOCK1_SIZE"]
+    room = SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS - sb1
+    check(sb1 > 0 and lay["SAVE_LAYOUT_FLAGS_BYTES"] * 8 >= v("FLAGS_COUNT"),
+          f"include/save_layout.h is measured (version {lay['SAVE_LAYOUT_VERSION']}) and holds every saved flag")
+    print(f"  info: SaveBlock1 is {sb1} of {SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS} bytes: {room} left; SaveBlock2 "
+          f"{SECTOR_DATA_SIZE - lay['SAVE_LAYOUT_SAVEBLOCK2_SIZE']} left (8 trainers or 8 flags cost 1 byte, a var 2; "
+          "dev/save_layout.py re-measures)")
+    if room < SAVE_ROOM_WARN:
+        print(f"  WARN: under {SAVE_ROOM_WARN} bytes left in SaveBlock1")
     print("PASS" if not fails else f"FAIL ({len(fails)})")
     return 1 if fails else 0
 
