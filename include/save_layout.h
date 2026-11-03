@@ -17,14 +17,18 @@
 #define SAVE_LAYOUT_STAMP   (0x4D00 + SAVE_LAYOUT_VERSION)  // 'M' high byte: never 0 or 0xFFFF (erased flash)
 
 // ---- measured by dev/save_layout.py; don't edit by hand ----
-#define SAVE_LAYOUT_SAVEBLOCK1_SIZE   15660
-#define SAVE_LAYOUT_SAVEBLOCK2_SIZE   3884
-#define SAVE_LAYOUT_SAVEBLOCK3_SIZE   4
-#define SAVE_LAYOUT_STORAGE_SIZE      34144
-#define SAVE_LAYOUT_FLAGS_OFFSET      4720
-#define SAVE_LAYOUT_VARS_OFFSET       5116
-#define SAVE_LAYOUT_FLAGS_BYTES       396
-#define SAVE_LAYOUT_VARS_COUNT        256
+#define SAVE_LAYOUT_SAVEBLOCK1_SIZE       15660
+#define SAVE_LAYOUT_SAVEBLOCK2_SIZE       3884
+#define SAVE_LAYOUT_SAVEBLOCK3_SIZE       4
+#define SAVE_LAYOUT_STORAGE_SIZE          34144
+#define SAVE_LAYOUT_FLAGS_OFFSET          4720
+#define SAVE_LAYOUT_VARS_OFFSET           5116
+#define SAVE_LAYOUT_FLAGS_BYTES           396
+#define SAVE_LAYOUT_VARS_COUNT            256
+#define SAVE_LAYOUT_TRAINER_FLAGS_START   1280
+#define SAVE_LAYOUT_SYSTEM_FLAGS          2656
+#define SAVE_LAYOUT_DAILY_FLAGS_START     2848
+#define SAVE_LAYOUT_MARITIMES_FLAGS_START 2912
 // ---- end of measured numbers ----
 
 #endif // GUARD_SAVE_LAYOUT_H

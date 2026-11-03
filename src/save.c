@@ -97,6 +97,10 @@ STATIC_ASSERT(offsetof(struct SaveBlock1, flags) == SAVE_LAYOUT_FLAGS_OFFSET, Sa
 STATIC_ASSERT(offsetof(struct SaveBlock1, vars) == SAVE_LAYOUT_VARS_OFFSET, SaveLayoutChanged_VarsOffset_RunDevSaveLayoutPy);
 STATIC_ASSERT(NUM_FLAG_BYTES == SAVE_LAYOUT_FLAGS_BYTES, SaveLayoutChanged_FlagCount_RunDevSaveLayoutPy);
 STATIC_ASSERT(VARS_COUNT == SAVE_LAYOUT_VARS_COUNT, SaveLayoutChanged_VarCount_RunDevSaveLayoutPy);
+STATIC_ASSERT(TRAINER_FLAGS_START == SAVE_LAYOUT_TRAINER_FLAGS_START, SaveLayoutChanged_TrainerFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(SYSTEM_FLAGS == SAVE_LAYOUT_SYSTEM_FLAGS, SaveLayoutChanged_SystemFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(DAILY_FLAGS_START == SAVE_LAYOUT_DAILY_FLAGS_START, SaveLayoutChanged_DailyFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(MARITIMES_FLAGS_START == SAVE_LAYOUT_MARITIMES_FLAGS_START, SaveLayoutChanged_MaritimesFlags_RunDevSaveLayoutPy);
 
 COMMON_DATA u16 gLastWrittenSector = 0;
 COMMON_DATA u32 gLastSaveCounter = 0;
@@ -920,6 +924,10 @@ u8 LoadGameSave(u8 saveType)
         status = TryLoadSaveSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         // Maritimes: a save stamped with another layout version would load as garbage (shifted
         // flags and vars). Treat it as unusable, like an erased save; the main menu says why.
+        // Unlike vanilla's CORRUPT, gSaveCounter keeps the old slot's counter on purpose: the
+        // new game's first save then gets a higher counter than both stale slots and loads next
+        // time. (Zeroed, a stale slot would still win and the save would be refused again.) The
+        // stale party copied below is wiped by NewGameInitData, as for any NEW GAME.
         gSaveFileOutdated = FALSE;
         if ((status == SAVE_STATUS_OK || status == SAVE_STATUS_ERROR)
          && gSaveBlock2Ptr->saveLayoutVersion != SAVE_LAYOUT_STAMP)
