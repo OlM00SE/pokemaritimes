@@ -1,12 +1,70 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-03 (milestone 9). Read this first in a new session. Creative direction lives in
+> Updated 2026-11-03 (milestone 10). Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 10 done: the slice's towns come alive, and stale saves can't load as garbage** (branch `milestone10-slice-life`, merged into `develop`).
+
+**Save compatibility from now on:** every save is stamped with a layout version (`include/save_layout.h`, version 1). A save from another layout is refused with a message ("This save is from an older version of the game. Please start a new game.") and the menu offers NEW GAME only. Saves from milestone 9 and earlier carry no stamp, so they get that message too. Tom: start a new game once.
+
+**Save-flag capacity and compatibility: the assessment** (engine facts: `mapping_reference.md` §13):
+| Budget | Used | Left | Notes |
+|---|---|---|---|
+| Trainer ids | 856 of 1376 | 520 | One saved flag each. |
+| Maritimes flag block | 2 of 256 | 254 | Item balls, hidden items and gifts. A full region needs about 150–300 (vanilla Emerald has about 140 item balls, 100 hidden items and a few dozen gifts), so this lasts the next several areas. |
+| Saved vars | 233 of 256 | **23 unused** | **The real future squeeze.** Story state (a town's progress, a quest) lives in vars, and vanilla's Hoenn story holds most of them. |
+| SaveBlock1 | 15,660 of 15,872 bytes | 212 | 8 flags or trainers cost a byte, a var 2. |
+| SaveBlock2 / SaveBlock3 / PC | 3,884 / 4 / 34,144 | 84 / 1,620 / 1,568 | |
+
+- **What could corrupt saves silently, and what guards it now:**
+  - **A layout change** (a range raised, a field added, an expansion config that resizes a block): before, an old save loaded byte for byte into the new structs. Now the build fails until `dev/save_layout.py --update` re-measures and bumps the version, and the game refuses saves stamped with an older one.
+  - **A flag or trainer id that moves:** `events.py` only appends, and `id_budget.py` checks that ids are unique and contiguous and that every allocated flag belongs to one event. The guard also pins where each flag range starts.
+  - **Not covered:** reordering two SaveBlock fields of the same size (nothing in our workflow does that), and the Hall of Fame and Trainer Hill sectors (nothing changes their format).
+- **Strategy (recommended):**
+  - **Now (development):** breaking saves is fine, but only on purpose. Bump the version whenever the layout moves; the message tells testers why.
+  - **Before story work starts:** decide the var plan. Either reclaim Hoenn's vars and flags when the Hoenn maps are retired, or add a Maritimes var block once, generously (64 vars = 128 bytes of the 212). One planned break is better than several.
+  - **Before any public release:** freeze the layout, and from then on add a migration (read the old stamp, move fields) instead of refusing old saves.
+- **Tools:** `dev/save_layout.py` measures the layout exactly. It compiles a throwaway probe with the build's compiler, since the ELF has no debug info. `--update` rewrites `save_layout.h` and bumps the version. `id_budget.py` now reports exact room and the unused vars.
+
+**Life in the slice** (specs in `design/maps/*.events.toml`; text provisional; no terrain changed):
+| Map | Events |
+|---|---|
+| HomeTown | The player's mailbox, "{PLAYER}'s HOUSE". **Bug fixed:** it ran Littleroot's script, which told a girl player she lived in PROF. BIRCH'S HOUSE. Also the LEBLANC mailbox next door; the neighbour by her vegetable beds (fiddleheads by the brook); a sawmill hand on the worn patch by the small pond; a boy wandering beside the player's house, clear of the lane. |
+| HomeTown, the neighbours' kitchen | Her husband ("she'll talk your ear off about fiddleheads"). |
+| Woodstock Wildlife Station | The chief meets visitors; a field researcher just back from Route 201's cutblock; field notes on the desk and the scanner to read (`[[inspect]]`). The bookshelves keep vanilla's text. |
+| Woodstock, the house by the garden | A mother at the counter (ice-out on the river every spring); a grandfather at the table (the old log drives). |
+| Woodstock, the house by the station | A girl saving for a fishing rod (ties to the angler by the pond). |
+
+Crossings and route numbers are unchanged; the checker is clean. In-game messages: `dev/out/events_m10_sheet.png` (a contact sheet of the new ones) and `dev/out/events_<Map>_*.png`.
+
+**Tooling added:**
+- **`events.py` works on new interiors:** a room whose `scripts.inc` is still the empty stub gets a `scripts.pory` started on `--apply`.
+- **`[[inspect]]`:** text read from a solid tile with no sign post (a desk, a machine, a mailbox), wrapped like dialogue.
+- **`replaces = [...]`:** the spec takes over hand-placed placeholders. Each entry must match exactly one event (`name@x,y` picks one), and a person can't be removed while hand-placed people follow it.
+- **Spec text:** straight double quotes become “ ”. The charmap has none, and Poryscript's `format()` fails on an escaped one; that was a build break found here.
+- **`ingame_events.py`** with no arguments tests every map that has a spec.
+- **Model fix, found in-game:** a wander range of 0 means *no limit* on that axis (`IsCoordOutsideObjectEventMovementRange`), not "stays in its row". A boy given range 2×0 walked off his row. `wander_box` now spans the map on such an axis, except for one-axis movement types (vanilla's zeros). The spec refuses a 0.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| In-game events | 114/114 on seven maps: HomeTown 22, the kitchen 4, Route 201 21, Woodstock 41, the station 14, the houses 8 and 4. |
+| Save | `ingame_save.py` 19/19: flags survive save, reset and CONTINUE; the file carries the stamp; the same save rewritten with an old stamp is refused, the message shows (`dev/out/save_outdated_menu.png`), and the first menu item starts Birch's speech. |
+| Guard | Raising `MARITIMES_FLAGS_COUNT` by 16: `save_layout.py` exits 1 naming three changed numbers, and the build stops on `SaveLayoutChanged_*` asserts. Reverted. |
+| Budget | `id_budget.py` PASS: 520 trainer ids, 254 block flags, 23 unused vars, 212 SaveBlock1 bytes. |
+| Checker | Vanilla baseline: 0 unexpected (8 known), after the wander-range model change. Our 19 maps: 0 errors. |
+| Regression set | Conformance 532/532 (the new people occupy some sampled tiles), playthrough, doors, encounters (with and without a party), all four autowalks, ledges, shores 624/624, flora 435/435, piece tests PASS. |
+| Code review | `/code-review medium` raised 10 findings: 9 fixed, and 1 was deliberate behaviour (now commented). Fixed: a quote opening a new box came out closed; `replaces` could delete every event sharing a script or renumber later people; the guard missed moved flag ranges; the save test's "new game" check could pass on a hang; the probe could be deleted by a mirror reseed; copy-player movers lost their range box; the default test list ignored each spec's `map`; the header had three separate parsers. The deliberate one: a refused save keeps its slot counter, so the new game's first save out-counts the stale slots. |
+
+Known limits:
+- HomeTown's upstairs room (House2 2F) stays empty, and the player's own house is still vanilla's (Littleroot's 1F/2F, with Mom).
+- The dry run doesn't compile the generated Poryscript, so a text that Poryscript rejects fails at `fastbuild`. The quotes were one such case and are handled now.
+- All new text is provisional and unread by Tom in-game.
+
 **Milestone 9 done: Woodstock comes alive, and the trainer-id ceiling is gone** (branch `milestone9-woodstock`, merged into `develop`).
 
-**Save compatibility: saves from before this milestone don't load correctly.** Raising the trainer ceiling moved the system and daily flags, and the saved flag array grew, which shifts every SaveBlock1 field after it. The game loads such a save without complaint, but with wrong flags (no starter, lost badges) and shifted vars. Start a new game. Tests always start fresh.
+**Save compatibility (milestone 9): saves from before it didn't load correctly.** Raising the trainer ceiling moved the system and daily flags, and the saved flag array grew, which shifts every SaveBlock1 field after it. The game loads such a save without complaint, but with wrong flags (no starter, lost badges) and shifted vars. Start a new game. Tests always start fresh.
 
 **The trainer-id limitation, investigated and solved** (engine facts: `mapping_reference.md` §12, "Trainer ids and the flag layout"):
 - **The cause:** each trainer id `n` is also the saved flag `0x500 + n`. The trainer, system and daily flag ranges are chained, and `FLAGS_COUNT` sizes `SaveBlock1.flags[]`. Vanilla used 855 of 864 ids, and Route 201's Ross took one more, leaving 8.
@@ -364,8 +422,8 @@ The first slice, **HomeTown → Route 201 → Woodstock** (milestone 2), is a sm
 Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woodstock; starter received in HomeTown before Route 201. Names and story details stay provisional.
 
 ## Still missing in the slice (`dev/section_status.py HomeTown_0 Route201_1 Woodstock_2`)
-- HomeTown has only the researcher and its sign. Route 201 and Woodstock are populated. All text is provisional and hasn't been read by Tom in-game yet.
-- Woodstock's three interiors (two houses, the station) are empty placeholder rooms.
+- HomeTown, Route 201, Woodstock and Woodstock's three interiors are populated (milestone 10). All text is provisional and hasn't been read by Tom in-game yet.
+- HomeTown's upstairs room (House2 2F) is empty; the player's house is still vanilla Littleroot's.
 - Starters are still Treecko/Torchic/Mudkip (`GRASS/FIRE/WATER_STARTER` in `src/starter_choose.c`).
 - No Town Map squares for the new map sections (there's no Maritimes region map image yet).
 - The fishing guard (`CanFish`, empty party) is checked by the build only: no rod can be obtained in the slice.
@@ -381,14 +439,16 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | Trainer ceiling 864 → 1376; Maritimes flag block (256) after the daily flags; static asserts | `include/constants/opponents.h`, `flags.h`, `src/event_data.c` |
 | Trainer-slide table sized by `TRAINERS_COUNT` (not the ceiling) | `src/trainer_slide.c` |
 | Own map sections, appended so no MAPSEC id moves | `src/data/region_map/region_map_sections.json` |
+| Save layout stamp (SaveBlock2 0x16, was padding); stale saves refused with a message; build asserts the layout | `include/save_layout.h`, `include/global.h`, `src/save.c`, `src/main_menu.c` |
 
 ## Regression set (run before merging anything)
 ```
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 8 known
 dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 254 block flags, ~212 save bytes left)
-dev/tests/conformance.py              # 542/542 (seeded samples; the count moves when a map changes)
+dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 254 block flags, 23 unused vars, 212 save bytes)
+dev/save_layout.py                    # "matches include/save_layout.h" (after any save-related change)
+dev/tests/conformance.py              # 532/532 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
@@ -397,8 +457,8 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route101_2 Route203_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
 dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 10/10 groups
-dev/tests/ingame_events.py            # Route 201 21/21, Woodstock 41/41 (signs, people, gift, wanderer, item ball, trainer)
-dev/tests/ingame_save.py              # 16/16: flags at every range edge survive save, reset, CONTINUE
+dev/tests/ingame_events.py            # every spec'd map: 114/114 on seven maps (signs, inspect, people, gift, wanderers, item ball, trainer)
+dev/tests/ingame_save.py              # 19/19: flags survive save/reset/CONTINUE; a stale-stamped save is refused
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
@@ -409,18 +469,17 @@ dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no r
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
 dev/events.py build design/maps/Route201_1.events.toml   # after an events or map edit: 0 changed, 0 errors
 dev/events.py build design/maps/Woodstock_2.events.toml  # 0 changed, 0 errors, crossings 37/37
+dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown_0, HomeTown_House2_1F, Woodstock_Lab/House1/House2
 ```
 
 ## Next milestone (proposed, not started)
-1. **Finish the slice's life (recommended next):**
-   - HomeTown with the same tools: two or three villagers, maybe a mill worker. Tom hand-mapped it, so use `mapgen patch` for any sign post.
-   - Woodstock's interiors: a station scientist and a family in each house. `add_interior` made the rooms, and the spec tool works on any Poryscript map; check that the interiors are Poryscript first.
-   - Tom reads all the slice's text in-game and revises it. It's all provisional.
-2. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
-3. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
-4. **Shore follow-ups:** shores for Woodstock's and Fredericton's rivers (Woodstock only with Tom's okay: hand-mapped); pond shores by shape; a bank-to-beach transition tile.
-5. Later:
-   - Route 203's people (a hiker in the notch, a fisher on the beach) and a rematch-free double battle in the spec.
+1. **Tom plays the slice by hand (recommended next, needs Tom):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
+2. **Decide the var plan before any story work** (see the save assessment above): reclaim Hoenn's vars and flags when the Hoenn maps go, or add one generous Maritimes var block. Whichever, one planned layout bump with `save_layout.py --update`.
+3. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
+4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
+5. **Shore follow-ups:** shores for Woodstock's and Fredericton's rivers (Woodstock only with Tom's okay: hand-mapped); pond shores by shape; a bank-to-beach transition tile.
+6. Later:
+   - The player's own house as a Maritimes room (Mom's script is vanilla's), HomeTown's upstairs room, Route 203's people (a hiker in the notch, a fisher on the beach), a rematch-free double battle in the spec.
    - Porytiles for Maritime flora: spruce/fir for a boreal look, birch, log piles, a covered bridge.
    - A Maritimes Town Map.
    - Give `Route102_2` its own flags and trainers, or retire it (it shares Route 102's).
@@ -432,8 +491,11 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
-- **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously, then run `tests/ingame_save.py`. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
+- **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Saved vars are the scarcest budget (23 unused). Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
 - **Hand-painted maps:** add a sign post or a flower with `dev/mapgen.py patch <Map> s@x,y`, not a rebuild from an extract (Woodstock rebuilds at 95.8%).
+- **Wander ranges:** a 0 in `movement_range_x/y` means *no limit* on that axis, not "stay in the row". Use 1–4 (the spec refuses 0), or a one-axis type like `WANDER_LEFT_AND_RIGHT`.
+- **Spec text:** write straight quotes, they become “ ”. `{PLAYER}` works in any text. A text Poryscript rejects only fails at `fastbuild`, not in the dry run.
+- **Interiors:** `events.py` starts `scripts.pory` for a room with no scripts. People must not stand on chairs (walkable, but it looks wrong); use the `_events.png` preview.
 - **Wanderers in tests:** a wanderer may stand anywhere in its range, so tests keep other events' tiles out of it (`ingame_events.py` does). Find one in RAM by local id (= index + 1 in `object_events`) with `Emu.objects()`.
 - **Events:** place people, signs and hidden items with `dev/events.py` from the map's spec, not by editing `map.json`. To move a spec-owned event, edit the spec: a Porymap move is undone by the next `--apply`. A sign needs `s` in the sketch first. Read the dry run's route numbers: a trainer whose sight covers the road shows up as `can't avoid`.
 - **Object elevation:** in the game an object's elevation is its tile's (`ObjectEventUpdateElevation`), not the `elevation` in `map.json`, except on multi-level (15) tiles. Use `events.object_elevation`.
