@@ -198,6 +198,36 @@ def render_sheet(project, primary, secondary, start=0, count=None, cols=16, cell
     return img
 
 
+def render_context(project, name, margin=8, scale=1, layout=None, dim=0.45):
+    """The map plus a `margin`-tile strip of each directly connected neighbour, as the player
+    sees it walking across a seam. Neighbours are dimmed (`dim` = how much grey is blended in)
+    and the map's own outline is drawn, so seams can be judged at a glance.
+    layout: draw this layout for the map itself instead of the one on disk (e.g. a preview)."""
+    m = project.load_map(name)
+    lay = layout or m.layout
+    w, h = lay.width, lay.height
+    x0, y0, x1, y1 = -margin, -margin, w + margin, h + margin     # canvas, in the map's tiles
+    canvas = Image.new("RGB", ((x1 - x0) * 16, (y1 - y0) * 16), (24, 24, 32))
+    for c in m.connections:
+        other = project.const_to_map.get(c["map"])
+        if not other:
+            continue
+        ol = project.load_map(other).layout
+        o = c["offset"]
+        ox, oy = {"up": (o, -ol.height), "down": (o, h), "left": (-ol.width, o),
+                  "right": (w, o)}[c["direction"]]
+        img = render_layout(project, ol, 1)
+        if dim:
+            img = Image.blend(img, Image.new("RGB", img.size, (40, 40, 48)), dim)
+        canvas.paste(img, ((ox - x0) * 16, (oy - y0) * 16))
+    canvas.paste(render_layout(project, lay, 1), (-x0 * 16, -y0 * 16))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle((-x0 * 16 - 1, -y0 * 16 - 1, (w - x0) * 16, (h - y0) * 16), outline=(255, 255, 255))
+    if scale != 1:
+        canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
+    return canvas
+
+
 def render_world(project, start, shrink=2):
     """Stitch every map reachable through connections from `start`."""
     pos, size, queue = {start: (0, 0)}, {}, [start]

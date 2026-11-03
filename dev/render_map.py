@@ -4,6 +4,7 @@
   python dev/render_map.py <Map> --crop 10,80,30,95       # tiles x0,y0,x1,y1 (inclusive)
   python dev/render_map.py <Map> --events --grid          # legacy flags still work
   python dev/render_map.py <Map> --world [--shrink 2]     # stitch everything connected to <Map>
+  python dev/render_map.py <Map> --context [N]            # the map + N tiles of each neighbour (seams)
   python dev/render_map.py --sheet gTileset_General gTileset_Petalburg [--start 1C0 --count 64]
 A leading project-dir argument ('.') is accepted for backwards compatibility.
 """
@@ -20,6 +21,8 @@ ap.add_argument("--overlay", default="")
 ap.add_argument("--grid", action="store_true")
 ap.add_argument("--events", action="store_true")
 ap.add_argument("--world", action="store_true")
+ap.add_argument("--context", type=int, nargs="?", const=8, metavar="N",
+                help="the map plus an N-tile strip (default 8) of each connected neighbour, dimmed")
 ap.add_argument("--shrink", type=int, default=2)
 ap.add_argument("--sheet", nargs=2, metavar=("PRIMARY", "SECONDARY"))
 ap.add_argument("--start", default="0")
@@ -32,6 +35,9 @@ overlays = set(filter(None, a.overlay.split(","))) | ({"grid"} if a.grid else se
 if a.sheet:
     img = render.render_sheet(p, *a.sheet, start=int(a.start, 16), count=a.count)
     out = a.out or f"sheet_{a.sheet[1]}.png"
+elif a.context is not None:
+    img = render.render_context(p, args[0], a.context, a.scale)
+    out = a.out or f"{args[0]}_context.png"
 elif a.world:
     img, pos = render.render_world(p, args[0], a.shrink)
     out = a.out or f"world_{args[0]}.png"

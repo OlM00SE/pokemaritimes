@@ -111,7 +111,7 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
         follows the edge to the tile, and neighbouring bands come out staggered (vanilla's
         offset edge trees). A tile an odd run leaves over goes to an open end (a nook), never
         to a closed one, where it would be an unreachable pocket;
-      * a run enclosed by forest, the map edge or the area's edge stays on the grid
+      * a run enclosed by forest, a kept '#' block, the map edge or the area's edge stays on the grid
         (x % 2 == parity[0]), so a replanted canopy meets the trees around it seamlessly. An
         even run off the grid fits flush; an odd one must leave a tile against forest, which
         mapgen's reach check reports if it ends up cut off.
@@ -132,10 +132,12 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
     band_in = lambda x, y: can(x, y) and can(x, y + 1) and ((x, y) in mask or (x, y + 1) in mask)
 
     def closed(x, y):
-        """Beyond a run's end: forest that stays (outside the area) or the map edge."""
+        """Beyond a run's end: forest that stays (outside the area), a kept '#' block (it may be
+        solid: a cliff, a building), or the map edge. A leftover tile never goes there."""
         if not inmap(x, y) or not inmap(x, y + 1):
             return True
-        return any((cx, cy) not in area and sk.rows[cy][cx] in "Ty" for cx, cy in ((x, y), (x, y + 1)))
+        return any(sk.rows[cy][cx] == "#" or ((cx, cy) not in area and sk.rows[cy][cx] in "Ty")
+                   for cx, cy in ((x, y), (x, y + 1)))
 
     # close one-tile gaps (per band) between two runs, or between a run and the map edge or
     # forest that stays: such a gap could never hold a tree, and would leave a notch or a pocket
@@ -370,25 +372,30 @@ def metrics(layout, area=None):
     x0, y0, x1, y1 = area or (0, 0, w - 1, h - 1)
     tree = lambda x, y: layout.mid(x, y) in trees
     opn = lambda x, y: 0 <= x < w and 0 <= y < h and layout.coll(x, y) == 0 and not tree(x, y)
-    best = 0
+    best, best_at = 0, None
     for side, (dx, dy) in (("N", (0, -1)), ("S", (0, 1)), ("W", (-1, 0)), ("E", (1, 0))):
         if dy:          # horizontal runs
             for y in range(y0, y1 + 1):
                 run = 0
                 for x in range(x0, x1 + 1):
                     run = run + 1 if tree(x, y) and opn(x, y + dy) else 0
-                    best = max(best, run)
+                    if run > best:
+                        best, best_at = run, (x - run + 1, y, x, y)
         else:
             for x in range(x0, x1 + 1):
                 run = 0
                 for y in range(y0, y1 + 1):
                     run = run + 1 if tree(x, y) and opn(x + dx, y) else 0
-                    best = max(best, run)
-    sq, size = {}, 0
+                    if run > best:
+                        best, best_at = run, (x, y - run + 1, x, y)
+    sq, size, size_at = {}, 0, None
     for y in range(y0, y1 + 1):
         for x in range(x0, x1 + 1):
             if layout.mid(x, y) == 0x001:
                 s = 1 + min(sq.get((x - 1, y), 0), sq.get((x, y - 1), 0), sq.get((x - 1, y - 1), 0))
                 sq[(x, y)] = s
-                size = max(size, s)
-    return {"straight_edge": best, "open_square": size}
+                if s > size:
+                    size, size_at = s, (x - s + 1, y - s + 1, x, y)
+    # *_at: (x0, y0, x1, y1) of the longest edge / largest square, to find it on the map
+    return {"straight_edge": best, "open_square": size, "straight_edge_at": best_at,
+            "open_square_at": size_at}

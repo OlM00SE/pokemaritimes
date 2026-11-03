@@ -162,7 +162,28 @@ def planting(n=300):
             if bad <= 3:
                 print(f"  FAIL mask {i}: dropped {dropped}, sapling errors {errs[:2]}, on keep_clear {on_keep[:3]}")
     print(f"  {n - bad}/{n} random plantings tile back exactly with valid saplings")
-    return bad == 0
+    return bad == 0 and against_kept()
+
+
+def against_kept():
+    """An odd run of forest that meets a kept '#' block (a hand-painted cliff, say) must leave
+    its spare tile at the open end, not against the block, where it could be a cut-off pocket
+    (Route 201's cliff corner had one before plant() treated '#' as closed)."""
+    bad = []
+    for odd_w in (7, 9, 11):
+        for side in ("E", "W"):
+            sk = Sketch("t", ["." * 24 for _ in range(8)])
+            kx = 3 + odd_w if side == "E" else 2      # the kept column, at the run's east or west end
+            for y in range(8):
+                sk.set(kx, y, "#")
+            run = ls.rect(3, 2, 2 + odd_w, 3)
+            ls.plant(sk, run, ls.rect(0, 0, 23, 7))
+            beside = kx - 1 if side == "E" else kx + 1
+            if sk.rows[2][beside] != "T" or sk.rows[3][beside] != "T":
+                bad.append((odd_w, side))
+    print(f"  {6 - len(bad)}/6 odd runs against a kept block leave their spare tile at the open end"
+          + (f"; FAIL {bad}" if bad else ""))
+    return not bad
 
 
 def main(argv):
