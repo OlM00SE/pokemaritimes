@@ -67,6 +67,11 @@ def hidden_by_flag(o):
     return str(o.get("flag", "0")) not in ("0", "", "None")
 
 
+def is_item_ball(o):
+    """An item ball: picked up once (its flag then hides it), so it isn't a permanent blocker."""
+    return o.get("script") == "Common_EventScript_FindItem"
+
+
 def is_trainer(o):
     return o.get("trainer_type", "TRAINER_TYPE_NONE") in TRAINER_TYPES
 
@@ -221,6 +226,27 @@ def analyse(p, m, starts, surf_starts=None, reach_free=None):
     return out
 
 
+def wanderer_seals(p, m, starts, exits, a):
+    """[(exit label, object index, tile)]: exits a wanderer cuts off while it stands on that tile
+    of its range (the other permanent people at home). Exits already cut off by the people at
+    home are the sealing check's; tiles the wanderer can't stand on are skipped."""
+    out = []
+    L = m.layout
+    reached = [(lbl, pred) for lbl, pred in exits if any(pred(s) for s in a["reach"])]
+    for i, o in enumerate(m.events("object_events")):
+        if not moves(o) or hidden_by_flag(o) or not reached:
+            continue
+        home = (o["x"], o["y"])
+        others = {xy: e for xy, e in a["blockers"].items() if xy != home}
+        for t in sorted(wander_box(o) - {home}):
+            if not L.inb(*t) or L.coll(*t) != 0:
+                continue
+            w = World(p, m, {**others, t: object_elevation(m, o, t)})
+            r = w.explore([s for s in starts if (s[0], s[1]) not in w.obstacles])
+            out += [(lbl, i, t) for lbl, pred in reached if not any(pred(s) for s in r)]
+    return out
+
+
 def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None, reach_free=None):
     """Checker findings for people, signs and hidden items (see check_map).
     starts: foot entrance states; surf_starts: every entrance state (Surf); exits: [(label,
@@ -245,11 +271,19 @@ def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None, 
     sealed = sorted(free_tiles - tiles - set(a["blockers"]))
     if sealed:
         W("people", f"{len(sealed)} tiles can only be reached by walking through people, e.g. {sealed[:6]}")
+    # a wanderer may stop anywhere in its range and stand there a while. A WARN, not an ERROR: it
+    # moves on (vanilla's house wanderers step in front of door mats: Fortree, Route 119...)
+    seals = wanderer_seals(p, m, starts, exits, a)
+    for i in sorted({i for _, i, _ in seals}):
+        mine = [(lbl, t) for lbl, j, t in seals if j == i]
+        W("people", f"{label('object_events', i, objs[i])} can wander onto {mine[0][1]} and cut off "
+                    f"{mine[0][0]} until it moves on ({len(mine)} tile/exit pair{'s' if len(mine) > 1 else ''})")
     for i, o in enumerate(objs):
         name = label("object_events", i, o)
         if not L.inb(o["x"], o["y"]):
             continue
-        if o.get("script") not in NO_SCRIPT and not hidden_by_flag(o) and unreached(("object_events", i)):
+        if o.get("script") not in NO_SCRIPT and (not hidden_by_flag(o) or is_item_ball(o)) \
+                and unreached(("object_events", i)):
             where = "stands on a solid tile and " if L.coll(o["x"], o["y"]) else ""
             W("people", f"{name} at ({o['x']},{o['y']}) {where}can't be talked to from anywhere a "
                         "walker reaches")
