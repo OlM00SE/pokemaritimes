@@ -432,7 +432,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if fpieces:
         report["flora"] = {"flowers": sum(m == flora.FLOWER for m in fpieces.values()),
                            "boulders": sum(m == flora.BOULDER for m in fpieces.values()),
-                           "saplings": sum(m == flora.TRUNK for m in fpieces.values())}
+                           "saplings": sum(m == flora.TRUNK for m in fpieces.values()),
+                           **({"signs": n} if (n := sum(m == flora.SIGN for m in fpieces.values())) else {})}
     if ledge_warnings:
         report["ledge_warnings"] = [f"({x},{y}) {m}" for x, y, m in ledge_warnings]
     return blocks, report

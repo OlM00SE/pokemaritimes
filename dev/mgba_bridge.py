@@ -309,6 +309,39 @@ class Emu:
             self.press(key, 3, gap)
         self.wait_for_control()
 
+    def win_battle(self, max_presses=900):
+        """Fight a battle the party can win by using its first move every turn: A picks FIGHT and
+        the move and advances text; the B in each round declines 'switch Pokémon?' (it leaves the
+        party menu) and is harmless elsewhere. Returns once the overworld is back with control."""
+        seq = ("A", "A", "B")
+        for i in range(max_presses):
+            if self.in_overworld():
+                break
+            self.press(seq[i % len(seq)], 3, 12)
+        else:
+            raise RuntimeError("the battle never ended")
+        self.wait_for_control()
+
+    def facing(self):
+        """The player's facing direction: 'S', 'N', 'W' or 'E' (ObjectEvent.facingDirection)."""
+        oid = self.read8(self.sym["gPlayerAvatar"] + 5)
+        return {1: "S", 2: "N", 3: "W", 4: "E"}.get(
+            self.read8(self.sym["gObjectEvents"] + oid * self.OBJECT_EVENT_SIZE + 0x18) & 0xF)
+
+    def object_at(self, x, y):
+        """True if an active object event (not the player) stands on map tile (x, y)."""
+        me = self.read8(self.sym["gPlayerAvatar"] + 5)
+        for i in range(16):                          # OBJECT_EVENTS_COUNT
+            base = self.sym["gObjectEvents"] + i * self.OBJECT_EVENT_SIZE
+            if i == me or not self.read8(base) & 1:   # active: bit 0 of the first flags byte
+                continue
+            raw = self.readrange(base + 0x10, 4)
+            ox = int.from_bytes(raw[0:2], "little", signed=True) - self.MAP_OFFSET
+            oy = int.from_bytes(raw[2:4], "little", signed=True) - self.MAP_OFFSET
+            if (ox, oy) == (x, y):
+                return True
+        return False
+
     def in_battle(self):
         return self.callback2() in (self.sym["BattleMainCB2"], self.sym["CB2_InitBattle"])
 
@@ -378,12 +411,15 @@ class Emu:
             self.press("A", 3, 20)
         return False
 
-    def test_mode(self):
+    def test_mode(self, trainer_sight=False):
         """Movement-only testing: no wild encounters or trainer sight (expansion config flags),
         and story gates open (FLAG_SYS_POKEMON_GET: e.g. HomeTown's 'get a Pokémon first' exit).
-        Call it before entering the map whose gate should be open (gates are armed on load)."""
-        for cfg, name in (("include/config/wild_encounter.h", "WE_FLAG_NO_ENCOUNTER"),
-                          ("include/config/overworld.h", "OW_FLAG_NO_TRAINER_SEE")):
+        Call it before entering the map whose gate should be open (gates are armed on load).
+        trainer_sight=True leaves trainers able to see the player (event tests)."""
+        cfgs = [("include/config/wild_encounter.h", "WE_FLAG_NO_ENCOUNTER")]
+        if not trainer_sight:
+            cfgs.append(("include/config/overworld.h", "OW_FLAG_NO_TRAINER_SEE"))
+        for cfg, name in cfgs:
             flag = config_flag(cfg, name)
             if flag:
                 self.set_flag(flag)
