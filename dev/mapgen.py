@@ -10,14 +10,18 @@
       already had don't block a rebuild); --force overrides.
       A sketch whose ledges can't be built (bad shape, or a jump landing on a tree, water, a
       solid tile, or off the map) is refused with the cells to fix.
+  python dev/mapgen.py patch <Map> s@9,16 [*@4,20 ...] [--apply]
+      A few pieces on a hand-painted map, nothing else touched: the same build on a sketch that
+      keeps every cell (`#`) except the pieces named, CH@x,y with a sketch character (s sign
+      post, * flowers, b boulder...). The diff report should show exactly those cells.
 """
-import argparse, os, sys
+import argparse, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit.terrain import (Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs,
                             grid_labels, TREE_Q)
-from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
+from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, CHAR_TO_CLASS
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
 from mapkit import landscape, routes
@@ -60,10 +64,29 @@ def terrain_guard(vocab, layout, repaired):
             "trees), or give the road a grass verge")
 
 
+def patch_sketch(p, name, pieces):
+    """An all-`#` sketch of map `name` with the pieces ['s@9,16', ...] drawn in. ValueError names
+    a bad piece."""
+    L = p.load_map(name).layout
+    rows = [["#"] * L.width for _ in range(L.height)]
+    if not pieces:
+        raise ValueError("patch needs at least one piece, e.g. s@9,16")
+    for spec in pieces:
+        m = re.fullmatch(r"(.)@(\d+),(\d+)", spec)
+        if not m or m.group(1) not in CHAR_TO_CLASS or m.group(1) == "#":
+            raise ValueError(f"{spec!r}: a piece is CH@x,y with a sketch character other than '#'")
+        x, y = int(m.group(2)), int(m.group(3))
+        if not L.inb(x, y):
+            raise ValueError(f"{spec!r}: outside the map ({L.width}x{L.height})")
+        rows[y][x] = m.group(1)
+    return Sketch(name, ["".join(r) for r in rows], [f"// patch: {' '.join(pieces)}"])
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["extract", "build"])
-    ap.add_argument("target")
+    ap.add_argument("cmd", choices=["extract", "build", "patch"])
+    ap.add_argument("target", help="a map (extract, patch) or a sketch file (build)")
+    ap.add_argument("pieces", nargs="*", help="patch: pieces as CH@x,y, e.g. s@9,16")
     ap.add_argument("-o", "--out")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--fresh", action="store_true",
@@ -85,7 +108,16 @@ def main():
         print(f"wrote {out} ({sk.w}x{sk.h})")
         return 0
 
-    sk = Sketch.load(a.target)
+    if a.cmd == "patch":
+        try:
+            sk = patch_sketch(p, a.target, a.pieces)
+        except ValueError as ex:
+            print(f"NOT BUILT: {ex}")
+            return 1
+    else:
+        if a.pieces:
+            ap.error("pieces are only for patch")
+        sk = Sketch.load(a.target)
     m = p.load_map(sk.map_name)
     entries = vanilla_maps(corpus)
     rules = learn(p, vocab, entries)
