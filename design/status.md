@@ -1,9 +1,90 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-03. Read this first in a new session. Creative direction lives in
+> Updated 2026-11-03 (milestone 8). Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 8 done: people, signs and hidden items, first used on Route 201** (branch `milestone8-events`, merged into `develop`).
+
+**What existed before:** the events overlay drew letters for events; the checker checked that events were in bounds and their scripts existed; `section_status` counted people and signs. Nothing placed events, and the engine model ignored objects entirely. A person could have sealed the road and every check would still pass. There was no sight model, no check that anything could be talked to, and no in-game test.
+
+**The workflow now** (manual: `dev/README.md`, "People, signs and items"; engine facts: `mapping_reference.md` §12):
+1. **Terrain:** a sign needs a sign post, sketch `s` (vanilla's `003`, a one-tile solid piece like the flora). It goes through `mapgen` like any terrain.
+2. **Spec:** `design/maps/<Map>.events.toml` lists the map's people, trainers, signs and hidden items, with their text, party and item. It owns those events; anything placed by hand in Porymap is left alone.
+3. **Dry run:** `dev/events.py build <spec>`:
+   - It refuses bad placements, naming them.
+   - It prints each event with the tiles it can be triggered from and what each trainer sees.
+   - It runs the checker on the unsaved map and prints the route numbers before and after, including any trainer a crossing can't avoid.
+   - It renders `dev/out/<Map>_events.png`: sight in red, trigger tiles in cyan.
+4. **Apply:** `--apply` writes:
+   - `map.json`;
+   - a marked block in `scripts.pory`;
+   - each trainer's id (appended to `opponents.h`) and party (`trainers.party`);
+   - each hidden item's flag (an unused one renamed in `flags.h`).
+
+   No id ever moves, and re-applying is a no-op.
+5. **Test:** `fastbuild`, then `dev/tests/ingame_events.py <Map>`. `dev/events.py list <Map>` shows any map's events, hand-placed ones included.
+
+**The model** (`dev/mapkit/events.py`, from the engine source; vanilla-calibrated):
+- **People block:** only at compatible elevations. An object's elevation is its tile's (confirmed in-game on Safari Zone South). A ledge is still jumped past a person.
+- **Trainer sight:** straight ahead, stopped by anything the trainer can't walk through.
+- **Talking and reading:** facing, elevation, counters, a sign's required facing.
+- **Checker:**
+  - ERROR when people cut off an exit;
+  - WARN for ground reachable only through people, and for a person or sign nobody can reach;
+  - INFO for blind trainers and Surf-only events.
+- **Route numbers:** permanent people block, and each crossing names the trainers it can't avoid. Vanilla Route 102 west-bound: Calvin, as in the game.
+- **Walker and ledge tour:** both plan around people. The walker also avoids trainers' sight (a trainer battle can't be fled). The tour now runs on maps whose people stand still, so vanilla Route 116 gained one.
+
+**Route 201** (`Route201_1.events.toml`, provisional text):
+| Event | Where | Notes |
+|---|---|---|
+| Route sign | (12,3), on the verge where HomeTown's lane meets the route | "ROUTE 201 / ↓ WOODSTOCK", two lines like vanilla's signs. The post is 1 terrain cell. |
+| Old forester | (38,13), by the regrowing cutblock | A few lines about the logged stand and the Pokémon in the young woods. |
+| Bug Catcher ROSS | (17,15), at the foot of the terrace meadow, facing the ledge | Caterpie 3 and Weedle 3, sight 4. Jump the one-way shortcut and you land in his sight. No crossing passes through it, so the battle is optional. |
+| Hidden Potion | (46,2), the nook behind the beaver pond | |
+
+Route numbers are unchanged: 53/54 steps, tall grass avoidable, no trainer forced. Screenshots: `dev/out/Route201_1_events.png` (model), `dev/out/events_Route201_1_*.png` (in-game messages).
+
+**The tree-beside-sand limitation, addressed two ways:**
+- **Guard:** `mapgen build` reports `GUARD terrain` (a new error, so `--apply` refuses) when the grammar would overwrite terrain the map already has as drawn.
+- **Extract:** it now keeps such joins (both sides, trees whole, plus any neighbour a compile wouldn't put back), so an extract never triggers a repair.
+
+The real scope was bigger than recorded. `roundtrip.py` compiled without the grammar, so it hid that an extract → rebuild on `develop` would also have changed about 22% of Woodstock and 23% of Route 202. With the build's grammar now, every map round-trips with no repair: Route 201 99.1%, Woodstock 95.8%, Route 202 92.7%. The test checks the guard too.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| In-game events | `ingame_events.py` Route 201: 21/21, run three times in a row: each event triggered from a model tile, the forester blocks, the Potion is found once, Ross ignores the tile beside his sight, battles from his farthest sight tile (won), then stays quiet. |
+| Checker | Vanilla baseline: 0 unexpected (Safari Zone's exit attendant added as a known case, confirmed blocking in-game). Our 19 maps: 0 errors. |
+| Pieces | Sign posts: 35/48 vanilla route signs rebuild exactly (the rest stay `#`); flora shapes 18/18. |
+| Round trip | 87.5–100% with the grammar, no repaired cell, guard refuses the old lane-clearing extract. Reconstruction unchanged (87.8%). |
+| Regression set | Conformance 553/553 (Route 201's people now occupy tested tiles), ledges 490/490 with tours 10/10 groups, shores 624/624, flora 435/435 (the sign post); playthrough, doors, encounters (with and without a party) and all autowalks pass. |
+| Code review | `/code-review medium` raised 10 findings; 9 fixed (below). |
+
+The review's findings:
+- **Fixed, in the model:**
+  - People blocked at any elevation; the engine checks elevation compatibility. Fixing that showed an object's elevation is its tile's, not its template's (verified in-game).
+  - Sight lines counted flag-hidden objects as blockers.
+  - The tool computed entrances its own way; it now reuses the checker's single run.
+  - An oversized route search made every trainer look unavoidable.
+- **Fixed, in the tooling and tests:**
+  - The trainer test didn't check that its step lands in sight (it could have been a ledge jump).
+  - The walker avoided sight even in test mode.
+  - Hidden-item flags could have been taken from the trainer, system or daily range.
+  - Duplicated trainer and direction logic in the renderer.
+- **Left as is:** the Route 201 data commit includes the trainer id, the party and the flag rename. They are that map's event data, so reverting the commit should remove them together. Expansion's own comment in `opponents.h` still says "9 additional trainers"; the tool prints the true count (8 left).
+
+A flaky test was fixed on the way. The event test's battle sometimes never ended because a level-50 Pokémon with no badges disobeys ("began to nap"). The test now sets the eighth badge flag, teaches Tackle, and uses the SET battle style.
+
+Known limits:
+- **Tooling:**
+  - A Porymap edit to a spec-owned event (e.g. dragging the forester) is overwritten by the next `--apply`. The dry run shows it as a change, so move owned events in the spec.
+  - Only Poryscript maps can take events; HomeTown, Route 201 and Woodstock are.
+  - Item balls, wandering people, double battles and rematches aren't in the spec vocabulary yet.
+- **Ids:** 8 trainer ids are left before trainer flags overflow. After that, repurpose unused Hoenn trainers or move the trainer flags.
+- **Model:** a wanderer is judged at home (checker, route numbers) or as its whole range (walker), never step by step. The walker keeps avoiding a trainer's sight after the trainer is beaten.
+
 **Milestone 7 done: Route 201, "the old logging road"** (branch `milestone7-route201`, merged into `develop`).
 
 The first route out of HomeTown was the first map rebuilt for looks with the landscape kit. The old map was hand-painted in the initial commit: open grass with pale path patches and three free-standing ledges, no road between HomeTown's lane and Woodstock's, tall grass running off the bottom edge (no connection there), and open ground at rows 10–13 facing Woodstock's trees.
@@ -208,7 +289,7 @@ The first slice, **HomeTown → Route 201 → Woodstock** (milestone 2), is a sm
 Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woodstock; starter received in HomeTown before Route 201. Names and story details stay provisional.
 
 ## Still missing in the slice (`dev/section_status.py HomeTown_0 Route201_1 Woodstock_2`)
-- No NPCs on Route 201 or in Woodstock, and no Woodstock town sign.
+- No NPCs in Woodstock or HomeTown beyond the researcher, and no Woodstock town sign (Route 201 has its sign, a forester, a trainer and a hidden item). The text is provisional and hasn't been read by Tom in-game yet.
 - Starters are still Treecko/Torchic/Mudkip (`GRASS/FIRE/WATER_STARTER` in `src/starter_choose.c`).
 - No Town Map squares for the new map sections (there's no Maritimes region map image yet).
 - The fishing guard (`CanFish`, empty party) is checked by the build only: no rod can be obtained in the slice.
@@ -228,7 +309,7 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 7 known
 dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/conformance.py              # 562/562 (seeded samples; the count moves when a map changes)
+dev/tests/conformance.py              # 553/553 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
@@ -236,19 +317,26 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route203_1_2
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route101_2 Route203_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
-dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 9/9 groups
+dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 10/10 groups
+dev/tests/ingame_events.py            # Route 201: 21/21 (sign, forester, hidden Potion, Bug Catcher ROSS)
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
-dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 433/433 (flora pieces, staggered edge trees)
+dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
-dev/tests/roundtrip.py                # 88-100% (Route 201 99.1%); only when mapgen/terrain code changes
-dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, 137 tall grass
+dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
+dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
+dev/events.py build design/maps/Route201_1.events.toml   # after an events or map edit: 0 changed, 0 errors
 ```
 
 ## Next milestone (proposed, not started)
-1. **NPC/sign scaffolding tool, first used on Route 201 (recommended next):** place people, signs and hidden items without hand-editing JSON, and check sight lines and blocking on the engine model. Route 201 now has natural spots for a first trainer or two (the terrace above the meadow, the cutblock's edge), a route sign by HomeTown's lane, and a hidden item by the pond. That closes the slice's "no NPCs on Route 201" gap. Route 203 has spots too: a hiker in the middle grove's notch, a fisher on the beach.
+1. **Finish populating the first slice with the new tool (recommended next):**
+   - Woodstock's town sign, a few townspeople, and maybe a station worker by the lab.
+   - A second Route 201 voice, if Tom wants one.
+   - Route 203: a hiker in the middle grove's notch, a fisher on the beach.
+
+   On the tool side, add the spec vocabulary these need: item balls (`[[item]]`), wanderers (`facing = "wander"` with a range), and a rematch-free double battle if a pair of trainers fits. Tom reads the Route 201 text in-game first: it's provisional.
 2. **The woods around HomeTown and Woodstock:** the kit applied to their outer forest only. Tom hand-mapped both towns, so propose a box per town before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
 3. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
 4. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers; resolve pond shores by shape (Route 201's beaver pond could then get a natural outline); add a bank-to-beach transition tile (Porytiles) to soften the straight seam.
@@ -257,12 +345,17 @@ dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 step
    - A Maritimes Town Map.
 
 Ideas, not done:
-- A `--tour` start option for maps with NPCs.
+- The walker could read trainer flags so beaten trainers' sight stops being avoided.
+- `section_status.py` could list each map's trainers and hidden items from `events.py list`.
 - Flower and boulder accents on the terraces (the vocabulary has them now).
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
-- Extract that keeps grammar-repaired joins (trees beside sand) and their neighbours, so hand-painted seams round-trip exactly.
 
 ## Gotchas learned
+- **Events:** place people, signs and hidden items with `dev/events.py` from the map's spec, not by editing `map.json`. To move a spec-owned event, edit the spec: a Porymap move is undone by the next `--apply`. A sign needs `s` in the sketch first. Read the dry run's route numbers: a trainer whose sight covers the road shows up as `can't avoid`.
+- **Object elevation:** in the game an object's elevation is its tile's (`ObjectEventUpdateElevation`), not the `elevation` in `map.json`, except on multi-level (15) tiles. Use `events.object_elevation`.
+- **Battles in tests:** with no badges, a Pokémon above level 10 may disobey. Set `FLAG_BADGE08_GET`, teach a damaging first move (`teach_move("TACKLE", 0)`), and use `Emu.win_battle()` (it sets the SET style).
+- **Walker and trainers:** `Walker` avoids trainers' sight by default (a trainer battle can't be fled); pass `avoid_sight=False` under `test_mode()`.
+- **Grammar repairs:** `mapgen build` refuses (`GUARD terrain`) a repair that would overwrite existing terrain. Keep hand-painted joins as `#`, or give roads a verge; don't `--force` past it.
 - **Test mode:** `Emu.test_mode()` means movement-only: no wild battles, no trainer sight, and story gates open (it sets `FLAG_SYS_POKEMON_GET`). Call it before the player enters the gated map; HomeTown arms its gate on map load. Tests that play as a real player (the playthrough, encounter tests) don't call it.
 - **Poryscript:** edit `scripts.pory`, never the generated `scripts.inc`. `fastbuild` copies the generated `.inc` back so git tracks it.
 - **Specials:** append new specials at the end of `data/specials.inc`; their ids are positional.

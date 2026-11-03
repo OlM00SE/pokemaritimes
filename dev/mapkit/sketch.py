@@ -12,11 +12,12 @@ Legend (one character per metatile):
     v  ledge, jump south   <  ledge, jump west          >  ledge, jump east   (mapkit/ledges.py)
     r  rock standing in water (2x2)                                            (mapkit/shores.py)
     *  flowers    b  boulder    y  sapling (a vertical run of 2-3)              (mapkit/flora.py)
+    s  sign post (its text is a sign event: dev/events.py)                     (mapkit/flora.py)
     #  keep the map's current block unchanged (buildings, signs, ...)
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
 by shape (mapkit/shores.py). Flora stands on plain grass only.
 """
-from .terrain import TREE, Rules, autotile, Vocabulary, grid_labels, PRIMARY
+from .terrain import TREE, TREE_Q, Rules, autotile, Vocabulary, grid_labels, PRIMARY
 from .layout import pack
 from .project import TILE_FLAG_SURFABLE
 from . import ledges, shores, flora
@@ -150,11 +151,24 @@ def verify_owned(cls, x, y, w, h):
         for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
 
+def whole_tree(labels, x, y, w, h):
+    """The cells of the 2x2 tree that (x, y) belongs to, by the layout's tree-quarter labels;
+    just {(x, y)} if it isn't a tree quarter. Keeping a tree whole never leaves half a tree."""
+    q = labels[y][x]
+    if q not in TREE_Q:
+        return {(x, y)}
+    x0, y0 = x - (q in ("TR", "BR")), y - (q in ("BL", "BR"))
+    return {(x0 + dx, y0 + dy) for dx in (0, 1) for dy in (0, 1) if 0 <= x0 + dx < w and 0 <= y0 + dy < h}
+
+
 def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None):
     """Compile the extracted sketch and keep ('#') every shore or flora cell whose block wouldn't
     come back exactly: e.g. vanilla beach sand that meets grass without a rim, sand at
     elevation 0, or flowers under a canopy overhang. If a cell beside flora wouldn't come back,
     the flora next to it is kept instead (verify_owned).
+    Joins the grammar forbids (a hand-painted tree beside a sand lane) are kept too, both sides
+    (trees whole), with any neighbour that wouldn't come back beside them: a compile would
+    otherwise "repair" the join by turning the sand into grass.
     Cells a compile refuses are kept too. Every round keeps at least one more cell, so the loop
     ends; it stops when a compile reproduces every shore and flora block, which is what makes
     extract -> compile never change one."""
@@ -162,13 +176,22 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
         from .corpus import Corpus
         corpus = Corpus(project)
     w, h = sk.w, sk.h
+    labels = grid_labels(vocab, layout.entry, layout.blocks, w, h)
+    joins = set()                       # cells kept because the grammar would repair them
+    near_join = lambda x, y: any((x + dx, y + dy) in joins for dx in (-1, 0, 1) for dy in (-1, 0, 1))
     while True:
         refused = None
         try:
-            blocks, _ = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
+            blocks, report = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
             cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
-            bad = [(x, y) for y in range(h) for x in range(w)
-                   if verify_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+            # a hand-painted join the grammar forbids (a tree beside a sand lane): the repair
+            # would turn a drawn cell into grass. Keep both sides as they are, a tree whole.
+            grammar_kept = set()
+            for (x, y), (_, by) in report.get("grammar_cells", {}).items():
+                grammar_kept |= {(x, y)} | whole_tree(labels, *by, w, h)
+            joins |= grammar_kept
+            changed = lambda x, y: blocks[y * w + x] != layout.get(x, y)
+            bad = [(x, y) for y in range(h) for x in range(w) if verify_owned(cls, x, y, w, h) and changed(x, y)]
             # a changed neighbour of flora (e.g. a tree quarter, or grass picking another variant)
             # changed because the flora now reads as grass: keep the flora instead, which puts
             # back the context vanilla's rules saw (keeping the neighbour could split a tree)
@@ -176,6 +199,11 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
                 [(x, y)] if shore_owned(cls, x, y, w, h) or cls[y][x] in flora.CLASSES else
                 [(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
                  if 0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] in flora.CLASSES])]
+            # beside a kept join, a neighbour's learned tile can change (it now sees a kept tile
+            # where vanilla's rules saw sand or a tree): keep that neighbour too, a tree whole
+            bad += sorted(grammar_kept) + [c for y in range(h) for x in range(w)
+                                           if near_join(x, y) and changed(x, y)
+                                           for c in whole_tree(labels, x, y, w, h)]
         except SketchError as ex:
             refused = ex
             bad = [(x, y) for x, y, _ in ex.problems]
@@ -320,7 +348,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if pieces:
         ledges.verify_tileset(project, layout.tiles)
     cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sketch.rows]
-    grammar = dict(enforce_grammar(cls, w, h, forbidden)) if forbidden else {}
+    repaired = {}                       # cell -> (class the sketch drew, the cell that outranked it)
+    grammar = dict(enforce_grammar(cls, w, h, forbidden, where=repaired)) if forbidden else {}
     hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
     dropped = assign_tree_quarters(cls, w, h, hint)
     # flora (flowers, boulders, saplings): resolved by shape; for everything else they read as grass
@@ -393,7 +422,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
             else:
                 attrs = corpus.default_attrs(layout.entry, mid) or CLASS_ATTRS[c]
             blocks.append(pack(mid, *attrs))
-    report = {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels)}
+    report = {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels),
+              "grammar_cells": repaired}
     if len(pieces) > len(rocks):
         report["ledge_tiles"] = len(pieces) - len(rocks)
     if shore_tiles or rocks:
@@ -402,7 +432,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if fpieces:
         report["flora"] = {"flowers": sum(m == flora.FLOWER for m in fpieces.values()),
                            "boulders": sum(m == flora.BOULDER for m in fpieces.values()),
-                           "saplings": sum(m == flora.TRUNK for m in fpieces.values())}
+                           "saplings": sum(m == flora.TRUNK for m in fpieces.values()),
+                           **({"signs": n} if (n := sum(m == flora.SIGN for m in fpieces.values())) else {})}
     if ledge_warnings:
         report["ledge_warnings"] = [f"({x},{y}) {m}" for x, y, m in ledge_warnings]
     return blocks, report

@@ -104,6 +104,12 @@ for i, ((x, y), n) in enumerate([((17, 3), 3), ((24, 9), 2), ((9, 13), 1), ((42,
     ls.flower_bed(sk, x, y, n, seed=2050 + i, keep_clear=KEEP)
 ls.nestle(sk, ALL, 5, seed=2060, min_gap=8, keep_clear=KEEP)
 
+# --- the route sign, on the verge where HomeTown's lane meets the route (its text is a sign
+# event: design/maps/Route201_1.events.toml, placed with dev/events.py) ---
+SIGN = (12, 3)
+assert sk.get(*SIGN) == ".", f"the sign post's spot {SIGN} isn't open grass any more"
+sk.set(*SIGN, "s")
+
 out = os.path.join(HERE, "Route201_1.txt")
 sk.save(out)
 print("wrote", out)

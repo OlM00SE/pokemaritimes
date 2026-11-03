@@ -1,0 +1,52 @@
+# Route 201, the old logging road: its people, sign and hidden item (provisional text).
+#   dev/events.py build design/maps/Route201_1.events.toml [--apply]
+# Positions are map tiles [x, y]. Keep the road clear: route numbers must show no trainer a
+# crossing can't avoid (the build prints them).
+map = "Route201_1"
+
+# The sign post itself is terrain: `s` at (12, 3) in route201_design.py. Like vanilla's route
+# signs it fits the box's two lines and points to the far end of the route.
+[[sign]]
+name = "RouteSign"
+at = [12, 3]
+text = """
+ROUTE 201
+{DOWN_ARROW} WOODSTOCK
+"""
+
+# By the regrowing cutblock, off the road, looking over the saplings.
+[[person]]
+name = "Forester"
+at = [38, 13]
+gfx = "OLD_MAN"
+facing = "left"
+text = """
+We logged this stand a few summers back. Look at those saplings, already up to my shoulder!
+
+Pokémon like the young woods. The tall grass between the saplings is full of them.
+"""
+
+# At the foot of the terrace meadow, watching the ledge: jump the one-way shortcut and you land
+# in his sight. The road never passes through it, so the battle is optional.
+[[trainer]]
+name = "BugCatcherRoss"
+at = [17, 15]
+gfx = "BUG_CATCHER"
+facing = "up"
+sight = 4
+class = "Bug Catcher"
+trainer_name = "ROSS"
+party = ["Caterpie 3", "Weedle 3"]
+intro = "Hey! You jumped right into my bug-catching spot!"
+defeat = "Aww, my bugs got squashed..."
+after = """
+Bug Pokémon love this meadow under the old road.
+
+I come here every day after school.
+"""
+
+# Tucked in the nook behind the beaver pond.
+[[hidden_item]]
+name = "PondPotion"
+at = [46, 2]
+item = "ITEM_POTION"

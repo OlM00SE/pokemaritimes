@@ -10,6 +10,8 @@ Mined from the 238 vanilla layouts (numbers in design/mapping_reference.md secti
                        3: 00E crown / 0C6 crown middle / 017 trunk
                      (Route 116's young grove. 00E is drawn over the player, so you walk "behind"
                      the crown; vanilla's taller stacks are Route 119's jungle hedges.)
+  s       sign post  003 (vanilla's route sign; the text is a sign       solid
+                     event, placed with dev/events.py)
 
 Every piece stands on plain grass. In the compile, flora cells read as grass for the learned
 rules, so they never change a neighbour's tile (vanilla's neighbours of these tiles are plain
@@ -18,18 +20,21 @@ under a tree's canopy overhang (1CE/1CF), on the bank below water (002), or wher
 any other edge tile. The compiler names the cells, as it does for ledges and shores.
 """
 
-FLOWER, BOULDER = 0x004, 0x0E0
+FLOWER, BOULDER, SIGN = 0x004, 0x0E0, 0x003
 CROWN, CROWN_MID, TRUNK = 0x00E, 0x0C6, 0x017
 PLAIN_GRASS = 0x001
 
-CHAR_CLASS = {"*": "FL", "b": "BO", "y": "SP"}
+CHAR_CLASS = {"*": "FL", "b": "BO", "y": "SP", "s": "SN"}
 CLASS_CHAR = {v: k for k, v in CHAR_CLASS.items()}
 CLASSES = set(CHAR_CLASS.values())
 # collision, elevation: ground level like the grass around them; solid pieces block
-ATTRS = {FLOWER: (0, 3), BOULDER: (1, 3), CROWN: (0, 3), CROWN_MID: (1, 0), TRUNK: (1, 0)}
+# (vanilla's route signs: 103 of 117 stand at elevation 0)
+ATTRS = {FLOWER: (0, 3), BOULDER: (1, 3), CROWN: (0, 3), CROWN_MID: (1, 0), TRUNK: (1, 0), SIGN: (1, 0)}
 WALKABLE_PIECES = {FLOWER, CROWN}
 PIECES = set(ATTRS)
-NAMES = {"FL": "flowers", "BO": "a boulder", "SP": "a sapling"}
+NAMES = {"FL": "flowers", "BO": "a boulder", "SP": "a sapling", "SN": "a sign post"}
+SINGLE = {"FL": FLOWER, "BO": BOULDER, "SN": SIGN}           # one-tile pieces
+PIECE_CLASS = {FLOWER: "FL", BOULDER: "BO", SIGN: "SN", CROWN: "SP", CROWN_MID: "SP", TRUNK: "SP"}
 MAX_SAPLING = 3
 
 
@@ -44,10 +49,8 @@ def resolve(cls, w, h):
     for y in range(h):
         for x in range(w):
             c = cls[y][x]
-            if c == "FL":
-                pieces[(x, y)] = FLOWER
-            elif c == "BO":
-                pieces[(x, y)] = BOULDER
+            if c in SINGLE:
+                pieces[(x, y)] = SINGLE[c]
             elif c == "SP" and (y == 0 or cls[y - 1][x] != "SP"):
                 n = 1
                 while y + n < h and cls[y + n][x] == "SP":
@@ -86,7 +89,7 @@ def placement_errors(pieces, learned):
     errors = []
     for (x, y), mid in sorted(pieces.items()):
         if learned[y][x] != PLAIN_GRASS:
-            what = NAMES["FL" if mid == FLOWER else "BO" if mid == BOULDER else "SP"]
+            what = NAMES[PIECE_CLASS[mid]]
             errors.append((x, y, f"{what} must stand on plain grass, but this spot gets edge tile "
                                  f"{learned[y][x]:03X} (a tree's canopy, a bank, a path rim...); "
                                  "move it a tile away"))
@@ -105,6 +108,8 @@ def extract_chars(mid_at, w, h):
                 out[(x, y)] = "*"
             elif m == BOULDER:
                 out[(x, y)] = "b"
+            elif m == SIGN:
+                out[(x, y)] = "s"
             elif m == CROWN and out.get((x, y - 1)) != "y":     # (a run can't touch another)
                 for n in range(2, MAX_SAPLING + 1):
                     if y + n <= h and [mid_at(x, y + i) for i in range(n)] == sapling_column(n):

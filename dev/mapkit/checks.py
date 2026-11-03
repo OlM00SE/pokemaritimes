@@ -5,6 +5,7 @@ Severity: ERROR (broken in-game), WARN (likely wrong), INFO (worth knowing).
 import json, os
 from collections import deque
 from .engine import World, DIRS, MAP_OFFSET
+from .events import check_events
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
 
 EXPLORE_LIMIT = 200000      # states; a graph cut off at the limit is incomplete, so traps aren't judged
@@ -338,6 +339,14 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
         detail["foot"] = {world.to_map(s[0], s[1]) for s in foot if world.in_map(s[0], s[1])}
     check_traps(world, spawn, foot_starts, foot_edges, surf_edges,
                 [pred for _, pred in warp_needs], E, W, I, detail, truncated)
+    # people, signs and hidden items (mapkit/events.py): nobody may stand where they cut off an
+    # exit, and what has a script must be reachable to talk to or read
+    if not truncated:
+        edge_exits = [(f"edge {c['direction']}->{p.const_to_map.get(c['map'])}",
+                       lambda s, k=(c["direction"], p.const_to_map.get(c["map"])):
+                       not world.in_map(s[0], s[1]) and world.conn_side.get((s[0], s[1])) == k)
+                      for c in m.connections if c["direction"] in opp]
+        check_events(p, m, world, foot_starts, starts, warp_needs + edge_exits, E, W, I, detail, foot)
     # entrances split into separate areas?
     if len(entries) > 1:
         comp = {}

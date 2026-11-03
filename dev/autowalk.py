@@ -10,23 +10,37 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.engine import World, DIR_NAME
 from mapkit.checks import _warp_kinds
+from mapkit import events
 from mgba_bridge import Emu, REPO, UNTHROTTLED
 
 
 class Walker:
-    def __init__(self, emu, project=None, log=print, on_interrupt=None):
+    def __init__(self, emu, project=None, log=print, on_interrupt=None, avoid_sight=True):
         """on_interrupt: called when a battle starts mid-path (e.g. e.flee_battle); the walker
         then re-plans from wherever the player is. None = walk blindly (test mode).
+        Paths go around people (a wanderer's whole range) and, with avoid_sight, around every
+        trainer's sight: a trainer battle can't be fled, so a walker never starts one. Pass
+        avoid_sight=False under Emu.test_mode() (trainers can't see there). Beaten trainers'
+        sight stays avoided: the walker doesn't track who has been beaten.
         self.battles counts the battles handled over the walker's life (for reports)."""
         self.e, self.p, self.log = emu, project or Project(), log
         self.on_interrupt = on_interrupt
+        self.avoid_sight = avoid_sight
         self.battles = 0
         self._worlds = {}
         self.step_on, self.door, self.arrow, self.stair = _warp_kinds(self.p)
 
     def world(self, name):
         if name not in self._worlds:
-            self._worlds[name] = World(self.p, self.p.load_map(name))
+            m = self.p.load_map(name)
+            sight = set()
+            if self.avoid_sight:
+                plain = World(self.p, m)
+                for i, o in enumerate(m.events("object_events")):
+                    if events.is_trainer(o):
+                        lines = events.sight_lines(plain, o, events.sight_others(m, i))
+                        sight |= {t for ts in lines.values() for t in ts}
+            self._worlds[name] = events.world_with_people(self.p, m, extra=sight)
         return self._worlds[name]
 
     def here(self):
@@ -135,7 +149,7 @@ def main(argv):
         if not e.boot_new_game():
             print("FAIL: never reached overworld"); return 1
         e.test_mode()           # no wild battles or trainer sight: the walker only tests movement
-        wk = Walker(e)
+        wk = Walker(e, avoid_sight=False)
         print("start:", *wk.here())
         for i, target in enumerate(argv):
             reached = wk.go_to_map(target)

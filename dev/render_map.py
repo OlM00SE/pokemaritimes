@@ -48,7 +48,7 @@ elif a.world:
 else:
     crop = tuple(int(v) for v in a.crop.split(",")) if a.crop else None
     detail = None
-    if "traps" in overlays:              # the overlay draws what the checker found
+    if overlays & {"traps", "events"}:   # these overlays draw what the checker found
         from mapkit.checks import check_map
         detail = {}
         check_map(p, args[0], detail=detail)
