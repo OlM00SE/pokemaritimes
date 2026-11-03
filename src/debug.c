@@ -2877,6 +2877,8 @@ static bool32 DebugSelection_SetVar_Complete(u8 taskId)
     return FALSE;
 }
 
+// Maritimes: one range covers both var blocks only while there's no gap between them.
+STATIC_ASSERT(MARITIMES_VARS_START == VARS_END + 1, DebugVarEditorRangeHasNoGap);
 static const struct DebugSelectionStep sVarIdSelectionStep = {
     .stepUpdate = DebugSelectionStep_UpdateVarId,
     .stepConfirm = DebugSelectionStep_GenericInputConfirm,

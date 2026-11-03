@@ -15,6 +15,7 @@
 #include "save_layout.h"
 
 static u16 CalculateChecksum(void *, u16);
+static u16 CalculateSectorChecksum(struct SaveSector *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
 static u8 GetSaveValidStatus(const struct SaveSectorLocation *);
 static u8 CopySaveSlotData(u16, struct SaveSectorLocation *);
@@ -235,7 +236,7 @@ static u8 HandleWriteSector(u16 sectorId, const struct SaveSectorLocation *locat
 
     CopyFromSaveBlock3(sectorId, gReadWriteSector);
 
-    gReadWriteSector->checksum = CalculateChecksum(data, size);
+    gReadWriteSector->checksum = CalculateSectorChecksum(gReadWriteSector, size);
 
     return TryWriteSector(sector, gReadWriteSector->data);
 }
@@ -371,7 +372,7 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
 
     CopyFromSaveBlock3(sectorId, gReadWriteSector);
 
-    gReadWriteSector->checksum = CalculateChecksum(data, size);
+    gReadWriteSector->checksum = CalculateSectorChecksum(gReadWriteSector, size);
 
     // Erase old save data
     EraseFlashSector(sector);
@@ -532,7 +533,7 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
         if (id == 0)
             gLastWrittenSector = i;
 
-        checksum = CalculateChecksum(gReadWriteSector->data, locations[id].size);
+        checksum = CalculateSectorChecksum(gReadWriteSector, locations[id].size);
 
         // Only copy data for sectors whose signature and checksum fields are correct
         if (gReadWriteSector->signature == SECTOR_SIGNATURE && gReadWriteSector->checksum == checksum)
@@ -565,7 +566,7 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
-            checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
+            checksum = CalculateSectorChecksum(gReadWriteSector, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
                 saveSlot1Counter = gReadWriteSector->counter;
@@ -597,7 +598,7 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
-            checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
+            checksum = CalculateSectorChecksum(gReadWriteSector, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
                 saveSlot2Counter = gReadWriteSector->counter;
@@ -707,7 +708,7 @@ static bool8 ReadFlashSector(u8 sectorId, struct SaveSector *sector)
     return TRUE;
 }
 
-static u16 CalculateChecksum(void *data, u16 size)
+static u32 SumWords(void *data, u16 size)
 {
     u16 i;
     u32 checksum = 0;
@@ -718,6 +719,23 @@ static u16 CalculateChecksum(void *data, u16 size)
         data += sizeof(u32);
     }
 
+    return checksum;
+}
+
+static u16 CalculateChecksum(void *data, u16 size)
+{
+    u32 checksum = SumWords(data, size);
+    return ((checksum >> 16) + checksum);
+}
+
+// Maritimes: a save slot sector's checksum also covers its SaveBlock3 chunk. Expansion's covered
+// only the data bytes, so a damaged chunk loaded silently; the story vars live there now, and
+// were covered by the checksum while vanilla's vars were their only kind. The chunk is written
+// zeroed beyond SaveBlock3's end, so every byte of it is well defined.
+STATIC_ASSERT(SAVE_BLOCK_3_CHUNK_SIZE % 4 == 0, SaveBlock3ChunkIsWholeWords);
+static u16 CalculateSectorChecksum(struct SaveSector *sector, u16 size)
+{
+    u32 checksum = SumWords(sector->data, size) + SumWords(sector->saveBlock3Chunk, SAVE_BLOCK_3_CHUNK_SIZE);
     return ((checksum >> 16) + checksum);
 }
 
