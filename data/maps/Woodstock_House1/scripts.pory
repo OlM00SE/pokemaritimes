@@ -1,0 +1,19 @@
+// Woodstock_House1: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_House1_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/Woodstock_House1.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_WOODSTOCK_HOUSE1_MOTHER, LOCALID_WOODSTOCK_HOUSE1_GRANDFATHER
+
+script Woodstock_House1_EventScript_Mother {
+    msgbox(format("Every spring, when the ice goes out on the river, half the town walks down to the bank to watch.\pIt cracks like thunder, then the whole river starts to move!"), MSGBOX_NPC)
+    end
+}
+
+script Woodstock_House1_EventScript_Grandfather {
+    msgbox(format("When I was a boy, the log drives came right down this river every spring.\pThousands of logs, all the way to the mills downstream. You don't see that anymore."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

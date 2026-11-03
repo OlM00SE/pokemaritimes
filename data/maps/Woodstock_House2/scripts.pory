@@ -1,0 +1,14 @@
+// Woodstock_House2: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_House2_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/Woodstock_House2.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_WOODSTOCK_HOUSE2_GIRL
+
+script Woodstock_House2_EventScript_Girl {
+    msgbox(format("I'm saving up for a fishing rod. The man by the pond says the big ones are all out in the river.\pSomeday I'll catch one bigger than his!"), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

@@ -1,0 +1,27 @@
+# Woodstock's first house, by the community garden: a family kitchen (provisional text).
+#   dev/events.py build design/maps/Woodstock_House1.events.toml [--apply]
+map = "Woodstock_House1"
+
+# At the counter, making supper.
+[[person]]
+name = "Mother"
+at = [9, 2]
+gfx = "WOMAN_1"
+facing = "up"
+text = """
+Every spring, when the ice goes out on the river, half the town walks down to the bank to watch.
+
+It cracks like thunder, then the whole river starts to move!
+"""
+
+# At the table, by the window.
+[[person]]
+name = "Grandfather"
+at = [8, 5]
+gfx = "OLD_MAN"
+facing = "left"
+text = """
+When I was a boy, the log drives came right down this river every spring.
+
+Thousands of logs, all the way to the mills downstream. You don't see that anymore.
+"""
