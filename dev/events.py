@@ -37,7 +37,7 @@ Spec format (see design/maps/Route201_1.events.toml):
                    notice board, a shelf, a mailbox. Text is wrapped like dialogue (any length).
                    optional: facing (as a sign; wall things are read from below: "up")
   [[person]]       name, at, gfx, facing, text        (facing: down/up/left/right/around/wander)
-                   optional: range = [rx, ry] for a wanderer (default [1, 1]);
+                   optional: range = [rx, ry] for a wanderer, each 1-4 (default [1, 1]);
                    gift = "ITEM_...", count, after: gives the item once (text before, after
                    once given; a full bag gives nothing and asks again next time)
   [[trainer]]      name, at, gfx, facing, sight, class, trainer_name, party = ["Caterpie 3", ...],
@@ -96,7 +96,11 @@ def gift_flag(tok, name):
 
 
 def pory_string(text):
-    return '"' + text.replace('"', '\\"') + '"'
+    """A Poryscript string literal. The game's charmap has no straight double quote (vanilla
+    writes “ ”), and Poryscript's format() can't take an escaped one, so a spec's "..." becomes
+    “...”: opening at the start or after a space or bracket, closing otherwise."""
+    text = re.sub(r'(^|(?<=[\s(\[]))"', "“", text)
+    return '"' + text.replace('"', "”") + '"'
 
 
 def fmt(text):
@@ -174,9 +178,11 @@ def load_spec(path, p, names):
             if kind == "person":
                 if e.get("facing") == "wander":
                     r = e.setdefault("range", [1, 1])
-                    if not (isinstance(r, list) and len(r) == 2 and all(isinstance(v, int) and 0 <= v <= WANDER_MAX for v in r)
-                            and any(r)):
-                        problems.append(f"{where}: range = [rx, ry], each 0-{WANDER_MAX}, not both 0")
+                    # the engine checks an axis only when its range isn't 0: a 0 lets them walk off
+                    # along it as far as the ground goes (IsCoordOutsideObjectEventMovementRange)
+                    if not (isinstance(r, list) and len(r) == 2 and all(isinstance(v, int) and 1 <= v <= WANDER_MAX for v in r)):
+                        problems.append(f"{where}: range = [rx, ry], each 1-{WANDER_MAX} (the game reads 0 as no "
+                                        "limit on that axis)")
                 elif "range" in e:
                     problems.append(f"{where}: range is only for facing = \"wander\"")
                 if "gift" in e:

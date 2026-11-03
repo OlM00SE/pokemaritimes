@@ -46,7 +46,7 @@ class Run:
         self.reach = set(self.states)
         self.sight = set().union(*self.a["seen"].values()) if self.a["seen"] else set()
         # a wanderer may be anywhere in its range: no other test stands, steps or turns there
-        self.ranges = set().union(set(), *(ev.wander_box(o) for o in self.m.events("object_events")
+        self.ranges = set().union(set(), *(ev.wander_box(o, self.m) for o in self.m.events("object_events")
                                            if ev.moves(o) and not ev.hidden_by_flag(o)))
         self.avoid = self.sight | self.ranges
         self.passed = self.failed = 0
@@ -136,7 +136,7 @@ class Run:
                 self.check(self.e.bag_count(item) == got, f"{tag}: a second talk gives nothing more")
 
     def wanderer(self, i, o, tag, watch_frames=1800):
-        box = ev.wander_box(o)
+        box = ev.wander_box(o, self.m)
         lid = i + 1                               # map_event_ids.h: local ids follow object order
         # watch from a tile outside its range, so the player doesn't hem it in
         far = next((t for t in sorted(self.reach - box - self.sight,
