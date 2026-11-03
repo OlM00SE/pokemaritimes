@@ -17,9 +17,26 @@ from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
-from mapkit.render import render_layout, render_diff
+from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
-from mapkit import landscape
+from mapkit import landscape, routes
+
+
+def render_context_pair(p, m, old_blocks, margin=6):
+    """The map with its neighbours' edges (render.render_context), before above after."""
+    import copy
+    from PIL import Image, ImageDraw
+    old = copy.copy(m.layout)            # the same layout with the old blocks; m stays untouched
+    old.blocks = list(old_blocks)
+    before, after = render_contexts(p, m.name, [old, m.layout], margin)
+    head = 14
+    out = Image.new("RGB", (before.width, (before.height + head) * 2), (24, 24, 32))
+    d = ImageDraw.Draw(out)
+    for i, (label, im) in enumerate((("before", before), ("after", after))):
+        y = i * (before.height + head)
+        d.text((4, y + 1), f"{label} (neighbours dimmed, {margin}-tile strips)", fill=(255, 255, 0))
+        out.paste(im, (0, y + head))
+    return out
 
 
 def main():
@@ -67,6 +84,7 @@ def main():
     before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m, detail=old_detail)
               if s == "ERROR"}
     old_metrics = landscape.metrics(m.layout)
+    old_routes = routes.route_stats(p, m) if m.connections else None
     old_blocks = list(m.layout.blocks)
     m.layout.blocks = blocks          # in memory only; nothing is written without --apply
     outdir = p.path("dev", "out")
@@ -85,6 +103,12 @@ def main():
         print(f"changes vs current map.bin: {len(changed)} cells ({mids} metatiles, the rest collision/"
               f"elevation only) in x {min(xs)}-{max(xs)}, y {min(ys)}-{max(ys)}")
         diff.save(diff_png)
+    # the seams as the player crosses them: before above after, with the neighbours' edges
+    ctx_png = os.path.join(outdir, f"{sk.map_name}_preview_context.png")
+    if diff is not None and m.connections:
+        render_context_pair(p, m, old_blocks).save(ctx_png)
+    elif os.path.exists(ctx_png):
+        os.remove(ctx_png)
     # the checker runs on the unsaved result, so a dry run already shows traps and bad landings
     detail = {}
     issues = check_map(p, sk.map_name, None, corpus, mapdata=m, detail=detail)
@@ -92,13 +116,16 @@ def main():
     render_layout(p, m.layout, 2, ("collision", "elevation", "behavior", "events", "grid", "traps"), m,
                   detail).save(os.path.join(outdir, f"{sk.map_name}_preview_overlay.png"))
     print(f"previews: dev/out/{sk.map_name}_preview.png, _preview_overlay.png"
-          + (", _preview_diff.png" if diff is not None else ""))
+          + (", _preview_diff.png" if diff is not None else "")
+          + (", _preview_context.png" if diff is not None and m.connections else ""))
     # landscape: Tom's two visual complaints as numbers (lower is more natural), for the whole
     # map and for the part this build changes
     new_metrics = landscape.metrics(m.layout)
-    print("landscape: longest straight forest edge {} -> {} tiles; largest bare grass square {} -> {}"
+    at = lambda box: f" at x {box[0]}-{box[2]}, y {box[1]}-{box[3]}" if box else ""
+    print("landscape: longest straight forest edge {} -> {} tiles{}; largest bare grass square {} -> {}{}"
           .format(old_metrics["straight_edge"], new_metrics["straight_edge"],
-                  old_metrics["open_square"], new_metrics["open_square"]))
+                  at(new_metrics["straight_edge_at"]), old_metrics["open_square"],
+                  new_metrics["open_square"], at(new_metrics["open_square_at"])))
     if diff is not None:
         box = (min(xs), min(ys), max(xs), max(ys))
         after = landscape.metrics(m.layout, box)
@@ -108,6 +135,12 @@ def main():
         print("  in the changed area x {}-{}, y {}-{}: straight edge {} -> {}; bare square {} -> {}"
               .format(box[0], box[2], box[1], box[3], before_box["straight_edge"], after["straight_edge"],
                       before_box["open_square"], after["open_square"]))
+    # gameplay: each crossing's length and unavoidable tall grass, and the encounter ground,
+    # so a redesign can show it still plays the same
+    if m.connections:
+        print("routes (on foot, between edge connections):")
+        for line in routes.describe(old_routes, routes.route_stats(p, m)):
+            print(line)
     # accessibility: open land nobody can walk to, where this build is responsible: it was
     # reachable before, or this build changed it (e.g. a pocket left where forest was cleared)
     if "foot" in old_detail and "foot" in detail:

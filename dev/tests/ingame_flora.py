@@ -22,8 +22,9 @@ from mapkit.engine import World, DIR_NAME
 from mapkit.terrain import TREE
 from mapkit import flora
 
-DEFAULT_MAPS = ["GroveLab", "Route203_1"]
-VIEWS = {"GroveLab": [(10, 16), (25, 12), (32, 6)], "Route203_1": [(18, 25), (34, 28), (8, 20)]}
+DEFAULT_MAPS = ["GroveLab", "Route203_1", "Route201_1"]
+VIEWS = {"GroveLab": [(10, 16), (25, 12), (32, 6)], "Route203_1": [(18, 25), (34, 28), (8, 20)],
+         "Route201_1": [(29, 12), (20, 4), (39, 8)]}
 OUT = os.path.join(REPO, "dev", "out")
 DELTA = {"N": (0, -1), "S": (0, 1), "W": (-1, 0), "E": (1, 0)}
 TREES = set().union(*TREE.values())

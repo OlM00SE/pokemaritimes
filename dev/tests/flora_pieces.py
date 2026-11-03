@@ -162,7 +162,38 @@ def planting(n=300):
             if bad <= 3:
                 print(f"  FAIL mask {i}: dropped {dropped}, sapling errors {errs[:2]}, on keep_clear {on_keep[:3]}")
     print(f"  {n - bad}/{n} random plantings tile back exactly with valid saplings")
-    return bad == 0
+    return bad == 0 and against_kept()
+
+
+def against_kept():
+    """An odd run of forest that meets a kept '#' block (a hand-painted cliff, say) must leave
+    its spare tile at the open end, not against the block, where it could be a cut-off pocket
+    (Route 201's cliff corner had one before plant() treated '#' as closed)."""
+    bad = []
+    # plant() starts flush at a run's west end by default, so it's the kept block at the east end
+    # that needs the rule (the old helper failed these 3); the west cases guard the default
+    for odd_w in (7, 9, 11):
+        for side in ("E", "W"):
+            sk = Sketch("t", ["." * 24 for _ in range(8)])
+            kx = 3 + odd_w if side == "E" else 2      # the kept column, at the run's east or west end
+            for y in range(8):
+                sk.set(kx, y, "#")
+            run = ls.rect(3, 2, 2 + odd_w, 3)
+            ls.plant(sk, run, ls.rect(0, 0, 23, 7))
+            beside = kx - 1 if side == "E" else kx + 1
+            if sk.rows[2][beside] != "T" or sk.rows[3][beside] != "T":
+                bad.append(f"spare tile against the block ({odd_w} wide, block {side})")
+    # a kept block may be walkable (a hand-painted path): a one-tile gap between it and the
+    # forest is a walkway, never filled in
+    sk = Sketch("t", ["." * 24 for _ in range(8)])
+    for y in range(8):
+        sk.set(12, y, "#")
+    ls.plant(sk, ls.rect(3, 2, 10, 3), ls.rect(0, 0, 23, 7))
+    if sk.rows[2][11] != "." or sk.rows[3][11] != ".":
+        bad.append("the walkway beside a kept block was filled")
+    print(f"  {7 - len(bad)}/7 kept-block cases: spare tiles go to the open end, walkways stay open"
+          + (f"; FAIL {bad}" if bad else ""))
+    return not bad
 
 
 def main(argv):

@@ -4,6 +4,57 @@
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 7 done: Route 201, "the old logging road"** (branch `milestone7-route201`, merged into `develop`).
+
+The first route out of HomeTown was the first map rebuilt for looks with the landscape kit. The old map was hand-painted in the initial commit: open grass with pale path patches and three free-standing ledges, no road between HomeTown's lane and Woodstock's, tall grass running off the bottom edge (no connection there), and open ground at rows 10–13 facing Woodstock's trees.
+
+The design (`design/maps/route201_design.py`):
+- **The road:** a two-tile sand logging road runs from HomeTown's lane (x 10–11) to Woodstock's road (rows 14–15), so the three maps read as one road. It runs south out of the village, east along the north woods, jogs south, passes the pond, and bends down to Woodstock. A one-tile grass verge keeps trees off the sand.
+- **Woods:** forest by default, carved into clearings off the road, so it reads as a road *through* the woods. The edges step in bays and headlands with offset fringe trees.
+- **Clearings:**
+  - a tall-grass meadow west of the village lane;
+  - a sunny clearing with a grass patch, flowers and a boulder;
+  - the terrace: a ledge below the road drops into the central meadow, a one-way shortcut as the old ledges were;
+  - the beaver pond (unchanged cells) with reeds;
+  - a regrowing **cutblock**: saplings coming up through tall grass (Route 116's young grove), the forestry village's work.
+- **Accents:** flowers on the verges, and five glacial boulders against the woods.
+- **Kept as Tom painted them:** the cliff corner that continues Woodstock's row-17 cliff (with its tree and the two saplings at its foot), and the trees either side of HomeTown's lane.
+- **Seams:** the bottom edge is closed with forest, and the east edge is whole trees except Woodstock's road rows.
+
+| | Before | After |
+|---|---|---|
+| HomeTown → Woodstock | 53 steps, tall grass avoidable | 53 steps, tall grass avoidable |
+| Woodstock → HomeTown | 54 steps, at least 4 tall-grass tiles | 54 steps, tall grass avoidable (the old ledges forced the detour) |
+| Tall grass (all reachable) | 146 tiles | 137 tiles |
+| Longest straight forest edge | 12 | 11 (the tree band under HomeTown) |
+| Largest bare-grass square | 4 | 2 |
+
+Tooling built along the way, all reusable:
+- **Route numbers** (`mapkit/routes.py`, `dev/route_stats.py`): for each pair of edge connections, the steps across, the fewest tall-grass tiles that can't be avoided, and the reachable encounter ground, on the engine model (ledges included). `mapgen build` prints them before and after, so "plays the same" is a number.
+- **Context renders:** `render_map.py --context [--margin N]` draws a map with strips of its connected neighbours. `mapgen build` writes `_preview_context.png` (before above after) for any map with connections.
+- **Metrics say where:** the longest straight edge and the largest bare square now come with their location.
+- **`plant()` treats a kept `#` block as closed:** an odd run's spare tile no longer lands against a hand-painted cliff, where it was a cut-off pocket. One-tile gaps beside a kept block are still left open, since it may be a walkable path. A new check in `flora_pieces.py` covers both (the old helper fails its three east-side cases).
+- **The routes report flags a lost crossing** (`<- CROSSING LOST`), including one whose entrance has no walkable tile left. Context and world renders skip dive/emerge connections.
+- **`shoot.py --settle N`:** waits for the area-name popup to clear before the screenshot.
+
+Before/after: `dev/out/Route201_1_preview_diff.png`, `_preview_context.png`, `Route201_1_before.png` vs `_preview.png`, and in-game `Route201_1_ingame_compare.png` (five viewpoints; regenerate with `shoot.py --tag ... --settle 240`).
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Checker | 19 maps, 0 errors; Route 201 0 warnings, no cut-off pockets. Vanilla baseline: 0 unexpected. |
+| Rebuild | `mapgen build` from the design reproduces the applied map exactly. Extract round trip on Route 201: 99.1% (the HomeTown gap's trees beside sand, and Tom's cliff corner; see limits). |
+| Play | The playthrough (wild battles on) crosses the new route both ways; all autowalks pass, plus Woodstock → Route 201 → HomeTown. Encounters: Route 201's table only; none with an empty party. |
+| In-game pieces | Ledge: 20/20 approaches agree, and the terrace tour jumps the ledge and walks back to Woodstock. Flora: 77/77 pieces and 60/60 edge trees behave as the engine model says. |
+| Code review | `/code-review medium` raised 10 findings; 8 fixed. `mapgen build` crashed on maps with dive/emerge connections (the new context render). The routes report stayed silent when an edit sealed an entrance. `plant()` would also have filled a walkway beside a walkable `#`. There were argument-parsing bugs in `shoot.py` and `render_map.py --context`, double rendering and a slow goal scan, and the new test overstated its coverage. Deferred: the grammar's tree-beside-sand repair (see limits); and the first tooling commit bundles five changes. |
+| Regression set | Conformance 562/562, ledges 490/490 (tours 9/9 groups), shores 624/624, flora 433/433; playthrough, doors, encounters and all autowalks pass; ledge, shore and flora piece tests PASS. Route 201 is now in the default ledge and flora tests. |
+
+Known limits:
+- **Extract round trip at hand-painted joins:** Route 201 must be rebuilt from `route201_design.py`, not from an extract. A fresh extract reads the trees beside HomeTown's lane as forest, and a compile's grammar repair (no tree beside sand) would clear the lane's sand. Keeping such joins as `#` in extract only moved the difference to the neighbouring tiles (98.9%), so it was left for a later pass.
+- The tree band under HomeTown (rows 0–1) is the map's longest straight edge. It is the seam with HomeTown's own tree band, so it stays.
+- The beaver pond keeps its old L-shaped cells: pond shores (`o`) are still learned, not shape-resolved.
+- The return trip no longer forces tall grass (it used to, through the old ledges' detour). The grass is still on both sides of the road, so the first encounters come quickly.
+
 **Milestone 6 done: natural forests and open ground** (branch `milestone6-flora`, merged into `develop`).
 
 Tom's review named two problems: "rectangular forest groupings" and "large uniform grassy areas". The first step was studying how vanilla composes these (`mapping_reference.md` §11):
@@ -184,21 +235,23 @@ dev/tests/ingame_encounters.py Route201_1 [--no-party]
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route203_1_2
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route101_2 Route203_1 Fredericton_0
-dev/tests/ingame_ledges.py            # LedgeLab, Route 203 + 4 vanilla routes: 470/470 approaches, tours 8/8 groups
+dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
+dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 9/9 groups
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
-dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings)
-dev/tests/ingame_flora.py             # GroveLab + Route 203: 296/296 (flora pieces, staggered edge trees)
+dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
+dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 433/433 (flora pieces, staggered edge trees)
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
-dev/tests/roundtrip.py                # 88-100%; only when mapgen/terrain code changes
+dev/tests/roundtrip.py                # 88-100% (Route 201 99.1%); only when mapgen/terrain code changes
+dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, 137 tall grass
 ```
 
 ## Next milestone (proposed, not started)
-1. **Apply the landscape kit to the first slice (recommended next):** Route 201 and the woods around HomeTown and Woodstock. These are the maps a new player sees first, and the forestry theme suits sapling stands and clearings. Do it as separate, reviewable diffs, Route 203 style: scope each to a box, use `KEEP` sets, and read the reach and metric lines. Tom hand-mapped Fredericton and Woodstock, so propose before touching them. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
-2. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
-3. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers; resolve pond shores by shape; add a bank-to-beach transition tile (Porytiles) to soften the straight seam.
-4. **NPC/sign scaffolding tool:** close the slice's people and sign gaps without hand-editing JSON. Route 203 now has natural spots for a hiker in the middle grove's notch, a fisher on the beach, or a sign.
+1. **NPC/sign scaffolding tool, first used on Route 201 (recommended next):** place people, signs and hidden items without hand-editing JSON, and check sight lines and blocking on the engine model. Route 201 now has natural spots for a first trainer or two (the terrace above the meadow, the cutblock's edge), a route sign by HomeTown's lane, and a hidden item by the pond. That closes the slice's "no NPCs on Route 201" gap. Route 203 has spots too: a hiker in the middle grove's notch, a fisher on the beach.
+2. **The woods around HomeTown and Woodstock:** the kit applied to their outer forest only. Tom hand-mapped both towns, so propose a box per town before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
+3. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
+4. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers; resolve pond shores by shape (Route 201's beaver pond could then get a natural outline); add a bank-to-beach transition tile (Porytiles) to soften the straight seam.
 5. Later:
    - Porytiles for Maritime flora: spruce/fir trees for a boreal look, birch, log piles, a covered bridge. Vanilla's broadleaf trees are all the General tileset offers.
    - A Maritimes Town Map.
@@ -206,7 +259,8 @@ dev/tests/roundtrip.py                # 88-100%; only when mapgen/terrain code c
 Ideas, not done:
 - A `--tour` start option for maps with NPCs.
 - Flower and boulder accents on the terraces (the vocabulary has them now).
-- A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style).
+- A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
+- Extract that keeps grammar-repaired joins (trees beside sand) and their neighbours, so hand-painted seams round-trip exactly.
 
 ## Gotchas learned
 - **Test mode:** `Emu.test_mode()` means movement-only: no wild battles, no trainer sight, and story gates open (it sets `FLAG_SYS_POKEMON_GET`). Call it before the player enters the gated map; HomeTown arms its gate on map load. Tests that play as a real player (the playthrough, encounter tests) don't call it.
@@ -217,6 +271,8 @@ Ideas, not done:
 - **Workflow:** each milestone goes on a branch, gets `/code-review medium <branch>`, has its findings fixed and re-verified, then merges into `develop`. Every review so far has found real bugs.
 - **Planting on an existing map:** give `plant()` the grid of the forest you edit; Route 203's southern forest starts on row 29, so it uses `parity=(0, 1)`. Keep areas to whole 2-row bands, and never let two `plant` areas overlap. If an old grove straddles two areas, clear it across both first: `plant` refuses to leave a tree cut in half. Check that the diff box stays inside your scope; a stray tuft or a re-tiled tree column shows up there.
 - **Flora placement:** a flower, boulder or sapling right above a tree sits on the canopy overhang, and the compiler refuses it. `landscape` helpers already avoid that row.
+- **Roads and trees:** the grammar never lets a tree touch sand; it turns the *sand* into grass (trees outrank sand), which can clear a whole lane. Give roads a grass verge, and keep any trees that must stand beside a road (a seam gap) as `#`.
+- **Kept boxes:** draw a `#` box around a hand-painted piece so that it holds whole trees only, never half of one. A half tree left outside the box can't be tiled and leaves a 1-tile pocket (mapgen's `WARN reach` catches it).
 - **Ledge landings:** the game never checks where a jump lands. Draw ledges in sketches, not by hand; for hand-painted ledges, trust `check_maps.py`'s `ledge` and `trap` results.
 - **Dev maps:** LedgeLab sits in `gMapGroup_DevMaritimes`. It ships in the ROM but nothing links to it. Its only warp is a spawn point (`MAP_DYNAMIC`, arrival-only), which gives the checker an entrance. `new_map.py` adds that spawn to every new map; delete it once the map has real connections.
 - **Editing an existing map with mapgen:** build without `--fresh` so the existing trees stay put. Read the diff report and `_preview_diff.png` before `--apply`. Move groves by an even number of tiles; an odd shift falls off the 2×2 tree grid and drops trees (`dropped_tree_cells`).
