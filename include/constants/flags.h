@@ -1641,11 +1641,13 @@
 #define DAILY_FLAGS_END                             (FLAG_UNUSED_0x95F + (7 - FLAG_UNUSED_0x95F % 8))
 #define NUM_DAILY_FLAGS                             (DAILY_FLAGS_END - DAILY_FLAGS_START + 1)
 
-// Maritimes: a block of saved flags for map events (item balls, hidden items, gifts). dev/events.py
-// allocates them in order as (MARITIMES_FLAGS_START + n) below the marker; ids never move. Each 8
-// flags cost a byte of SaveBlock1 (dev/tests/id_budget.py prints what is left).
+// Maritimes: a block of saved flags for the region: map events (item balls, hidden items, gifts;
+// dev/events.py) and story flags (dev/save_ids.py). Both allocate in order as
+// (MARITIMES_FLAGS_START + n) below the marker; ids never move. Each 8 flags cost a byte of
+// SaveBlock1 (dev/tests/id_budget.py prints what is left). Sized in milestone 11 for a whole
+// region (vanilla Emerald's story uses about 800 non-trainer flags): design/save_format.md.
 #define MARITIMES_FLAGS_START                       (DAILY_FLAGS_END + 1)
-#define MARITIMES_FLAGS_COUNT                       256
+#define MARITIMES_FLAGS_COUNT                       768
 #define MARITIMES_FLAGS_END                         (MARITIMES_FLAGS_START + MARITIMES_FLAGS_COUNT - 1)
 // ---- dev/events.py: Maritimes flags (appended here) ----
 #define FLAG_WOODSTOCK_2_GARDENER_GIFT              (MARITIMES_FLAGS_START + 0x0)  // Maritimes: dev/events.py

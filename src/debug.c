@@ -2881,7 +2881,7 @@ static const struct DebugSelectionStep sVarIdSelectionStep = {
     .stepUpdate = DebugSelectionStep_UpdateVarId,
     .stepConfirm = DebugSelectionStep_GenericInputConfirm,
     .minValue = VARS_START,
-    .maxValue = VARS_END,
+    .maxValue = MARITIMES_VARS_END, // Maritimes: also reaches the story var block, which follows VARS_END
     .digits = 4
 };
 

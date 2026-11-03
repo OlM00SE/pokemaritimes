@@ -256,6 +256,9 @@ struct NPCFollower
 
 struct SaveBlock3
 {
+    // Maritimes: the story var block (include/constants/vars.h). It comes first so that it stays
+    // in the SaveBlock3 chunks of sectors 0-4, which every save writes (src/save.c asserts it).
+    u16 maritimesVars[MARITIMES_VARS_COUNT];
 #if OW_USE_FAKE_RTC
     struct SiiRtcInfo fakeRTC;
 #endif

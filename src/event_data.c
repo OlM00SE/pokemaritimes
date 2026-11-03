@@ -12,6 +12,8 @@
 STATIC_ASSERT(FLAGS_COUNT <= SPECIAL_FLAGS_START, SavedFlagsBelowSpecialFlags);
 STATIC_ASSERT(FLAGS_COUNT - FLAG_HIDDEN_ITEMS_START <= (1 << 13), SavedFlagsFitHiddenItemOffset);
 STATIC_ASSERT(TRAINERS_COUNT <= MAX_TRAINERS_COUNT, TrainerIdsFitTrainerFlags);
+// Maritimes: the story var block sits between the vanilla vars and the special vars.
+STATIC_ASSERT(MARITIMES_VARS_START > VARS_END && MARITIMES_VARS_END < SPECIAL_VARS_START, MaritimesVarsBetweenVanillaAndSpecialVars);
 
 EWRAM_DATA u16 gSpecialVar_0x8000 = 0;
 EWRAM_DATA u16 gSpecialVar_0x8001 = 0;
@@ -170,8 +172,15 @@ u16 *GetVarPointer(u16 id)
 {
     if (id < VARS_START)
         return NULL;
-    else if (id < SPECIAL_VARS_START)
+    else if (id <= VARS_END)
         return &gSaveBlock1Ptr->vars[id - VARS_START];
+    // Maritimes: the story var block lives in SaveBlock3 (include/constants/vars.h).
+    else if (id >= MARITIMES_VARS_START && id <= MARITIMES_VARS_END)
+        return &gSaveBlock3Ptr->maritimesVars[id - MARITIMES_VARS_START];
+    // Maritimes: any other id below the special vars isn't a var. Vanilla pointed it past the end
+    // of vars[], into whatever SaveBlock1 field follows; now it reads as a value and can't be set.
+    else if (id < SPECIAL_VARS_START)
+        return NULL;
 #if TESTING
     else if (id >= TESTING_VARS_START)
         return &sTestVars[id - TESTING_VARS_START];

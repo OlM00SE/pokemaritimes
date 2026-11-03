@@ -83,6 +83,13 @@ STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
 
+// Maritimes: SaveBlock3 is split across all 14 sectors (a chunk in each footer), but a link or
+// Battle Frontier save (SAVE_LINK, WriteSaveBlock1Sector) rewrites only sectors 0-4. The story
+// vars must sit in those sectors' chunks, so that they are saved together with SaveBlock1's
+// flags and vars on every kind of save; a var in a PC sector's chunk could come back stale.
+STATIC_ASSERT(offsetof(struct SaveBlock3, maritimesVars) + sizeof(((struct SaveBlock3 *)0)->maritimesVars)
+              <= SAVE_BLOCK_3_CHUNK_SIZE * (SECTOR_ID_SAVEBLOCK1_END + 1), MaritimesVarsInSectorsWrittenByEverySave);
+
 // Maritimes: the save layout is the one include/save_layout.h records for SAVE_LAYOUT_VERSION.
 // If one of these fails, the layout changed and saves stamped with the old version would load as
 // garbage: run `python dev/save_layout.py --update` (it bumps the version), rebuild, and run
@@ -101,6 +108,8 @@ STATIC_ASSERT(TRAINER_FLAGS_START == SAVE_LAYOUT_TRAINER_FLAGS_START, SaveLayout
 STATIC_ASSERT(SYSTEM_FLAGS == SAVE_LAYOUT_SYSTEM_FLAGS, SaveLayoutChanged_SystemFlags_RunDevSaveLayoutPy);
 STATIC_ASSERT(DAILY_FLAGS_START == SAVE_LAYOUT_DAILY_FLAGS_START, SaveLayoutChanged_DailyFlags_RunDevSaveLayoutPy);
 STATIC_ASSERT(MARITIMES_FLAGS_START == SAVE_LAYOUT_MARITIMES_FLAGS_START, SaveLayoutChanged_MaritimesFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(offsetof(struct SaveBlock3, maritimesVars) == SAVE_LAYOUT_MARITIMES_VARS_OFFSET, SaveLayoutChanged_MaritimesVarsOffset_RunDevSaveLayoutPy);
+STATIC_ASSERT(MARITIMES_VARS_COUNT == SAVE_LAYOUT_MARITIMES_VARS_COUNT, SaveLayoutChanged_MaritimesVarCount_RunDevSaveLayoutPy);
 
 COMMON_DATA u16 gLastWrittenSector = 0;
 COMMON_DATA u32 gLastSaveCounter = 0;
