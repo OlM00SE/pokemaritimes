@@ -861,12 +861,14 @@
 #define TRAINER_MAY_PLACEHOLDER             854
 #define TRAINER_ROUTE201_1_BUG_CATCHER_ROSS 855  // Maritimes: dev/events.py
 
-// NOTE: Because each Trainer uses a flag to determine when they are defeated, there is only space for 9 additional trainers before trainer flag space overflows
+// NOTE: Because each Trainer uses a flag to determine when they are defeated, MAX_TRAINERS_COUNT bounds the trainer ids
+//       Maritimes: raised from 864 to 1376 (512 more trainers, 64 bytes of SaveBlock1); dev/events.py appends ids
+//       below and dev/tests/id_budget.py checks the budget
 //       More space can be made by shifting flags around in constants/flags.h or changing how trainer flags are handled
 //       MAX_TRAINERS_COUNT can be increased but will take up additional saveblock space
 
 #define TRAINERS_COUNT_EMERALD     856
-#define MAX_TRAINERS_COUNT_EMERALD 864
+#define MAX_TRAINERS_COUNT_EMERALD 1376
 
 #if IS_FRLG
 #define TRAINERS_COUNT                      TRAINERS_COUNT_FRLG

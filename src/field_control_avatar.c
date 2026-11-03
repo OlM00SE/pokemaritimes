@@ -21,6 +21,7 @@
 #include "field_specials.h"
 #include "fldeff_misc.h"
 #include "follower_npc.h"
+#include "item.h"
 #include "item_menu.h"
 #include "link.h"
 #include "match_call.h"
@@ -28,6 +29,7 @@
 #include "overworld.h"
 #include "pokemon.h"
 #include "safari_zone.h"
+#include "save.h"
 #include "script.h"
 #include "script_pokemon_util.h"
 #include "secret_base.h"
@@ -55,11 +57,16 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 //   'GIVE': give the player species flagId at level flagValue (tests that need a party)
 //   'MON0': party slot 0 -> outHp/outMaxHp; if flagValue != 0xFFFF, first set its HP to flagValue
 //   'MOVE': teach party slot 0 move flagId in move slot flagValue (full PP), e.g. Surf for tests
+//   'FGET': outHp = whether flag flagId is set      'ITEM': outHp = how many of item flagId the bag holds
+//   'SAVE': save the game as the start menu does; outHp = TrySavingData's result (SAVE_STATUS_OK = 1)
 #define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
 #define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
 #define DEV_BRIDGE_GIVE 0x47495645 // 'GIVE'
 #define DEV_BRIDGE_MON0 0x4D4F4E30 // 'MON0'
 #define DEV_BRIDGE_MOVE 0x4D4F5645 // 'MOVE'
+#define DEV_BRIDGE_FGET 0x46474554 // 'FGET'
+#define DEV_BRIDGE_ITEM 0x4954454D // 'ITEM'
+#define DEV_BRIDGE_SAVE 0x53415645 // 'SAVE'
 struct DevBridgeMailbox
 {
     u32 request;
@@ -120,6 +127,22 @@ static bool32 TryDevBridgeRequest(void)
     case DEV_BRIDGE_MOVE:
         gDevBridge.request = 0;
         SetMonMoveSlot(&gParties[B_TRAINER_PLAYER][0], gDevBridge.flagId, gDevBridge.flagValue & 3);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_FGET:
+        gDevBridge.request = 0;
+        gDevBridge.outHp = FlagGet(gDevBridge.flagId);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_ITEM:
+        gDevBridge.request = 0;
+        gDevBridge.outHp = CountTotalItemQuantityInBag(gDevBridge.flagId);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_SAVE:
+        gDevBridge.request = 0;
+        SaveMapView();
+        gDevBridge.outHp = TrySavingData(SAVE_NORMAL);
         gDevBridge.done++;
         return FALSE;
     }
