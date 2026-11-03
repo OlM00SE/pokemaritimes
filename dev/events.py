@@ -48,6 +48,8 @@ FACING = {"down": "MOVEMENT_TYPE_FACE_DOWN", "up": "MOVEMENT_TYPE_FACE_UP",
           "around": "MOVEMENT_TYPE_LOOK_AROUND"}
 KINDS = ("sign", "person", "trainer", "hidden_item")
 FLAG_MIN = 0x1F4                      # FLAG_HIDDEN_ITEMS_START: the bg event stores flag - start
+FLAG_END = 0x500                      # TRAINER_FLAGS_START: above are trainer, system and daily
+                                      # flags (daily ones are cleared every day: an item respawns)
 TRAINER_NAME_LENGTH = 10
 PARAGRAPH = "\\p"                     # a new message box
 
@@ -312,13 +314,14 @@ def plan_flags(p, flags):
     need = [f for f in flags if f not in have]
     free = []
     for name, val in re.findall(r"^#define (FLAG_UNUSED_0x([0-9A-Fa-f]+))\s+0x[0-9A-Fa-f]+", txt, re.M):
-        if int(val, 16) >= FLAG_MIN and len(free) < len(need):
+        if FLAG_MIN <= int(val, 16) < FLAG_END and len(free) < len(need):
             used = subprocess.run(["git", "-C", p.root, "grep", "-l", "-w", name, "--", "src", "include", "data"],
                                   capture_output=True, text=True).stdout.split()
             if used == ["include/constants/flags.h"]:
                 free.append(name)
     if len(free) < len(need):
-        raise SpecError("  not enough unused flags for hidden items")
+        raise SpecError(f"  not enough unused flags for hidden items between {FLAG_MIN:#x} and "
+                        f"{FLAG_END:#x} (above are trainer, system and daily flags)")
     return dict(zip(need, free))
 
 
@@ -354,36 +357,26 @@ def describe_event(kind, i, e, a):
             + (" (Surf only)" if (kind, i) in a["surf_only"] else ""))
 
 
+EMPTY = {"reach_free": {}, "reach": {}, "blockers": {}, "sight": {}, "seen": {}, "spots": {},
+         "surf_only": set()}
+
+
 def analyse_map(p, m):
-    """events.analyse from every entrance the checker would use."""
+    """(events.analyse result, checker detail, checker issues) from one checker run on m, so
+    the entrances are exactly the checker's (door arrivals, Surf arrivals and all)."""
     detail = {}
-    check_map(p, m.name, None, None, mapdata=m, detail=detail)
-    from mapkit.engine import World
-    w = World(p, m)
-    starts = []
-    for c in m.connections:
-        if c["direction"] not in ("up", "down", "left", "right"):
-            continue
-        dest = p.const_to_map.get(c["map"])
-        for (gx, gy), (d, n) in w.conn_side.items():
-            if n == dest and w.collision(gx, gy) == 0 and any(
-                    w.in_map(gx + dx, gy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))):
-                s = w.arrival_state(gx, gy)
-                if not w.surfing(s):
-                    starts.append(s)
-    for wv in m.events("warp_events"):
-        if m.layout.inb(wv["x"], wv["y"]):
-            starts.append(w.arrival_state(*w.to_grid(wv["x"], wv["y"])))
-    return ev.analyse(p, m, starts, starts), detail
+    issues = check_map(p, m.name, None, None, mapdata=m, detail=detail)
+    return detail.get("events", EMPTY), detail, issues
 
 
 def cmd_list(p, name):
     m = p.load_map(name)
     pory = p.path("data/maps", name, "scripts.pory")
     owns = owned_names(open(pory, encoding="utf-8").read()) if os.path.exists(pory) else set()
-    a, _ = analyse_map(p, m)
+    a, _, _ = analyse_map(p, m)
+    owned = sum(is_owned(k, e, owns) for k in ("object_events", "bg_events") for e in m.events(k))
     print(f"{name}: {len(m.events('object_events'))} people, {len(m.events('bg_events'))} signs/items "
-          f"({len(owns)} owned by a spec; the rest placed by hand)")
+          f"({owned} owned by a spec; the rest placed by hand)")
     for kind in ("object_events", "bg_events"):
         for i, e in enumerate(m.events(kind)):
             print(describe_event(kind, i, e, a) + ("   [spec]" if is_owned(kind, e, owns) else ""))
@@ -423,7 +416,7 @@ def cmd_build(p, spec_path, apply, force):
                  for e in m.events(k) if is_owned(k, e, owns_before)}
     new_owned = {(k, json.dumps(e, sort_keys=True)) for k, es in (("object_events", objs), ("bg_events", bgs)) for e in es}
     added, removed = new_owned - old_owned, old_owned - new_owned
-    a, detail = analyse_map(p, new)
+    a, detail, issues = analyse_map(p, new)
     text_changed = with_block(pory, block) != pory
     print(f"{m.name}: {len(spec_events)} events from {os.path.relpath(spec_path, p.root)} "
           f"({len(added)} new or changed, {len(removed)} removed or changed, "
@@ -452,7 +445,6 @@ def cmd_build(p, spec_path, apply, force):
 
     # the checker, before and after; route numbers, before and after
     before = {(c, msg) for s, c, msg in check_map(p, m.name, None, None, mapdata=m) if s == "ERROR"}
-    issues = check_map(p, m.name, None, None, mapdata=new)
     new_errors = []
     for s, c, msg in issues:
         is_new = s == "ERROR" and (c, msg) not in before

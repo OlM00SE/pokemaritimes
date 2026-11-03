@@ -52,6 +52,17 @@ def wander_box(o):
     return {(o["x"] + dx, o["y"] + dy) for dx in range(-rx, rx + 1) for dy in range(-ry, ry + 1)}
 
 
+def object_elevation(m, o, xy=None):
+    """The elevation an object has in the game while standing on xy (default: home). Every frame
+    ObjectEventUpdateElevation sets it to the tile's elevation, except on multi-level (15)
+    tiles, where the template's elevation stays. (Safari Zone's exit attendant has elevation 4
+    in its template but stands on elevation 3 ground, and blocks like any elevation-3 person.)"""
+    x, y = xy or (o["x"], o["y"])
+    L = m.layout
+    t = L.elev(x, y) if L.inb(x, y) else 15
+    return int(o.get("elevation", 0)) if t == 15 else t
+
+
 def hidden_by_flag(o):
     return str(o.get("flag", "0")) not in ("0", "", "None")
 
@@ -75,15 +86,17 @@ def label(kind, i, ev):
 
 
 def obstacle_tiles(m, boxes=True, permanent_only=False):
-    """Map tiles people occupy. boxes: a wanderer blocks its whole movement range (for planning
-    walks); otherwise only its home tile. permanent_only: skip objects with a hide flag."""
-    out = set()
+    """{map tile: elevation} that people occupy (a person blocks a mover whose elevation is
+    compatible: engine.World.step). boxes: a wanderer blocks its whole movement range (for
+    planning walks); otherwise only its home tile. permanent_only: skip objects with a hide flag."""
+    out = {}
     for o in m.events("object_events"):
         if permanent_only and hidden_by_flag(o):
             continue
         if o.get("trainer_type") == "TRAINER_TYPE_BURIED":
             continue                # Lavaridge Gym's trainers hidden in ash: not modelled as blockers
-        out |= wander_box(o) if boxes else {(o["x"], o["y"])}
+        for xy in (wander_box(o) if boxes else {(o["x"], o["y"])}):
+            out[xy] = object_elevation(m, o, xy)
     return out
 
 
@@ -91,14 +104,20 @@ def world_with_people(p, m, boxes=True, extra=(), permanent_only=False):
     """World in which people block. The defaults are what a walker plans around in the game
     (anyone present, wanderers' whole range); route numbers use home tiles of the permanent
     people (boxes=False, permanent_only=True): a wanderer steps aside, an item ball is taken."""
-    return World(p, m, obstacle_tiles(m, boxes, permanent_only) | set(extra))
+    return World(p, m, {**obstacle_tiles(m, boxes, permanent_only), **{xy: 0 for xy in extra}})
+
+
+def compatible(a, b):
+    """AreElevationsCompatible; a is None when nobody is there."""
+    return a is not None and (a == 0 or b == 0 or a == b)
 
 
 def sight_lines(world, o, others):
     """{direction: [map tiles a trainer sees, nearest first]}: the tiles where a player standing
-    there starts the battle. `others`: tiles other objects occupy (block the trainer's path)."""
+    there starts the battle. `others`: {tile: elevation} of the other people; one blocks the
+    trainer's path where their elevations are compatible (equal, or either is 0)."""
     gx, gy = world.to_grid(o["x"], o["y"])
-    elev = int(o.get("elevation", 0))
+    elev = object_elevation(world.m, o)
     dirs = facings(o.get("movement_type")) if o.get("trainer_type") == "TRAINER_TYPE_NORMAL" else set("NSWE")
     cur_b = world.behavior(gx, gy)
     out = {}
@@ -112,7 +131,7 @@ def sight_lines(world, o, others):
             blocked = (world.cell(tx, ty) is None or world.collision(tx, ty) != 0
                        or cur_b in world.blocked[d] or world.behavior(tx, ty) in world.blocked[OPPOSITE[d]]
                        or world.elevation_mismatch(elev, tx, ty)
-                       or world.to_map(tx, ty) in others)
+                       or compatible(others.get(world.to_map(tx, ty)), elev))
             if blocked:
                 break
             seen.append(world.to_map(tx, ty))
@@ -138,7 +157,7 @@ def interaction_spots(p, world, states, kind, ev):
                 # nobody there, but a counter in front: the engine looks one tile further
                 if not hit and world.behavior(fx, fy) in counter and (fx + dx, fy + dy) == (tx, ty):
                     hit = True
-                oe = int(ev.get("elevation", 0))
+                oe = object_elevation(world.m, ev)
                 ok = hit and (oe == 0 or pos_elev == 0 or oe == pos_elev)
             else:
                 be = int(ev.get("elevation", 0))
@@ -150,7 +169,14 @@ def interaction_spots(p, world, states, kind, ev):
     return sorted(spots)
 
 
-def analyse(p, m, starts, surf_starts=None):
+def sight_others(m, i):
+    """The people who can stand in trainer i's way: the permanent ones, at home (as routes)."""
+    o = m.events("object_events")[i]
+    return {xy: e for xy, e in obstacle_tiles(m, boxes=False, permanent_only=True).items()
+            if xy != (o["x"], o["y"])}
+
+
+def analyse(p, m, starts, surf_starts=None, reach_free=None):
     """The map's people, signs and items on the engine model, from entrance states `starts`
     (on foot, grid states) and `surf_starts` (all entrances, for Surf). Returns a dict:
       reach_free:  foot states reachable when nobody blocks;
@@ -159,11 +185,12 @@ def analyse(p, m, starts, surf_starts=None):
       sight:       {object index: {dir: [tiles]}} for trainers;
       seen:        {object index: set of tiles in sight that the player can reach};
       spots:       {(kind, index): [(x, y, facing)]} where each event can be triggered on foot;
-      surf_only:   set of (kind, index) that can only be triggered with Surf (swimmers...)."""
+      surf_only:   set of (kind, index) that can only be triggered with Surf (swimmers...).
+    reach_free: the free exploration, if the caller has it already (check_map does)."""
     blockers = obstacle_tiles(m, boxes=False, permanent_only=True)
-    free = World(p, m)
     world = World(p, m, blockers)
-    reach_free = free.explore(starts)
+    if reach_free is None:
+        reach_free = World(p, m).explore(starts)
     reach = world.explore([s for s in starts if (s[0], s[1]) not in world.obstacles])
     surf = None
     on_map = {world.to_map(s[0], s[1]) for s in reach if world.in_map(s[0], s[1])}
@@ -183,8 +210,7 @@ def analyse(p, m, starts, surf_starts=None):
         return got
     for i, o in enumerate(objs):
         if is_trainer(o):
-            others = {(q["x"], q["y"]) for j, q in enumerate(objs) if j != i}
-            lines = sight_lines(world, o, others)
+            lines = sight_lines(world, o, sight_others(m, i))
             out["sight"][i] = lines
             out["seen"][i] = {t for ts in lines.values() for t in ts} & on_map
         if o.get("script") not in NO_SCRIPT:
@@ -195,15 +221,16 @@ def analyse(p, m, starts, surf_starts=None):
     return out
 
 
-def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None):
+def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None, reach_free=None):
     """Checker findings for people, signs and hidden items (see check_map).
     starts: foot entrance states; surf_starts: every entrance state (Surf); exits: [(label,
     predicate on a state)] for warps and connection edges, which must stay reachable with the
-    people standing in the way."""
+    people standing in the way; reach_free: check_map's foot exploration (nobody in the way).
+    detail['events'] gets the analysis (events.analyse), so tools reuse the checker's entrances."""
     objs, bgs = m.events("object_events"), m.events("bg_events")
     if not objs and not any(b.get("type") in ("sign", "hidden_item") for b in bgs):
         return
-    a = analyse(p, m, starts, surf_starts)
+    a = analyse(p, m, starts, surf_starts, reach_free)
     unreached = lambda key: not a["spots"].get(key) and key not in a["surf_only"]
     for kind, i in sorted(a["surf_only"]):
         ev = (objs if kind == "object_events" else bgs)[i]
@@ -215,7 +242,7 @@ def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None):
             E("people", f"{lbl}: people standing at {sorted(a['blockers'])[:4]} cut it off")
     free_tiles = {world.to_map(s[0], s[1]) for s in a["reach_free"] if world.in_map(s[0], s[1])}
     tiles = {world.to_map(s[0], s[1]) for s in a["reach"] if world.in_map(s[0], s[1])}
-    sealed = sorted(free_tiles - tiles - a["blockers"])
+    sealed = sorted(free_tiles - tiles - set(a["blockers"]))
     if sealed:
         W("people", f"{len(sealed)} tiles can only be reached by walking through people, e.g. {sealed[:6]}")
     for i, o in enumerate(objs):
@@ -240,4 +267,4 @@ def check_events(p, m, world, starts, surf_starts, exits, E, W, I, detail=None):
                 f"{label('bg_events', i, b)} at ({b['x']},{b['y']}) can't be read or found from anywhere "
                 "a walker reaches (position, elevation or facing)")
     if detail is not None:
-        detail["sight"], detail["spots"] = a["sight"], a["spots"]
+        detail["sight"], detail["spots"], detail["events"] = a["sight"], a["spots"], a

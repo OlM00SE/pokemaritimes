@@ -309,17 +309,31 @@ class Emu:
             self.press(key, 3, gap)
         self.wait_for_control()
 
-    def win_battle(self, max_presses=900):
-        """Fight a battle the party can win by using its first move every turn: A picks FIGHT and
-        the move and advances text; the B in each round declines 'switch Pokémon?' (it leaves the
-        party menu) and is harmless elsewhere. Returns once the overworld is back with control."""
-        seq = ("A", "A", "B")
-        for i in range(max_presses):
+    OPTIONS_BATTLE_STYLE_SET = 1 << 9          # SaveBlock2 +0x14 bitfield (include/global.h)
+    OPTIONS_BATTLE_SCENE_OFF = 1 << 10
+
+    def set_battle_options(self):
+        """Battle style SET (no 'switch Pokémon?' prompt after a foe faints) and animations off,
+        in the save's options. Deterministic battles for tests."""
+        addr = self.read32(self.sym["gSaveBlock2Ptr"]) + 0x14
+        v = self.read16(addr) | self.OPTIONS_BATTLE_STYLE_SET | self.OPTIONS_BATTLE_SCENE_OFF
+        self.cmd(f"write16 {addr:x} {v}")
+
+    def win_battle(self, max_presses=600):
+        """Fight a battle the party can win by using its first move every turn. The lead must
+        obey (with no badges, a Pokémon above level 10 may nap instead) and its first move must
+        deal damage; see tests/ingame_events.py. With the SET
+        style (set here) A only ever picks FIGHT, picks the first move, or advances text; with
+        SHIFT, an A on 'switch Pokémon?' could cycle in the party menu. Returns once the
+        overworld is back with control."""
+        self.set_battle_options()
+        for _ in range(max_presses):
             if self.in_overworld():
                 break
-            self.press(seq[i % len(seq)], 3, 12)
+            self.press("A", 3, 12)
         else:
-            raise RuntimeError("the battle never ended")
+            self.shot(os.path.join(REPO, "dev", "out", "win_battle_stuck.png"))
+            raise RuntimeError("the battle never ended (dev/out/win_battle_stuck.png)")
         self.wait_for_control()
 
     def facing(self):

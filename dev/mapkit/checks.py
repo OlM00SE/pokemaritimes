@@ -346,7 +346,7 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
                        lambda s, k=(c["direction"], p.const_to_map.get(c["map"])):
                        not world.in_map(s[0], s[1]) and world.conn_side.get((s[0], s[1])) == k)
                       for c in m.connections if c["direction"] in opp]
-        check_events(p, m, world, foot_starts, starts, warp_needs + edge_exits, E, W, I, detail)
+        check_events(p, m, world, foot_starts, starts, warp_needs + edge_exits, E, W, I, detail, foot)
     # entrances split into separate areas?
     if len(entries) > 1:
         comp = {}

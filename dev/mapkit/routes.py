@@ -62,22 +62,24 @@ def _search(world, starts, grass_first, is_grass):
 def forced_trainers(p, m, world, ents):
     """{(a, b): [trainer labels]}: for each crossing, the trainers whose sight it can't avoid
     (each judged alone: the crossing with that trainer's sight tiles closed is impossible).
-    Permanent people block, at home (as in route_stats); trainers with a hide flag are left out."""
+    Permanent people block, at home (as in route_stats); trainers with a hide flag are left out.
+    Returns None if a search is too big (route_stats then reports nothing)."""
     from . import events
     out = {}
     objs = m.events("object_events")
-    others = events.obstacle_tiles(m, boxes=False, permanent_only=True)
     for i, o in enumerate(objs):
         if not events.is_trainer(o) or events.hidden_by_flag(o):
             continue
-        lines = events.sight_lines(world, o, others - {(o["x"], o["y"])})
+        lines = events.sight_lines(world, o, events.sight_others(m, i))
         sight = {t for ts in lines.values() for t in ts}
         if not sight:
             continue
         closed = events.world_with_people(p, m, boxes=False, extra=sight, permanent_only=True)
         for a, (_, _, starts) in ents.items():
             starts = [s for s in starts if (s[0], s[1]) not in closed.obstacles]
-            got = _search(closed, starts, False, lambda gx, gy: False) or {}
+            got = _search(closed, starts, False, lambda gx, gy: False)
+            if got is None:
+                return None
             for b, (db, nb, _) in ents.items():
                 if b != a and not any(not closed.in_map(s[0], s[1]) and closed.conn_side.get((s[0], s[1])) == (db, nb)
                                       for s in got if s not in starts):
@@ -87,8 +89,9 @@ def forced_trainers(p, m, world, ents):
 
 def route_stats(p, m):
     """{'crossings': {(a, b): {'steps', 'grass_steps', 'grass_route', 'trainers'}},
-    'grass_reachable': n, 'grass_total': n}. People block the way (wanderers their whole
-    range); 'trainers' lists those whose sight the crossing can't avoid. Unreachable crossings
+    'grass_reachable': n, 'grass_total': n}. Permanent people block the way, at home (a
+    wanderer steps aside, an item ball is taken); 'trainers' lists those whose sight the
+    crossing can't avoid. Unreachable crossings
     have steps None. Returns None if the search is too big."""
     from .events import world_with_people
     world = world_with_people(p, m, boxes=False, permanent_only=True)
@@ -110,6 +113,8 @@ def route_stats(p, m):
 
     crossings, reach = {}, set()
     forced = forced_trainers(p, m, world, ents)
+    if forced is None:
+        return None
     for a, (da, _, starts) in ents.items():
         fast = _search(world, starts, False, is_grass)
         calm = _search(world, starts, True, is_grass)

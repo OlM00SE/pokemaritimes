@@ -19,7 +19,9 @@ class Walker:
         """on_interrupt: called when a battle starts mid-path (e.g. e.flee_battle); the walker
         then re-plans from wherever the player is. None = walk blindly (test mode).
         Paths go around people (a wanderer's whole range) and, with avoid_sight, around every
-        trainer's sight: a trainer battle can't be fled, so a walker never starts one.
+        trainer's sight: a trainer battle can't be fled, so a walker never starts one. Pass
+        avoid_sight=False under Emu.test_mode() (trainers can't see there). Beaten trainers'
+        sight stays avoided: the walker doesn't track who has been beaten.
         self.battles counts the battles handled over the walker's life (for reports)."""
         self.e, self.p, self.log = emu, project or Project(), log
         self.on_interrupt = on_interrupt
@@ -33,10 +35,10 @@ class Walker:
             m = self.p.load_map(name)
             sight = set()
             if self.avoid_sight:
-                plain, people = World(self.p, m), events.obstacle_tiles(m)
-                for o in m.events("object_events"):
+                plain = World(self.p, m)
+                for i, o in enumerate(m.events("object_events")):
                     if events.is_trainer(o):
-                        lines = events.sight_lines(plain, o, people - {(o["x"], o["y"])})
+                        lines = events.sight_lines(plain, o, events.sight_others(m, i))
                         sight |= {t for ts in lines.values() for t in ts}
             self._worlds[name] = events.world_with_people(self.p, m, extra=sight)
         return self._worlds[name]
@@ -147,7 +149,7 @@ def main(argv):
         if not e.boot_new_game():
             print("FAIL: never reached overworld"); return 1
         e.test_mode()           # no wild battles or trainer sight: the walker only tests movement
-        wk = Walker(e)
+        wk = Walker(e, avoid_sight=False)
         print("start:", *wk.here())
         for i, target in enumerate(argv):
             reached = wk.go_to_map(target)

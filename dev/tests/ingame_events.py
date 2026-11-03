@@ -16,7 +16,7 @@ Screenshots of each message: dev/out/events_<Map>_<name>.png. Exit code 1 on any
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from mgba_bridge import Emu, REPO, UNTHROTTLED
+from mgba_bridge import Emu, REPO, UNTHROTTLED, flag_id
 from playtest import prepare_rom
 from mapkit.project import Project
 from mapkit.engine import World, DIRS, DIR_NAME
@@ -31,9 +31,13 @@ class Run:
     def __init__(self, e, p, name):
         self.e, self.p, self.name = e, p, name
         self.m = p.load_map(name)
-        self.a, _ = analyse_map(p, self.m)
-        w = World(p, self.m)
-        self.reach = {w.to_map(s[0], s[1]) for s in self.a["reach"] if w.in_map(s[0], s[1])}
+        self.a, _, _ = analyse_map(p, self.m)
+        w = self.world = World(p, self.m, self.a["blockers"])      # people at home, as analysed
+        self.states = {}                                             # map tile -> reachable states
+        for s in self.a["reach"]:
+            if w.in_map(s[0], s[1]):
+                self.states.setdefault(w.to_map(s[0], s[1]), []).append(s)
+        self.reach = set(self.states)
         self.sight = set().union(*self.a["seen"].values()) if self.a["seen"] else set()
         self.passed = self.failed = 0
 
@@ -106,8 +110,18 @@ class Run:
             return
         # the farthest seen tile, entered from a tile the trainer can't see
         far = sorted(seen, key=lambda t: -abs(t[0] - o["x"]) - abs(t[1] - o["y"]))
+
+        def walks_onto(n, d, t):
+            """In the model, a plain step d from a reachable state on n lands on t (not a ledge
+            jump past it, not a refusal)."""
+            for s in self.states.get(n, ()):
+                ns, kind = self.world.step(s, d)
+                if ns is not None and kind == "walk" and self.world.to_map(ns[0], ns[1]) == t:
+                    return True
+            return False
         pick = next(((t, n, d) for t in far for d, (dx, dy) in DIRS.items()
-                     for n in [(t[0] - dx, t[1] - dy)] if n in self.reach and n not in self.sight), None)
+                     for n in [(t[0] - dx, t[1] - dy)]
+                     if n in self.reach and n not in self.sight and walks_onto(n, d, t)), None)
         if not self.check(pick is not None, f"{tag}: a tile beside its sight to step in from"):
             return
         t, n, d = pick
@@ -166,6 +180,11 @@ def main(argv):
             return 1
         e.test_mode(trainer_sight=True)
         e.give_mon(PLAYER_MON, 50)
+        # win_battle uses the first move every turn, so make it a plain damaging one, and make
+        # the Pokémon obey: with no badges a level-50 Pokémon disobeys ("began to nap") and
+        # the battle can go on forever. The eighth badge makes every level obey.
+        e.teach_move("TACKLE", 0)
+        e.set_flag(flag_id("FLAG_BADGE08_GET"))
         for name in names:
             ok &= Run(e, p, name).run()
     print("PASS" if ok else "FAIL")

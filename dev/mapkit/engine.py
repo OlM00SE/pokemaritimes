@@ -27,10 +27,13 @@ class World:
 
     def __init__(self, project, mapdata, obstacles=()):
         """obstacles: map tiles occupied by objects (people, item balls...), impassable like
-        GetCollisionAtCoords' COLLISION_OBJECT_EVENT. Empty by default: the terrain checks judge
-        the map without its people; mapkit/events.py decides which objects block."""
+        GetCollisionAtCoords' COLLISION_OBJECT_EVENT: {(x, y): object elevation}, or just tiles
+        (elevation 0, which blocks everyone). Empty by default: the terrain checks judge the map
+        without its people; mapkit/events.py decides which objects block."""
         self.p, self.m = project, mapdata
-        self.obstacles = {self.to_grid(x, y) for x, y in obstacles}
+        if not isinstance(obstacles, dict):
+            obstacles = {xy: 0 for xy in obstacles}
+        self.obstacles = {self.to_grid(x, y): e for (x, y), e in obstacles.items()}
         L = mapdata.layout
         self.w, self.h = L.width, L.height
         self.W, self.H = self.w + MAP_OFFSET * 2 + 1, self.h + MAP_OFFSET * 2
@@ -148,12 +151,17 @@ class World:
         #                 -> moving d into a tile blocked on its OPPOSITE(d) side fails
         impassable = (self.cell(nx, ny) is None or self.collision(nx, ny) != 0
                       or cur_b in self.blocked[d] or nb in self.blocked[OPPOSITE[d]])
-        # an object in the way (COLLISION_OBJECT_EVENT); a ledge is still jumped (the jump test
-        # comes first in CheckForObjectEventCollision), and surfing stops before objects count
-        on_obj = (nx, ny) in self.obstacles
+        # an object in the way (COLLISION_OBJECT_EVENT), if the elevations are compatible
+        # (AreElevationsCompatible: equal, or either is 0: a person on a bridge doesn't block the
+        # path below); a ledge is still jumped (the jump test comes first in
+        # CheckForObjectEventCollision), and surfing never lands on a person (CanStopSurfing)
+        oe = self.obstacles.get((nx, ny))
+        on_obj = oe is not None and (oe == 0 or elev == 0 or oe == elev)
         mismatch = (not impassable) and self.elevation_mismatch(elev, nx, ny)
         # CheckForObjectEventCollision: stop surfing, then ledge jump (regardless of collision)
-        if mismatch and surfing and self.elevation(nx, ny) == ELEVATION_DEFAULT and not on_obj:
+        # CanStopSurfing: no object at elevation 3 there (GetObjectEventIdByPosition(x, y, 3))
+        if mismatch and surfing and self.elevation(nx, ny) == ELEVATION_DEFAULT \
+                and self.obstacles.get((nx, ny)) not in (ELEVATION_TRANSITION, ELEVATION_DEFAULT):
             return (nx, ny, ELEVATION_DEFAULT, ELEVATION_DEFAULT, False), "surf_off"
         if self.beh_jump.get(nb) == d:
             lx, ly = nx + dx, ny + dy
