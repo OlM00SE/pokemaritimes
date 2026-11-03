@@ -47,6 +47,15 @@ def move_ids(repo=REPO):
     return enum_ids("moves.h", "MOVE", repo)
 
 
+def item_id(name, repo=REPO):
+    """'ITEM_POTION' (or 'POTION') -> 28, from the Item enum in include/constants/items.h."""
+    key = name.upper().removeprefix("ITEM_")
+    ids = enum_ids("items.h", "ITEM", repo)
+    if key not in ids:
+        raise ValueError(f"unknown item {name}")
+    return ids[key]
+
+
 def flag_id(name, repo=REPO, _cache={}):
     """Value of a flag constant, evaluating flags.h expressions like (SYSTEM_FLAGS + 0x0).
     Where a header defines a name twice under #if (Emerald vs FRLG), the Emerald one wins.
@@ -69,8 +78,8 @@ def flag_id(name, repo=REPO, _cache={}):
         expr = _cache[n]
         if depth > 20:
             raise ValueError(f"flag {n}: define chain too deep")
-        expr = re.sub(r"\b([A-Z_][A-Z0-9_]*)\b", lambda m: str(ev(m.group(1), depth + 1)), expr)
-        if not re.fullmatch(r"[\s()+\-*0-9xXa-fA-F]+", expr):
+        expr = re.sub(r"\b([A-Z_][A-Za-z0-9_]*)\b",lambda m: str(ev(m.group(1), depth + 1)), expr)
+        if not re.fullmatch(r"[\s()+\-*%0-9xXa-fA-F]+", expr):
             raise ValueError(f"flag {n}: cannot evaluate {expr!r}")
         return int(eval(expr, {"__builtins__": {}}))
     v = ev(name)
@@ -272,6 +281,42 @@ class Emu:
         self.cmd(f"write32 {base:x} {0x464C4147}")       # 'FLAG'
         if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
             raise RuntimeError("flag request not serviced")
+
+    def _request(self, code, arg=0, value=0, timeout_frames=300):
+        """One dev-mailbox request (serviced when the player has free control); returns outHp."""
+        base = self.sym["gDevBridge"]
+        done = self.read32(base + 8)
+        self.cmd(f"write16 {base + 12:x} {arg}")
+        self.cmd(f"write16 {base + 14:x} {value}")
+        self.cmd(f"write32 {base:x} {int.from_bytes(code.encode(), 'big')}")
+        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
+            raise RuntimeError(f"{code} request not serviced")
+        return self.read16(base + 20)
+
+    def get_flag(self, flag):
+        """Whether a game flag is set (dev mailbox 'FGET'). flag: a name or an id."""
+        return bool(self._request("FGET", flag_id(flag) if isinstance(flag, str) else flag))
+
+    def bag_count(self, item):
+        """How many of an item the bag holds (dev mailbox 'ITEM'). item: 'ITEM_POTION' or an id."""
+        return self._request("ITEM", item_id(item) if isinstance(item, str) else item)
+
+    def save_game(self):
+        """Save as the start menu does (dev mailbox 'SAVE'); True if TrySavingData succeeded."""
+        return self._request("SAVE", timeout_frames=900) == 1     # SAVE_STATUS_OK
+
+    def objects(self):
+        """[(local id, x, y)] of the active object events other than the player (map tiles)."""
+        me = self.read8(self.sym["gPlayerAvatar"] + 5)
+        out = []
+        for i in range(16):                          # OBJECT_EVENTS_COUNT
+            base = self.sym["gObjectEvents"] + i * self.OBJECT_EVENT_SIZE
+            if i == me or not self.read8(base) & 1:
+                continue
+            raw = self.readrange(base + 0x08, 12)    # localId at 0x08, currentCoords at 0x10
+            out.append((raw[0], int.from_bytes(raw[8:10], "little", signed=True) - self.MAP_OFFSET,
+                        int.from_bytes(raw[10:12], "little", signed=True) - self.MAP_OFFSET))
+        return out
 
     def give_mon(self, species, level=5, timeout_frames=300):
         """Add a Pokémon to the player's party via the dev mailbox. species: 'BIDOOF' or an id."""
