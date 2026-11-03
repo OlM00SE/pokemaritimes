@@ -1,12 +1,18 @@
 """In-game: every person, trainer, sign and hidden item on a map works the way the model says.
 
-  python dev/tests/ingame_events.py [Map ...]          (default: Route201_1)
+  python dev/tests/ingame_events.py [Map ...]          (default: Route201_1 Woodstock_2)
 
 From a new game (no wild battles; trainers can see; a level-50 party Pokémon via the dev bridge),
 for each event the engine model (mapkit/events.py) can trigger:
   - sign / person: walk onto one of the model's trigger tiles facing it, press A: a script must
     take control (a message box); a person must still block the tile it stands on.
   - hidden item: as above; pressing A again must do nothing (its flag is set, it's gone).
+  - item ball: as above; the item lands in the bag, its flag is set, the ball is gone and A
+    again does nothing.
+  - gift (a spec person with gift = ...): the first talk puts the item in the bag and sets the
+    flag; a second talk gives nothing more.
+  - wanderer: watched for a while, it never leaves its range; then it is talked to from beside
+    wherever it stands.
   - trainer: standing beside its sight (a tile the model says it can't see) starts nothing;
     stepping into its farthest sight tile makes it walk up and start a battle, which the test
     wins. Afterwards stepping into its sight starts nothing, and talking gives its after-battle
@@ -14,14 +20,14 @@ for each event the engine model (mapkit/events.py) can trigger:
 Trigger tiles are picked outside every trainer's sight, so one test can't set off another.
 Screenshots of each message: dev/out/events_<Map>_<name>.png. Exit code 1 on any failure.
 """
-import os, sys
+import glob, os, sys, tomllib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import Emu, REPO, UNTHROTTLED, flag_id
 from playtest import prepare_rom
 from mapkit.project import Project
 from mapkit.engine import World, DIRS, DIR_NAME
 from mapkit import events as ev
-from events import analyse_map
+from events import analyse_map, map_token, local_id, gift_flag
 
 OUT = os.path.join(REPO, "dev", "out")
 PLAYER_MON = "STARLY"
@@ -39,7 +45,12 @@ class Run:
                 self.states.setdefault(w.to_map(s[0], s[1]), []).append(s)
         self.reach = set(self.states)
         self.sight = set().union(*self.a["seen"].values()) if self.a["seen"] else set()
+        # a wanderer may be anywhere in its range: no other test stands, steps or turns there
+        self.ranges = set().union(set(), *(ev.wander_box(o) for o in self.m.events("object_events")
+                                           if ev.moves(o) and not ev.hidden_by_flag(o)))
+        self.avoid = self.sight | self.ranges
         self.passed = self.failed = 0
+        self.gifts = spec_gifts(p, name)
 
     def check(self, ok, what):
         print(f"  {'PASS' if ok else 'FAIL'}: {what}")
@@ -52,7 +63,7 @@ class Run:
         Falls back to warping onto the tile and tapping d to turn in place."""
         dx, dy = DIRS[d]
         behind = (x - dx, y - dy)
-        if behind in self.reach and behind not in self.sight:
+        if behind in self.reach and behind not in self.avoid:
             self.e.warp(self.name, *behind)
             self.e.press(DIR_NAME[d], 16, 2)
             self.e.wait(12)
@@ -63,11 +74,12 @@ class Run:
         return (pos[2], pos[3]) == (x, y) and self.e.facing() == d
 
     def spot_for(self, key):
-        """A trigger tile outside every trainer's sight, preferring one with a free tile behind."""
-        spots = [s for s in self.a["spots"].get(key, []) if (s[0], s[1]) not in self.sight]
+        """A trigger tile outside every trainer's sight and every wanderer's range, preferring one
+        with a free tile behind."""
+        spots = [s for s in self.a["spots"].get(key, []) if (s[0], s[1]) not in self.avoid]
         def behind_ok(s):
             dx, dy = DIRS[s[2]]
-            return (s[0] - dx, s[1] - dy) in self.reach and (s[0] - dx, s[1] - dy) not in self.sight
+            return (s[0] - dx, s[1] - dy) in self.reach and (s[0] - dx, s[1] - dy) not in self.avoid
         spots.sort(key=lambda s: (not behind_ok(s), s))
         return spots[0] if spots else None
 
@@ -100,6 +112,66 @@ class Run:
             self.check((pos[2], pos[3]) == (x, y) and self.e.object_at(o["x"], o["y"]),
                        f"{tag}: blocks its tile ({o['x']},{o['y']})")
 
+    def item_ball(self, i, o, tag):
+        item, flag = o["trainer_sight_or_berry_tree_id"], o["flag"]
+        before = self.e.bag_count(item)
+        if self.talk("object_events", i, o, tag):
+            self.e.wait_for_control()
+            self.check(self.e.bag_count(item) == before + 1, f"{tag}: {item} is in the bag ({before} -> "
+                                                            f"{self.e.bag_count(item)})")
+            self.check(self.e.get_flag(flag), f"{tag}: {flag} is set")
+            self.check(not self.e.object_at(o["x"], o["y"]), f"{tag}: the ball is gone")
+            self.check(not self.press_a(tag + "_again"), f"{tag}: A again does nothing")
+
+    def gift(self, i, o, tag, g):
+        item, count, flag = g
+        before = self.e.bag_count(item)
+        if self.talk("object_events", i, o, tag):
+            self.e.wait_for_control()
+            got = self.e.bag_count(item)
+            self.check(got == before + count, f"{tag}: gives {count} {item} ({before} -> {got})")
+            self.check(self.e.get_flag(flag), f"{tag}: {flag} is set")
+            if self.talk("object_events", i, o, tag + "_again"):
+                self.e.wait_for_control()
+                self.check(self.e.bag_count(item) == got, f"{tag}: a second talk gives nothing more")
+
+    def wanderer(self, i, o, tag, watch_frames=1800):
+        box = ev.wander_box(o)
+        lid = i + 1                               # map_event_ids.h: local ids follow object order
+        # watch from a tile outside its range, so the player doesn't hem it in
+        far = next((t for t in sorted(self.reach - box - self.sight,
+                                      key=lambda t: abs(t[0] - o["x"]) + abs(t[1] - o["y"]))
+                    if max(abs(t[0] - o["x"]), abs(t[1] - o["y"])) >= 4), None)
+        if not self.check(far is not None, f"{tag}: a tile to watch it from"):
+            return
+        self.e.warp(self.name, *far)
+        seen = set()
+        for _ in range(watch_frames // 30):
+            self.e.wait(30)
+            seen |= {(x, y) for l, x, y in self.e.objects() if l == lid}
+        self.check(bool(seen) and seen <= box, f"{tag}: stays in its range {min(box)}-{max(box)} "
+                                               f"(stood on {len(seen)} tiles: {sorted(seen)[:6]}"
+                                               f"{'...' if len(seen) > 6 else ''})")
+        self.check(len(seen) > 1, f"{tag}: it does wander")
+        for attempt in range(8):                  # it may step away between the warp and the A press
+            pos = next(((x, y) for l, x, y in self.e.objects() if l == lid), None)
+            spot = pos and next(((pos[0] - dx, pos[1] - dy, d) for d, (dx, dy) in DIRS.items()
+                                 if (pos[0] - dx, pos[1] - dy) in self.reach
+                                 and (pos[0] - dx, pos[1] - dy) not in self.sight), None)
+            if not spot:
+                self.e.wait(60)
+                continue
+            x, y, d = spot
+            self.e.warp(self.name, x, y)
+            self.e.press(DIR_NAME[d], 2, 4)
+            now = next(((ox, oy) for l, ox, oy in self.e.objects() if l == lid), None)
+            if now != pos or self.e.facing() != d:
+                continue
+            if self.press_a(tag):
+                self.check(True, f"{tag}: talked to from ({x},{y}) facing {d} (attempt {attempt + 1})")
+                return
+        self.check(False, f"{tag}: could not be talked to in 8 attempts")
+
     def hidden(self, i, b, tag):
         if self.talk("bg_events", i, b, tag):
             self.check(not self.press_a(tag + "_again"), f"{tag}: found once; A again does nothing")
@@ -121,7 +193,8 @@ class Run:
             return False
         pick = next(((t, n, d) for t in far for d, (dx, dy) in DIRS.items()
                      for n in [(t[0] - dx, t[1] - dy)]
-                     if n in self.reach and n not in self.sight and walks_onto(n, d, t)), None)
+                     if n in self.reach and n not in self.avoid and t not in self.ranges
+                     and walks_onto(n, d, t)), None)
         if not self.check(pick is not None, f"{tag}: a tile beside its sight to step in from"):
             return
         t, n, d = pick
@@ -153,9 +226,17 @@ class Run:
         print(f"{self.name}:")
         objs, bgs = self.m.events("object_events"), self.m.events("bg_events")
         for i, o in enumerate(objs):
-            if ev.hidden_by_flag(o) or o.get("script") in ev.NO_SCRIPT or ev.is_trainer(o):
+            tag = (o.get("local_id") or f"object{i}").replace("LOCALID_", "").lower()
+            if ev.is_item_ball(o):
+                self.item_ball(i, o, tag)
+            elif ev.hidden_by_flag(o) or o.get("script") in ev.NO_SCRIPT or ev.is_trainer(o):
                 continue
-            self.person(i, o, (o.get("local_id") or f"object{i}").replace("LOCALID_", "").lower())
+            elif o.get("local_id") in self.gifts:
+                self.gift(i, o, tag, self.gifts[o["local_id"]])
+            elif ev.moves(o):
+                self.wanderer(i, o, tag)
+            else:
+                self.person(i, o, tag)
         for i, b in enumerate(bgs):
             tag = f"{b.get('type')}{i}"
             if b.get("type") == "sign":
@@ -169,8 +250,20 @@ class Run:
         return self.failed == 0
 
 
+def spec_gifts(p, name):
+    """{local id: (item, count, flag)} for the gift people in the map's events spec, if any."""
+    out = {}
+    for path in glob.glob(p.path("design", "maps", f"{name}.events.toml")):
+        spec = tomllib.load(open(path, "rb"))
+        tok = map_token(p.load_map(name))
+        for e in spec.get("person", []):
+            if "gift" in e:
+                out[local_id(tok, e["name"])] = (e["gift"], e.get("count", 1), gift_flag(tok, e["name"]))
+    return out
+
+
 def main(argv):
-    names = argv or ["Route201_1"]
+    names = argv or ["Route201_1", "Woodstock_2"]
     p = Project()
     rom = prepare_rom(fresh=True)
     ok = True

@@ -7,6 +7,12 @@
 #define DAILY_FLAGS_SIZE    (NUM_DAILY_FLAGS / 8)
 #define TEMP_VARS_SIZE      (NUM_TEMP_VARS * 2)      // 1/2 var per byte
 
+// Maritimes: the saved flags (trainer flags raised, the Maritimes block appended) must stay below the
+// special flags, and every saved flag must fit a hidden item's 13-bit flag offset.
+STATIC_ASSERT(FLAGS_COUNT <= SPECIAL_FLAGS_START, SavedFlagsBelowSpecialFlags);
+STATIC_ASSERT(FLAGS_COUNT - FLAG_HIDDEN_ITEMS_START <= (1 << 13), SavedFlagsFitHiddenItemOffset);
+STATIC_ASSERT(TRAINERS_COUNT <= MAX_TRAINERS_COUNT, TrainerIdsFitTrainerFlags);
+
 EWRAM_DATA u16 gSpecialVar_0x8000 = 0;
 EWRAM_DATA u16 gSpecialVar_0x8001 = 0;
 EWRAM_DATA u16 gSpecialVar_0x8002 = 0;

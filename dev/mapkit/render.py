@@ -6,16 +6,17 @@ Overlays (combine freely):
   elevation  elevation digit per block, coloured by level (15 = bridge, 0 = transition)
   behavior   tall grass (green), surfable (blue), ledges (white arrow: the jump direction),
              encounter water
-  events     warps W#, people P, trainers Tr, triggers T, signs S, hidden items H, with elevation
-             where non-zero; given the checker's detail, trainers' sight (red) and the tiles
-             each event is triggered from (cyan tick pointing at it)
+  events     warps W#, people P, trainers Tr, item balls I, triggers T, signs S, hidden items H,
+             with elevation where non-zero; a wanderer's range (dashed box); given the
+             checker's detail, trainers' sight (red) and the tiles each event is triggered from
+             (cyan tick pointing at it)
   traps      one-way traps from the checker: magenta = can be entered but never left,
              orange = can only be left with Surf. Needs `detail` from checks.check_map.
 """
 from PIL import Image, ImageDraw
 from .project import TILE_FLAG_HAS_ENCOUNTERS, TILE_FLAG_SURFABLE
 from .engine import DIRS
-from .events import is_trainer
+from .events import is_trainer, is_item_ball, moves, wander_box
 
 ELEV_COLORS = {0: (255, 255, 255), 1: (80, 160, 255), 3: (255, 255, 120), 4: (255, 170, 60),
                5: (255, 110, 110), 15: (220, 120, 255)}
@@ -138,7 +139,18 @@ def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
             mark(e, (255, 40, 40, 255), f"W{i}")
         for e in mapdata.events("object_events"):
             trainer = is_trainer(e)
-            mark(e, (255, 90, 40, 255) if trainer else (40, 140, 255, 255), "Tr" if trainer else "P")
+            if moves(e):              # where a wanderer may be: its range, dashed
+                box = wander_box(e)
+                xs, ys = [x for x, _ in box], [y for _, y in box]
+                x0, y0, x1, y1 = min(xs) * s, min(ys) * s, (max(xs) + 1) * s - 1, (max(ys) + 1) * s - 1
+                for a in range(int(x0), int(x1), 6):
+                    d.line((a, y0, min(a + 3, x1), y0), fill=(40, 140, 255, 255), width=2)
+                    d.line((a, y1, min(a + 3, x1), y1), fill=(40, 140, 255, 255), width=2)
+                for a in range(int(y0), int(y1), 6):
+                    d.line((x0, a, x0, min(a + 3, y1)), fill=(40, 140, 255, 255), width=2)
+                    d.line((x1, a, x1, min(a + 3, y1)), fill=(40, 140, 255, 255), width=2)
+            mark(e, (255, 90, 40, 255) if trainer else (40, 140, 255, 255),
+                 "Tr" if trainer else "I" if is_item_ball(e) else "P")
         for e in mapdata.events("coord_events"):
             mark(e, (255, 160, 0, 255), "T")
         for e in mapdata.events("bg_events"):

@@ -1,2 +1,60 @@
 mapscripts Woodstock_2_MapScripts {
 }
+
+// ---- dev/events.py: generated from design/maps/Woodstock_2.events.toml. Edit the spec, not this block. ----
+// owns: Woodstock_2_EventScript_TownSign, Woodstock_2_EventScript_StationSign, Woodstock_2_EventScript_GardenSign, LOCALID_WOODSTOCK_2_GARDENER, FLAG_WOODSTOCK_2_GARDENER_GIFT, LOCALID_WOODSTOCK_2_STATION_WORKER, LOCALID_WOODSTOCK_2_KID, LOCALID_WOODSTOCK_2_ANGLER, LOCALID_WOODSTOCK_2_WALKER, LOCALID_WOODSTOCK_2_RIVER_NOOK_BALL, FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL
+
+script Woodstock_2_EventScript_TownSign {
+    msgbox("WOODSTOCK\nThe river town in the woods.", MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_2_EventScript_StationSign {
+    msgbox("WOODSTOCK WILDLIFE STATION\nPokémon field research", MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_2_EventScript_GardenSign {
+    msgbox("COMMUNITY GARDEN\nPlease share the harvest!", MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_2_EventScript_Gardener {
+    lock
+    faceplayer
+    if (flag(FLAG_WOODSTOCK_2_GARDENER_GIFT)) {
+        msgbox(format("A Pokémon holding an Oran Berry will eat it when it gets weak in battle."))
+    } else {
+        msgbox(format("The berry bushes came in so well this year, there's plenty to go around.\pHere, take one for your Pokémon!"))
+        giveitem(ITEM_ORAN_BERRY)
+        if (var(VAR_RESULT) == FALSE) {
+            goto(Common_EventScript_ShowBagIsFull)
+        }
+        setflag(FLAG_WOODSTOCK_2_GARDENER_GIFT)
+        msgbox(format("A Pokémon holding an Oran Berry will eat it when it gets weak in battle."))
+    }
+    release
+    end
+}
+
+script Woodstock_2_EventScript_StationWorker {
+    msgbox(format("We count the Pokémon living along the river and in the woods around town.\pOur field researchers go as far as the forestry village up Route 201."), MSGBOX_NPC)
+    end
+}
+
+script Woodstock_2_EventScript_Kid {
+    msgbox(format("I'm going to be a Pokémon researcher when I grow up!\pI already know every Pokémon in the garden."), MSGBOX_NPC)
+    end
+}
+
+script Woodstock_2_EventScript_Angler {
+    msgbox(format("Nothing's biting today. You need a fishing rod to catch Pokémon in the water.\pThe big ones stay out in the river."), MSGBOX_NPC)
+    end
+}
+
+script Woodstock_2_EventScript_Walker {
+    msgbox(format("This road heads south along the river to the city.\pIt's a long walk, but it's pretty this time of year."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

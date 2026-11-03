@@ -56,8 +56,12 @@ static bool32 ShouldRunTrainerSlideLastLowHp(u32 lastId, enum BattlerId battler,
 static void SetTrainerSlideParameters(enum BattlerId battler, u32* lastId, u32* trainerId, u32* retValue);
 static bool32 IsSlideInitalizedOrPlayed(enum BattlerId battler, enum TrainerSlideType slideId);
 
-// Partner trainers must be added as TRAINER_PARTNER(PARTNER_XXXX)
-static const u8* const sTrainerSlides[DIFFICULTY_COUNT][TRAINER_PARTNER(PARTNER_COUNT)][TRAINER_SLIDE_COUNT] =
+// Maritimes: the table is sized by the trainers that exist (TRAINERS_COUNT), not by MAX_TRAINERS_COUNT:
+// sized by the raised trainer ceiling it held ~190 KB of empty slots. Partner trainers must be added
+// as [TRAINER_SLIDE_PARTNER(PARTNER_XXXX)]; GetTrainerSlideArray maps TRAINER_PARTNER(p) there.
+#define TRAINER_SLIDE_PARTNER(partner) (TRAINERS_COUNT + (partner))
+#define TRAINER_SLIDE_TABLE_SIZE       TRAINER_SLIDE_PARTNER(PARTNER_COUNT)
+static const u8* const sTrainerSlides[DIFFICULTY_COUNT][TRAINER_SLIDE_TABLE_SIZE][TRAINER_SLIDE_COUNT] =
 {
     [DIFFICULTY_NORMAL] =
     {
@@ -127,8 +131,11 @@ static const u8* const *GetTrainerSlideArray(enum DifficultyLevel difficulty, u3
 #else
     if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
         return sFrontierTrainerSlides[difficulty][trainerId];
-    else
-        return sTrainerSlides[difficulty][trainerId];
+    if (trainerId >= TRAINER_PARTNER(PARTNER_NONE))
+        trainerId = TRAINER_SLIDE_PARTNER(trainerId - TRAINER_PARTNER(PARTNER_NONE));
+    if (trainerId >= TRAINER_SLIDE_TABLE_SIZE)
+        return NULL;
+    return sTrainerSlides[difficulty][trainerId];
 #endif // TESTING
 }
 

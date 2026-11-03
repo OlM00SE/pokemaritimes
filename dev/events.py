@@ -1,4 +1,4 @@
-"""Place people, trainers, signs and hidden items on a map from a small spec file.
+"""Place people, trainers, signs, items and hidden items on a map from a small spec file.
 
   python dev/events.py build design/maps/Route201_1.events.toml [--apply] [--force]
   python dev/events.py list <Map>
@@ -18,21 +18,28 @@ the map (events placed by hand in Porymap) is left alone. A build is a dry run u
     their order and local ids, owned ones come after them);
   - data/maps/<Map>/scripts.pory: a marked block with the owned scripts (rebuilt each time);
   - trainers: a TRAINER_ constant appended to include/constants/opponents.h (ids never move;
-    9 slots before trainer flags run out) and the party in src/data/trainers.party;
-  - hidden items: an unused flag (FLAG_UNUSED_0x264 and up) renamed in include/constants/flags.h.
+    the build prints how many are left) and the party in src/data/trainers.party;
+  - item balls, hidden items and gifts: a flag appended to the Maritimes block in
+    include/constants/flags.h, (MARITIMES_FLAGS_START + n); ids never move.
 Run dev/fastbuild.py afterwards, then dev/tests/ingame_events.py <Map>.
+dev/tests/id_budget.py checks the trainer ids, the flags and the save block.
 
 Spec format (see design/maps/Route201_1.events.toml):
   map = "Route201_1"
   [[sign]]         name, at = [x, y], text            (sign post: draw `s` in the sketch there)
-  [[person]]       name, at, gfx, facing, text        (facing: down/up/left/right/around)
+                   optional: facing = "up" (read only from below, like vanilla's Center signs)
+  [[person]]       name, at, gfx, facing, text        (facing: down/up/left/right/around/wander)
+                   optional: range = [rx, ry] for a wanderer (default [1, 1]);
+                   gift = "ITEM_...", count, after: gives the item once (text before, after
+                   once given; a full bag gives nothing and asks again next time)
   [[trainer]]      name, at, gfx, facing, sight, class, trainer_name, party = ["Caterpie 3", ...],
                    intro, defeat, after               (optional: pic, gender, music)
+  [[item]]         name, at, item                     (an item ball; picked up once)
   [[hidden_item]]  name, at, item                     (e.g. "ITEM_POTION")
 Dialogue is wrapped to the message box by Poryscript's format(); a blank line in the spec starts
 a new box. A sign keeps its own line breaks, as vanilla's route signs do.
 """
-import argparse, copy, json, os, re, subprocess, sys, tomllib
+import argparse, copy, json, os, re, sys, tomllib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.layout import MapData
@@ -45,11 +52,14 @@ END = "// ---- end of dev/events.py block ----"
 OWNS = "// owns: "
 FACING = {"down": "MOVEMENT_TYPE_FACE_DOWN", "up": "MOVEMENT_TYPE_FACE_UP",
           "left": "MOVEMENT_TYPE_FACE_LEFT", "right": "MOVEMENT_TYPE_FACE_RIGHT",
-          "around": "MOVEMENT_TYPE_LOOK_AROUND"}
-KINDS = ("sign", "person", "trainer", "hidden_item")
-FLAG_MIN = 0x1F4                      # FLAG_HIDDEN_ITEMS_START: the bg event stores flag - start
-FLAG_END = 0x500                      # TRAINER_FLAGS_START: above are trainer, system and daily
-                                      # flags (daily ones are cleared every day: an item respawns)
+          "around": "MOVEMENT_TYPE_LOOK_AROUND", "wander": "MOVEMENT_TYPE_WANDER_AROUND"}
+SIGN_FACING = {"any": "BG_EVENT_PLAYER_FACING_ANY", "up": "BG_EVENT_PLAYER_FACING_NORTH",
+               "down": "BG_EVENT_PLAYER_FACING_SOUTH", "left": "BG_EVENT_PLAYER_FACING_WEST",
+               "right": "BG_EVENT_PLAYER_FACING_EAST"}
+KINDS = ("sign", "person", "trainer", "item", "hidden_item")
+FLAG_BLOCK = "MARITIMES_FLAGS_START"  # new flags: (MARITIMES_FLAGS_START + n), include/constants/flags.h
+FLAG_BLOCK_END = "// ---- end of Maritimes flags ----"
+WANDER_MAX = 4                        # a wander range beyond this leaves the camera view
 TRAINER_NAME_LENGTH = 10
 PARAGRAPH = "\\p"                     # a new message box
 
@@ -65,6 +75,16 @@ def caps(name):
 
 def map_token(m):
     return m.id[len("MAP_"):]
+
+
+def local_id(tok, name):
+    """LOCALID_<MAP>_<NAME>, the constant of a spec person, trainer or item ball."""
+    return f"LOCALID_{tok}_{caps(name)}"
+
+
+def gift_flag(tok, name):
+    """FLAG_<MAP>_<NAME>_GIFT, set once a gift person has given their item."""
+    return f"FLAG_{tok}_{caps(name)}_GIFT"
 
 
 def pory_string(text):
@@ -124,7 +144,7 @@ def load_spec(path, p, names):
                 problems.append(f"{where}: at = [x, y] is required")
                 continue
             e["x"], e["y"] = at
-            need = {"sign": ["text"], "person": ["gfx", "text"], "hidden_item": ["item"],
+            need = {"sign": ["text"], "person": ["gfx", "text"], "hidden_item": ["item"], "item": ["item"],
                     "trainer": ["gfx", "sight", "class", "trainer_name", "party", "intro", "defeat", "after"]}[kind]
             for k in need:
                 if k not in e:
@@ -135,8 +155,30 @@ def load_spec(path, p, names):
                     problems.append(f"{where}: unknown graphics {e['gfx']}")
             if kind in ("person", "trainer") and e.get("facing", "down") not in FACING:
                 problems.append(f"{where}: facing must be one of {', '.join(FACING)}")
-            if kind == "hidden_item" and e.get("item") not in names["items"]:
+            if kind in ("hidden_item", "item") and e.get("item") not in names["items"]:
                 problems.append(f"{where}: unknown item {e.get('item')}")
+            if kind == "sign" and e.get("facing", "any") not in SIGN_FACING:
+                problems.append(f"{where}: facing must be one of {', '.join(SIGN_FACING)}")
+            if kind == "person":
+                if e.get("facing") == "wander":
+                    r = e.setdefault("range", [1, 1])
+                    if not (isinstance(r, list) and len(r) == 2 and all(isinstance(v, int) and 0 <= v <= WANDER_MAX for v in r)
+                            and any(r)):
+                        problems.append(f"{where}: range = [rx, ry], each 0-{WANDER_MAX}, not both 0")
+                elif "range" in e:
+                    problems.append(f"{where}: range is only for facing = \"wander\"")
+                if "gift" in e:
+                    if e.get("facing") == "wander":
+                        problems.append(f"{where}: a gift person stands still (facing = \"wander\" with a gift "
+                                        "isn't supported)")
+                    if e["gift"] not in names["items"]:
+                        problems.append(f"{where}: unknown gift item {e['gift']}")
+                    if "after" not in e:
+                        problems.append(f"{where}: a gift needs after = \"...\" (what they say once it's given)")
+                    if not isinstance(e.get("count", 1), int) or not 1 <= e.get("count", 1) <= 99:
+                        problems.append(f"{where}: count must be 1-99")
+                elif "after" in e or "count" in e:
+                    problems.append(f"{where}: after/count are only for a gift")
             if kind == "trainer":
                 if e.get("class") not in names["classes"]:
                     problems.append(f"{where}: unknown trainer class {e.get('class')!r} (use one from "
@@ -171,7 +213,7 @@ def generated(p, m, spec_events, spec_path):
         elev = L.elev(e["x"], e["y"]) if L.inb(e["x"], e["y"]) else 0
         if e["kind"] == "sign":
             bgs.append({"type": "sign", "x": e["x"], "y": e["y"], "elevation": 0,
-                        "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY", "script": label})
+                        "player_facing_dir": SIGN_FACING[e.get("facing", "any")], "script": label})
             scripts.append(f"script {label} {{\n    msgbox({sign_text(e['text'])}, MSGBOX_SIGN)\n    end\n}}")
             owns.append(label)
         elif e["kind"] == "hidden_item":
@@ -180,12 +222,23 @@ def generated(p, m, spec_events, spec_path):
                         "item": e["item"], "flag": flag})
             flags.append(flag)
             owns.append(flag)
+        elif e["kind"] == "item":
+            lid = local_id(tok, e["name"])
+            flag = f"FLAG_ITEM_{tok}_{caps(e['name'])}"
+            objs.append({"local_id": lid, "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL", "x": e["x"], "y": e["y"],
+                         "elevation": elev, "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+                         "movement_range_x": 0, "movement_range_y": 0, "trainer_type": "TRAINER_TYPE_NONE",
+                         "trainer_sight_or_berry_tree_id": e["item"], "script": "Common_EventScript_FindItem",
+                         "flag": flag})
+            flags.append(flag)
+            owns += [lid, flag]
         else:
-            lid = f"LOCALID_{tok}_{caps(e['name'])}"
+            lid = local_id(tok, e["name"])
             trainer = e["kind"] == "trainer"
+            rx, ry = e.get("range", [0, 0]) if e.get("facing") == "wander" else (0, 0)
             objs.append({"local_id": lid, "graphics_id": e["gfx"], "x": e["x"], "y": e["y"],
                          "elevation": elev, "movement_type": FACING[e.get("facing", "down")],
-                         "movement_range_x": 0, "movement_range_y": 0,
+                         "movement_range_x": rx, "movement_range_y": ry,
                          "trainer_type": "TRAINER_TYPE_NORMAL" if trainer else "TRAINER_TYPE_NONE",
                          "trainer_sight_or_berry_tree_id": str(e["sight"]) if trainer else "0",
                          "script": label, "flag": "0"})
@@ -196,11 +249,37 @@ def generated(p, m, spec_events, spec_path):
                 trainers[const] = party_text(const, e, names["classes"][e["class"]])
                 scripts.append(f"script {label} {{\n    trainerbattle_single({const}, {fmt(e['intro'])}, "
                                f"{fmt(e['defeat'])})\n    msgbox({fmt(e['after'])}, MSGBOX_AUTOCLOSE)\n    end\n}}")
+            elif "gift" in e:
+                flag = gift_flag(tok, e["name"])
+                flags.append(flag)
+                owns.append(flag)
+                scripts.append(gift_script(label, e, flag))
             else:
                 scripts.append(f"script {label} {{\n    msgbox({fmt(e['text'])}, MSGBOX_NPC)\n    end\n}}")
     rel = os.path.relpath(spec_path, p.root).replace("\\", "/")
     block = "\n".join([BEGIN.format(spec=rel), OWNS + ", ".join(owns), ""] + [s + "\n" for s in scripts] + [END])
     return objs, bgs, block, trainers, flags, owns
+
+
+def gift_script(label, e, flag):
+    """A person who gives an item once. giveitem sets VAR_RESULT to FALSE when the bag is full;
+    then, as in vanilla's gift scripts, goto Common_EventScript_ShowBagIsFull (it says so,
+    releases and ends): the flag stays clear and they offer it again next time."""
+    count = e.get("count", 1)
+    return (f"script {label} {{\n"
+            f"    lock\n    faceplayer\n"
+            f"    if (flag({flag})) {{\n"
+            f"        msgbox({fmt(e['after'])})\n"
+            f"    }} else {{\n"
+            f"        msgbox({fmt(e['text'])})\n"
+            f"        giveitem({e['gift']}{f', {count}' if count != 1 else ''})\n"
+            f"        if (var(VAR_RESULT) == FALSE) {{\n"
+            f"            goto(Common_EventScript_ShowBagIsFull)\n"
+            f"        }}\n"
+            f"        setflag({flag})\n"
+            f"        msgbox({fmt(e['after'])})\n"
+            f"    }}\n"
+            f"    release\n    end\n}}")
 
 
 def party_text(const, e, like):
@@ -258,7 +337,7 @@ def placement_problems(p, m, spec_events, owns):
         mine[xy] = f"{e['kind']} {e['name']}"
         solid = L.coll(*xy) != 0
         wet = p.tile_flags.get(tp.behavior(L.mid(*xy)), 0) & TILE_FLAG_SURFABLE
-        if e["kind"] in ("person", "trainer") and (solid or wet):
+        if e["kind"] in ("person", "trainer", "item") and (solid or wet):
             problems.append(f"{where}: people stand on walkable ground, not on a "
                             f"{'water' if wet else 'solid'} tile")
         if e["kind"] == "sign" and not solid:
@@ -306,23 +385,27 @@ def write_trainers(p, new, parties):
     open(path, "w", encoding="utf-8", newline="\n").write(party)
 
 
+def flag_block(p):
+    """({flag: offset} already in the Maritimes block, its size) from include/constants/flags.h."""
+    txt = open(p.path("include/constants/flags.h"), encoding="utf-8").read()
+    have = {n: int(v, 0) for n, v in re.findall(rf"^#define (FLAG_\w+)\s+\({FLAG_BLOCK} \+ (0x[0-9A-Fa-f]+|\d+)\)", txt, re.M)}
+    size = int(re.search(r"#define MARITIMES_FLAGS_COUNT\s+(\d+)", txt).group(1))
+    return have, size
+
+
 def plan_flags(p, flags):
-    """{flag: unused flag line it takes over} for hidden-item flags that don't exist yet."""
-    path = p.path("include/constants/flags.h")
-    txt = open(path, encoding="utf-8").read()
-    have = set(re.findall(r"#define (FLAG_\w+)", txt))
-    need = [f for f in flags if f not in have]
-    free = []
-    for name, val in re.findall(r"^#define (FLAG_UNUSED_0x([0-9A-Fa-f]+))\s+0x[0-9A-Fa-f]+", txt, re.M):
-        if FLAG_MIN <= int(val, 16) < FLAG_END and len(free) < len(need):
-            used = subprocess.run(["git", "-C", p.root, "grep", "-l", "-w", name, "--", "src", "include", "data"],
-                                  capture_output=True, text=True).stdout.split()
-            if used == ["include/constants/flags.h"]:
-                free.append(name)
-    if len(free) < len(need):
-        raise SpecError(f"  not enough unused flags for hidden items between {FLAG_MIN:#x} and "
-                        f"{FLAG_END:#x} (above are trainer, system and daily flags)")
-    return dict(zip(need, free))
+    """{flag: offset in the Maritimes block} for flags that don't exist yet, after the last one.
+    Flags that exist anywhere in flags.h (e.g. milestone 8's renamed unused flag) are kept."""
+    txt = open(p.path("include/constants/flags.h"), encoding="utf-8").read()
+    exists = set(re.findall(r"#define (FLAG_\w+)", txt))
+    have, size = flag_block(p)
+    nxt = max(have.values(), default=-1) + 1
+    plan = {f: nxt + i for i, f in enumerate(f for f in flags if f not in exists)}
+    if nxt + len(plan) > size:
+        raise SpecError(f"  no room for {len(plan)} new flags: {nxt} of {size} in the Maritimes block used; "
+                        "raise MARITIMES_FLAGS_COUNT in include/constants/flags.h (8 flags = 1 save byte; "
+                        "dev/tests/id_budget.py shows the save block's room)")
+    return plan, size - nxt - len(plan)
 
 
 def write_flags(p, plan):
@@ -330,11 +413,9 @@ def write_flags(p, plan):
         return
     path = p.path("include/constants/flags.h")
     txt = open(path, encoding="utf-8").read()
-    for flag, unused in plan.items():
-        txt, n = re.subn(rf"^#define {unused}(\s+)(0x[0-9A-Fa-f]+)[^\n]*",
-                         lambda mm: f"#define {flag}{mm.group(1)}{mm.group(2)} // Maritimes: dev/events.py",
-                         txt, count=1, flags=re.M)
-        assert n == 1, unused
+    add = "".join(f"#define {f:<43} ({FLAG_BLOCK} + 0x{o:X})  // Maritimes: dev/events.py\n" for f, o in plan.items())
+    assert txt.count(FLAG_BLOCK_END) == 1, "flags.h: the Maritimes flag block marker is missing"
+    txt = txt.replace(FLAG_BLOCK_END, add + FLAG_BLOCK_END)
     open(path, "w", encoding="utf-8", newline="\n").write(txt)
 
 
@@ -434,14 +515,14 @@ def cmd_build(p, spec_path, apply, force):
     # global ids
     try:
         new_trainers, left = plan_trainers(p, list(parties))
-        new_flags = plan_flags(p, flags)
+        new_flags, flags_left = plan_flags(p, flags)
     except SpecError as ex:
         print(f"NOT BUILT:\n{ex}")
         return 1
     for c, i in new_trainers.items():
         print(f"  new trainer id {c} = {i} ({left} trainer slots left after this)")
-    for f, u in new_flags.items():
-        print(f"  new flag {f} takes {u}")
+    for f, o in new_flags.items():
+        print(f"  new flag {f} = {FLAG_BLOCK} + 0x{o:X} ({flags_left} block flags left after this)")
 
     # the checker, before and after; route numbers, before and after
     before = {(c, msg) for s, c, msg in check_map(p, m.name, None, None, mapdata=m) if s == "ERROR"}

@@ -1,9 +1,84 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-03 (milestone 8). Read this first in a new session. Creative direction lives in
+> Updated 2026-11-03 (milestone 9). Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 9 done: Woodstock comes alive, and the trainer-id ceiling is gone** (branch `milestone9-woodstock`, merged into `develop`).
+
+**Save compatibility: saves from before this milestone don't load correctly.** Raising the trainer ceiling moved the system and daily flags, and the saved flag array grew, which shifts every SaveBlock1 field after it. The game loads such a save without complaint, but with wrong flags (no starter, lost badges) and shifted vars. Start a new game. Tests always start fresh.
+
+**The trainer-id limitation, investigated and solved** (engine facts: `mapping_reference.md` §12, "Trainer ids and the flag layout"):
+- **The cause:** each trainer id `n` is also the saved flag `0x500 + n`. The trainer, system and daily flag ranges are chained, and `FLAGS_COUNT` sizes `SaveBlock1.flags[]`. Vanilla used 855 of 864 ids, and Route 201's Ross took one more, leaving 8.
+- **Options weighed:**
+  - Repurposing Hoenn trainers isn't possible yet: the vanilla maps still use them (tests and the checker's baseline run on them).
+  - A second, separate trainer-flag range would have needed engine changes in six places and still moved the save layout.
+  - Raising `MAX_TRAINERS_COUNT` is what expansion itself suggests. It's one constant, and everything else is symbolic: partners are `MAX + n`, special opponents sit at 0xFF00+, and frontier trainers have their own id space.
+- **Done:**
+  - `MAX_TRAINERS_COUNT_EMERALD` 864 → 1376: **520 trainer ids free**.
+  - A **256-flag Maritimes block** after the daily flags, for item balls, hidden items and gifts. `events.py` now allocates there instead of renaming unused vanilla flags.
+  - Cost: 96 bytes of SaveBlock1, leaving **212 bytes**. Both changes were made at once so saves break only once.
+  - Static asserts:
+    - the saved flags stay below the special flags (0x4000);
+    - every saved flag fits a hidden item's 13-bit flag offset;
+    - trainer ids fit their flags.
+  - Code review caught the ROM side: `sTrainerSlides` was sized by `MAX_TRAINERS_COUNT`, which added about 160 KB of empty slots. It's now sized by the trainers that exist (2.5 KB below vanilla).
+- **Guarded:**
+  - `dev/tests/id_budget.py` (no emulator): trainer ids are contiguous, fit and have parties; the flag ranges don't overlap; each allocated flag belongs to one event; item flags are saved and permanent. It prints what's left of each budget.
+  - `dev/tests/ingame_save.py`: flags at both ends of every range, with their neighbours clear, survive save → reset → CONTINUE (16/16).
+  - The `events.py` dry run prints the remaining ids after each allocation.
+- **Scaling further:** raise the constant once, generously (1 byte per 8 trainers or flags; every change breaks old saves). When the Hoenn maps go, their 855 ids and the vanilla flags can be reclaimed.
+
+**Woodstock, populated** (`design/maps/Woodstock_2.events.toml`, provisional text; Tom's layout untouched apart from one cell):
+| Event | Where | Notes |
+|---|---|---|
+| Town sign | (9,16), the east end of the entrance road from Route 201, beside the stairs | "WOODSTOCK / The river town in the woods." The post is the only terrain change (`mapgen patch`). A post at the road's west end would have added a step to the crossing. |
+| Station sign | (19,13), Tom's post by the station door | "WOODSTOCK WILDLIFE STATION / Pokémon field research" |
+| Garden sign | (5,11), Tom's post in the garden | "COMMUNITY GARDEN / Please share the harvest!" |
+| Gardener | (6,12), on the garden path | Gives an **Oran Berry** once (gift flag from the block); afterwards a line about held berries. |
+| Station worker | (21,14), out front of the station | Counts the Pokémon along the river; mentions the field researchers up Route 201. |
+| Child | (15,19), **wanders** the green (range 2×2) | Wants to be a researcher. |
+| Angler | (6,26), the pond's north shore, facing the water | "You need a fishing rod" (none in the slice yet). |
+| Walker | (16,31), by the road south | Points the way to the city. |
+| Poké Ball | (23,6), an **item ball** in the one-tile nook between the station and the river | |
+
+Crossings unchanged (37 steps both ways); checker clean. In-game messages: `dev/out/events_Woodstock_2_*.png` (`events_Woodstock_2_sheet.png` is a contact sheet).
+
+**Tooling added:**
+- **`dev/mapgen.py patch <Map> s@9,16 ...`:** places a few pieces on a hand-painted map. It runs the normal build on a sketch that keeps every other cell (`#`), so the diff is exactly those cells. Bad pieces are refused (a flower on a canopy, off the map). Use it on Tom's towns instead of a rebuild, which would change about 4% of Woodstock.
+- **Spec vocabulary:**
+  - `[[item]]` item balls;
+  - `facing = "wander"` with `range = [rx, ry]`;
+  - `gift = "ITEM_..."` with `count` and `after`: given once; with a full bag the flag stays clear and they offer it again (vanilla's `goto ShowBagIsFull`);
+  - a sign's `facing`.
+- **Model and checker:**
+  - A wanderer is tried on every tile of its range it can walk to. Cutting off an exit is a WARN, because vanilla's house wanderers do it and move on.
+  - An unreachable item ball is warned about.
+  - Renders draw wander ranges (dashed) and mark item balls `I`.
+- **In-game event test:**
+  - item balls: the item is in the bag, the flag is set, the ball is gone, A again does nothing;
+  - gifts: given once;
+  - wanderers: watched for 30 s, stay in their range, and are then talked to wherever they stand;
+  - no other test uses a tile inside a wanderer's range.
+- **Dev bridge (debug only):** `FGET` (read a flag), `ITEM` (bag count), `SAVE` (save as the start menu does); `Emu.get_flag`, `bag_count`, `save_game`, `objects()`.
+- `prepare_rom` waits for the previous mGBA to release `test.sav`. A long regression run hit that once.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| In-game events | Route 201 21/21, Woodstock 41/41, the Woodstock run three times in a row. The child stood on 12 tiles of its 5×5 range in 30 s and never left it. |
+| Save | `ingame_save.py` 16/16 after the layout change. |
+| Budget | `id_budget.py` PASS: 520 trainer ids, 254 block flags, about 212 save bytes left. |
+| Checker | Vanilla baseline: 0 unexpected (8 known). The wanderer check started as an ERROR and flagged 11 vanilla house/corridor wanderers, hence the WARN. Our 19 maps: 0 errors. |
+| Regression set | Conformance 542/542, ledges 490/490 (tours unchanged), shores 624/624, flora 435/435, piece tests PASS; playthrough, doors, encounters (with and without a party) and all four autowalks pass. |
+| Code review | `/code-review` raised 10 findings: 9 fixed, and the save break is documented above (it's inherent to raising the ceiling). Fixed: the trainer-slide ROM growth; the wanderer able to block other tests' tiles; wanderer tiles it can't reach; a gift person that wanders; `call` → `goto` for a full bag; gift flags missing from the budget; a fragile save-size measurement; duplicated bridge code; naming rebuilt in the test. |
+
+Known limits:
+- The gift's full-bag path isn't exercised in-game (it would need a full berry pocket); it's vanilla's own script.
+- `Route102_2` (cloned from vanilla Route 102 in the initial commit) shares `FLAG_ITEM_ROUTE_102_POTION` and Route 102's trainers. Picking up or beating one counts for both. `id_budget.py` notes it.
+- A wanderer is judged at home by the route numbers. The walker keeps avoiding a beaten trainer's sight (unchanged).
+- Woodstock's text is provisional and hasn't been read by Tom in-game.
+
 **Milestone 8 done: people, signs and hidden items, first used on Route 201** (branch `milestone8-events`, merged into `develop`).
 
 **What existed before:** the events overlay drew letters for events; the checker checked that events were in bounds and their scripts existed; `section_status` counted people and signs. Nothing placed events, and the engine model ignored objects entirely. A person could have sealed the road and every check would still pass. There was no sight model, no check that anything could be talked to, and no in-game test.
@@ -82,7 +157,7 @@ Known limits:
   - A Porymap edit to a spec-owned event (e.g. dragging the forester) is overwritten by the next `--apply`. The dry run shows it as a change, so move owned events in the spec.
   - Only Poryscript maps can take events; HomeTown, Route 201 and Woodstock are.
   - Item balls, wandering people, double battles and rematches aren't in the spec vocabulary yet.
-- **Ids:** 8 trainer ids are left before trainer flags overflow. After that, repurpose unused Hoenn trainers or move the trainer flags.
+- **Ids:** solved in milestone 9 (520 trainer ids, a 256-flag block).
 - **Model:** a wanderer is judged at home (checker, route numbers) or as its whole range (walker), never step by step. The walker keeps avoiding a trainer's sight after the trainer is beaten.
 
 **Milestone 7 done: Route 201, "the old logging road"** (branch `milestone7-route201`, merged into `develop`).
@@ -289,7 +364,8 @@ The first slice, **HomeTown → Route 201 → Woodstock** (milestone 2), is a sm
 Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woodstock; starter received in HomeTown before Route 201. Names and story details stay provisional.
 
 ## Still missing in the slice (`dev/section_status.py HomeTown_0 Route201_1 Woodstock_2`)
-- No NPCs in Woodstock or HomeTown beyond the researcher, and no Woodstock town sign (Route 201 has its sign, a forester, a trainer and a hidden item). The text is provisional and hasn't been read by Tom in-game yet.
+- HomeTown has only the researcher and its sign. Route 201 and Woodstock are populated. All text is provisional and hasn't been read by Tom in-game yet.
+- Woodstock's three interiors (two houses, the station) are empty placeholder rooms.
 - Starters are still Treecko/Torchic/Mudkip (`GRASS/FIRE/WATER_STARTER` in `src/starter_choose.c`).
 - No Town Map squares for the new map sections (there's no Maritimes region map image yet).
 - The fishing guard (`CanFish`, empty party) is checked by the build only: no rod can be obtained in the slice.
@@ -301,15 +377,18 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | No wild battles while the party is empty | `src/wild_encounter.c` (StandardWildEncounter) |
 | No fishing while the party is empty | `src/item_use.c` (CanFish) |
 | `ChooseStarterNoBattle` special: the starter bag without Birch's rescue battle | `src/battle_setup.c`, appended to `data/specials.inc` |
-| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0, MOVE | `src/field_control_avatar.c` |
+| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0, MOVE, FGET, ITEM, SAVE | `src/field_control_avatar.c` |
+| Trainer ceiling 864 → 1376; Maritimes flag block (256) after the daily flags; static asserts | `include/constants/opponents.h`, `flags.h`, `src/event_data.c` |
+| Trainer-slide table sized by `TRAINERS_COUNT` (not the ceiling) | `src/trainer_slide.c` |
 | Own map sections, appended so no MAPSEC id moves | `src/data/region_map/region_map_sections.json` |
 
 ## Regression set (run before merging anything)
 ```
 dev/fastbuild.py
-dev/check_maps.py --baseline          # 0 unexpected, 7 known
+dev/check_maps.py --baseline          # 0 unexpected, 8 known
 dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/conformance.py              # 553/553 (seeded samples; the count moves when a map changes)
+dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 254 block flags, ~212 save bytes left)
+dev/tests/conformance.py              # 542/542 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
@@ -318,7 +397,8 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route101_2 Route203_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
 dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 10/10 groups
-dev/tests/ingame_events.py            # Route 201: 21/21 (sign, forester, hidden Potion, Bug Catcher ROSS)
+dev/tests/ingame_events.py            # Route 201 21/21, Woodstock 41/41 (signs, people, gift, wanderer, item ball, trainer)
+dev/tests/ingame_save.py              # 16/16: flags at every range edge survive save, reset, CONTINUE
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
@@ -328,21 +408,22 @@ dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code cha
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
 dev/events.py build design/maps/Route201_1.events.toml   # after an events or map edit: 0 changed, 0 errors
+dev/events.py build design/maps/Woodstock_2.events.toml  # 0 changed, 0 errors, crossings 37/37
 ```
 
 ## Next milestone (proposed, not started)
-1. **Finish populating the first slice with the new tool (recommended next):**
-   - Woodstock's town sign, a few townspeople, and maybe a station worker by the lab.
-   - A second Route 201 voice, if Tom wants one.
-   - Route 203: a hiker in the middle grove's notch, a fisher on the beach.
-
-   On the tool side, add the spec vocabulary these need: item balls (`[[item]]`), wanderers (`facing = "wander"` with a range), and a rematch-free double battle if a pair of trainers fits. Tom reads the Route 201 text in-game first: it's provisional.
-2. **The woods around HomeTown and Woodstock:** the kit applied to their outer forest only. Tom hand-mapped both towns, so propose a box per town before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
+1. **Finish the slice's life (recommended next):**
+   - HomeTown with the same tools: two or three villagers, maybe a mill worker. Tom hand-mapped it, so use `mapgen patch` for any sign post.
+   - Woodstock's interiors: a station scientist and a family in each house. `add_interior` made the rooms, and the spec tool works on any Poryscript map; check that the interiors are Poryscript first.
+   - Tom reads all the slice's text in-game and revises it. It's all provisional.
+2. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
 3. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
-4. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers; resolve pond shores by shape (Route 201's beaver pond could then get a natural outline); add a bank-to-beach transition tile (Porytiles) to soften the straight seam.
+4. **Shore follow-ups:** shores for Woodstock's and Fredericton's rivers (Woodstock only with Tom's okay: hand-mapped); pond shores by shape; a bank-to-beach transition tile.
 5. Later:
-   - Porytiles for Maritime flora: spruce/fir trees for a boreal look, birch, log piles, a covered bridge. Vanilla's broadleaf trees are all the General tileset offers.
+   - Route 203's people (a hiker in the notch, a fisher on the beach) and a rematch-free double battle in the spec.
+   - Porytiles for Maritime flora: spruce/fir for a boreal look, birch, log piles, a covered bridge.
    - A Maritimes Town Map.
+   - Give `Route102_2` its own flags and trainers, or retire it (it shares Route 102's).
 
 Ideas, not done:
 - The walker could read trainer flags so beaten trainers' sight stops being avoided.
@@ -351,6 +432,9 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously, then run `tests/ingame_save.py`. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
+- **Hand-painted maps:** add a sign post or a flower with `dev/mapgen.py patch <Map> s@x,y`, not a rebuild from an extract (Woodstock rebuilds at 95.8%).
+- **Wanderers in tests:** a wanderer may stand anywhere in its range, so tests keep other events' tiles out of it (`ingame_events.py` does). Find one in RAM by local id (= index + 1 in `object_events`) with `Emu.objects()`.
 - **Events:** place people, signs and hidden items with `dev/events.py` from the map's spec, not by editing `map.json`. To move a spec-owned event, edit the spec: a Porymap move is undone by the next `--apply`. A sign needs `s` in the sketch first. Read the dry run's route numbers: a trainer whose sight covers the road shows up as `can't avoid`.
 - **Object elevation:** in the game an object's elevation is its tile's (`ObjectEventUpdateElevation`), not the `elevation` in `map.json`, except on multi-level (15) tiles. Use `events.object_elevation`.
 - **Battles in tests:** with no badges, a Pokémon above level 10 may disobey. Set `FLAG_BADGE08_GET`, teach a damaging first move (`teach_move("TACKLE", 0)`), and use `Emu.win_battle()` (it sets the SET style).

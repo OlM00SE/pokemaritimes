@@ -1337,17 +1337,19 @@
 #define FLAG_UNUSED_0x4FF                                           0x4FF // Unused Flag
 
 // Trainer Flags
-// Trainer flags occupy 0x500 - 0x85F, the last 9 of which are unused
+// Trainer flags occupy 0x500 - 0xA5F (Maritimes: MAX_TRAINERS_COUNT_EMERALD raised from 864 to 1376,
+// so system and daily flags start 0x200 later than in vanilla; their FLAG_UNUSED_0x... names keep
+// vanilla's numbers)
 // See constants/opponents.h. The values there + FLAG_TRAINER_FLAG_START are the flag IDs
 
 #define TRAINER_FLAGS_START                                         0x500
-#define TRAINER_FLAGS_END                                           (TRAINER_FLAGS_START + MAX_TRAINERS_COUNT - 1) // 0x85F
+#define TRAINER_FLAGS_END                                           (TRAINER_FLAGS_START + MAX_TRAINERS_COUNT - 1) // 0xA5F
 
 // System Flags
 
-#define SYSTEM_FLAGS                                   (TRAINER_FLAGS_END + 1) // 0x860
+#define SYSTEM_FLAGS                                   (TRAINER_FLAGS_END + 1) // 0xA60
 
-#define FLAG_SYS_POKEMON_GET                         (SYSTEM_FLAGS + 0x0) // FLAG_0x860
+#define FLAG_SYS_POKEMON_GET                         (SYSTEM_FLAGS + 0x0) // FLAG_0xA60
 #define FLAG_SYS_POKEDEX_GET                         (SYSTEM_FLAGS + 0x1)
 #define FLAG_SYS_POKENAV_GET                         (SYSTEM_FLAGS + 0x2)
 #define FLAG_UNUSED_0x863                            (SYSTEM_FLAGS + 0x3) // Unused Flag
@@ -1639,7 +1641,18 @@
 #define DAILY_FLAGS_END                             (FLAG_UNUSED_0x95F + (7 - FLAG_UNUSED_0x95F % 8))
 #define NUM_DAILY_FLAGS                             (DAILY_FLAGS_END - DAILY_FLAGS_START + 1)
 
-#define FLAGS_COUNT (DAILY_FLAGS_END + 1)
+// Maritimes: a block of saved flags for map events (item balls, hidden items, gifts). dev/events.py
+// allocates them in order as (MARITIMES_FLAGS_START + n) below the marker; ids never move. Each 8
+// flags cost a byte of SaveBlock1 (dev/tests/id_budget.py prints what is left).
+#define MARITIMES_FLAGS_START                       (DAILY_FLAGS_END + 1)
+#define MARITIMES_FLAGS_COUNT                       256
+#define MARITIMES_FLAGS_END                         (MARITIMES_FLAGS_START + MARITIMES_FLAGS_COUNT - 1)
+// ---- dev/events.py: Maritimes flags (appended here) ----
+#define FLAG_WOODSTOCK_2_GARDENER_GIFT              (MARITIMES_FLAGS_START + 0x0)  // Maritimes: dev/events.py
+#define FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL       (MARITIMES_FLAGS_START + 0x1)  // Maritimes: dev/events.py
+// ---- end of Maritimes flags ----
+
+#define FLAGS_COUNT (MARITIMES_FLAGS_END + 1)
 
 // Special Flags (Stored in EWRAM (sSpecialFlags), not in the SaveBlock)
 #define SPECIAL_FLAGS_START                     0x4000
