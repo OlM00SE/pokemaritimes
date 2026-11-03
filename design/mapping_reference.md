@@ -133,3 +133,27 @@ Ways out:
 **Shapes with no tiles.** No piece has both side banks, so water must be at least two wide. There is no mixed bank/beach corner. A water cell can't carry a side bank and the opposite inner corner at once. The compiler refuses these shapes.
 
 **Attributes and movement.** Water pieces sit at elevation 1 with collision 0. Beach sand (`124`, `11C`, `13D`, `13E`; `MB_SAND`) and grass sit at elevation 3. Stepping from land toward water is an elevation mismatch, so on foot it's blocked, and facing water with Surf offers the field move. Surfing toward elevation-3 land comes ashore (`CanStopSurfing`). Warping onto water starts the player surfing. `tests/ingame_shores.py` checks every land/water edge of ShoreLab and Route 203 against this model: bump, landing, rock, and Surf through the prompt.
+## 11. Forests, open ground and flora (mined from 238 vanilla layouts; encoded in `dev/mapkit/flora.py` and `landscape.py`)
+**Flora pieces on `gTileset_General`.**
+| Piece | Tiles | Attributes | Vanilla use |
+|---|---|---|---|
+| Flowers | `004` | walkable, elevation 3 (66%; 0 in towns) | 615 tiles. Mostly singles (268 of 328 beds), the rest beds of 2–12. About half stand within 4 tiles of a tree. |
+| Boulder on grass | `0E0` (`0E1` on dirt, `0E2` on sand) | solid, elevation 3 or 0 | 101 tiles, mainly the Safari Zone, Routes 111 and 123. A third stand right against a tree. |
+| Sapling (Route 116, 110) | `00E` crown top / optional `0C6` crown middle / `017` trunk | crown top walkable (`MB_NORMAL`, elevation 3; the player passes behind it); middle and trunk solid | Route 116's young grove. The trunk always has open ground below. |
+
+Not used:
+- `0C6`/`0C7` over `016`/`017`, stacked 3–6 tall, are Route 119/120's jungle hedges. Saplings tucked under a tree's canopy (a `1EC`/`1ED` tree bottom over `0C6`) are not used either. Both stay `#`.
+- `0CE` is a cliff-top shrub: its neighbours are mountain tiles.
+- `14B–14D` / `113–115` is berry-tree soil, which is functional, not decoration.
+- The `101`/`108–111` "decorations" the vocabulary found are Route 113's ash grass.
+
+Each flora tile's most common neighbour is plain grass `001` (or another flora tile), so the compiler treats flora as grass for the learned rules. It refuses a piece where grass would get an edge tile (the `1CE`/`1CF` canopy overhang above a tree, the `002` bank below water, a path rim). `tests/flora_pieces.py` runs on 16 vanilla maps. Extract rebuilds 103/190 flower tiles, 23/52 boulders and 31/56 saplings in this form exactly, neighbours included. The rest stay `#` for one of three reasons:
+- an unusual elevation (flowers at elevation 0 in towns);
+- a spot that isn't plain grass;
+- a neighbour vanilla drew with the object in mind. Examples are a crown top `00E`/`00F` of a jungle-form sapling beside the piece, or a tree-bottom variant next to a Safari Zone boulder.
+
+Reading the piece as grass would change that neighbour, so extract keeps the piece. 995 trunks belong to the jungle forms.
+
+**Forest edges.** About 10% of vanilla's tree joins are offset by one tile (124 sideways, 122 vertically, against 1,359 aligned each way), almost all on a forest's edge. The `1E4/1E6/1F3` and `1E5/1E7/1F2` bottom variants exist for these joins. Interiors stay on one 2×2 grid. Natural-looking edges step every one to three trees, in bays, headlands and diagonal staircases. Lone trees and pairs stand one or two tiles out. Tall grass comes in irregular patches with stray single tufts at the fringe (Route 116).
+
+**Tiling.** A sketch drawn as whole, non-overlapping 2×2 trees always tiles back tree for tree. The first forest cell in reading order must be some tree's top-left, so the tiling is unique. `landscape.plant` only ever draws such trees. A tree may run off the map's right or bottom edge, as vanilla's do, but never off the left or top: there the greedy tiler would pair the cut tree's cells with the next tree's.
