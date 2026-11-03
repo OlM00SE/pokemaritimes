@@ -6,7 +6,9 @@ Overlays (combine freely):
   elevation  elevation digit per block, coloured by level (15 = bridge, 0 = transition)
   behavior   tall grass (green), surfable (blue), ledges (white arrow: the jump direction),
              encounter water
-  events     warps W#, objects O, triggers T, signs/bg S, with elevation where non-zero
+  events     warps W#, people P, trainers Tr, triggers T, signs S, hidden items H, with elevation
+             where non-zero; given the checker's detail, trainers' sight (red) and the tiles
+             each event is triggered from (cyan tick pointing at it)
   traps      one-way traps from the checker: magenta = can be entered but never left,
              orange = can only be left with Surf. Needs `detail` from checks.check_map.
 """
@@ -113,6 +115,18 @@ def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
             d.line([(0, y * s), (w * s, y * s)], fill=(0, 0, 0, 120))
             d.text((2, y * s + 2), str(y), fill=(255, 255, 0))
     if "events" in overlays and mapdata is not None:
+        # from the checker (mapkit/events.py): trainers' sight, and where each event triggers
+        for lines in detail.get("sight", {}).values():
+            for tiles in lines.values():
+                for x, y in tiles:
+                    d.rectangle((x * s, y * s, x * s + s - 1, y * s + s - 1), fill=(255, 60, 0, 90))
+        for (kind, i), spots in detail.get("spots", {}).items():
+            for x, y, f in spots:
+                cx, cy = x * s + s / 2, y * s + s / 2
+                dx, dy = {"N": (0, -1), "S": (0, 1), "W": (-1, 0), "E": (1, 0)}[f]
+                d.line((cx, cy, cx + dx * s * 0.45, cy + dy * s * 0.45), fill=(0, 230, 255, 255), width=2)
+                d.ellipse((cx - 2, cy - 2, cx + 2, cy + 2), fill=(0, 230, 255, 255))
+
         def mark(ev, color, label):
             x0, y0 = ev["x"] * s, ev["y"] * s
             d.rectangle((x0 + 1, y0 + 1, x0 + s - 2, y0 + s - 2), outline=color, width=2)
@@ -121,11 +135,12 @@ def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
         for i, e in enumerate(mapdata.events("warp_events")):
             mark(e, (255, 40, 40, 255), f"W{i}")
         for e in mapdata.events("object_events"):
-            mark(e, (40, 140, 255, 255), "O")
+            trainer = e.get("trainer_type", "TRAINER_TYPE_NONE") != "TRAINER_TYPE_NONE"
+            mark(e, (255, 90, 40, 255) if trainer else (40, 140, 255, 255), "Tr" if trainer else "P")
         for e in mapdata.events("coord_events"):
             mark(e, (255, 160, 0, 255), "T")
         for e in mapdata.events("bg_events"):
-            mark(e, (190, 60, 255, 255), "S")
+            mark(e, (190, 60, 255, 255), "H" if e.get("type") == "hidden_item" else "S")
 
 
 def render_map(project, name, scale=1, overlays=(), crop=None, detail=None):

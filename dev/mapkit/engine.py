@@ -25,8 +25,12 @@ OPPOSITE = {"N": "S", "S": "N", "W": "E", "E": "W"}
 class World:
     """The padded map grid the engine actually walks on, with neighbours' strips filled in."""
 
-    def __init__(self, project, mapdata):
+    def __init__(self, project, mapdata, obstacles=()):
+        """obstacles: map tiles occupied by objects (people, item balls...), impassable like
+        GetCollisionAtCoords' COLLISION_OBJECT_EVENT. Empty by default: the terrain checks judge
+        the map without its people; mapkit/events.py decides which objects block."""
         self.p, self.m = project, mapdata
+        self.obstacles = {self.to_grid(x, y) for x, y in obstacles}
         L = mapdata.layout
         self.w, self.h = L.width, L.height
         self.W, self.H = self.w + MAP_OFFSET * 2 + 1, self.h + MAP_OFFSET * 2
@@ -144,15 +148,20 @@ class World:
         #                 -> moving d into a tile blocked on its OPPOSITE(d) side fails
         impassable = (self.cell(nx, ny) is None or self.collision(nx, ny) != 0
                       or cur_b in self.blocked[d] or nb in self.blocked[OPPOSITE[d]])
+        # an object in the way (COLLISION_OBJECT_EVENT); a ledge is still jumped (the jump test
+        # comes first in CheckForObjectEventCollision), and surfing stops before objects count
+        on_obj = (nx, ny) in self.obstacles
         mismatch = (not impassable) and self.elevation_mismatch(elev, nx, ny)
         # CheckForObjectEventCollision: stop surfing, then ledge jump (regardless of collision)
-        if mismatch and surfing and self.elevation(nx, ny) == ELEVATION_DEFAULT:
+        if mismatch and surfing and self.elevation(nx, ny) == ELEVATION_DEFAULT and not on_obj:
             return (nx, ny, ELEVATION_DEFAULT, ELEVATION_DEFAULT, False), "surf_off"
         if self.beh_jump.get(nb) == d:
             lx, ly = nx + dx, ny + dy
             return (lx, ly, *self._new_elev(elev, prev, nx, ny, lx, ly), surfing), "jump"
         if impassable:
             return None, "blocked"
+        if on_obj:
+            return None, "object"
         if mismatch:
             # On foot facing surfable water: Surf (TrySetupSurf needs a surfable tile in front).
             if not surfing and self.flags(nx, ny) & TILE_FLAG_SURFABLE:

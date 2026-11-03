@@ -26,7 +26,8 @@ def _entrances(world, m, p):
         cells = [cell for cell, (d, n) in world.conn_side.items() if d == c["direction"] and n == dest]
         touching = [(gx, gy) for gx, gy in cells
                     if any(world.in_map(gx + dx, gy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)))]
-        states = [world.arrival_state(gx, gy) for gx, gy in touching if world.collision(gx, gy) == 0]
+        states = [world.arrival_state(gx, gy) for gx, gy in touching
+                  if world.collision(gx, gy) == 0 and (gx, gy) not in world.obstacles]
         states = [s for s in states if not world.surfing(s)]
         if states:
             out[f"{c['direction']}:{dest}"] = (c["direction"], dest, states)
@@ -58,11 +59,39 @@ def _search(world, starts, grass_first, is_grass):
     return best
 
 
+def forced_trainers(p, m, world, ents):
+    """{(a, b): [trainer labels]}: for each crossing, the trainers whose sight it can't avoid
+    (each judged alone: the crossing with that trainer's sight tiles closed is impossible).
+    Permanent people block, at home (as in route_stats); trainers with a hide flag are left out."""
+    from . import events
+    out = {}
+    objs = m.events("object_events")
+    others = events.obstacle_tiles(m, boxes=False, permanent_only=True)
+    for i, o in enumerate(objs):
+        if not events.is_trainer(o) or events.hidden_by_flag(o):
+            continue
+        lines = events.sight_lines(world, o, others - {(o["x"], o["y"])})
+        sight = {t for ts in lines.values() for t in ts}
+        if not sight:
+            continue
+        closed = events.world_with_people(p, m, boxes=False, extra=sight, permanent_only=True)
+        for a, (_, _, starts) in ents.items():
+            starts = [s for s in starts if (s[0], s[1]) not in closed.obstacles]
+            got = _search(closed, starts, False, lambda gx, gy: False) or {}
+            for b, (db, nb, _) in ents.items():
+                if b != a and not any(not closed.in_map(s[0], s[1]) and closed.conn_side.get((s[0], s[1])) == (db, nb)
+                                      for s in got if s not in starts):
+                    out.setdefault((a, b), []).append(events.label("object_events", i, o))
+    return out
+
+
 def route_stats(p, m):
-    """{'crossings': {(a, b): {'steps', 'grass_steps', 'grass_route'}}, 'grass_reachable': n,
-    'grass_total': n}. Unreachable crossings have steps None. Returns None if the search is
-    too big."""
-    world = World(p, m)
+    """{'crossings': {(a, b): {'steps', 'grass_steps', 'grass_route', 'trainers'}},
+    'grass_reachable': n, 'grass_total': n}. People block the way (wanderers their whole
+    range); 'trainers' lists those whose sight the crossing can't avoid. Unreachable crossings
+    have steps None. Returns None if the search is too big."""
+    from .events import world_with_people
+    world = world_with_people(p, m, boxes=False, permanent_only=True)
     L = m.layout
     fl = lambda gx, gy: world.flags(gx, gy)
     is_grass = lambda gx, gy: bool(fl(gx, gy) & TILE_FLAG_HAS_ENCOUNTERS) and not fl(gx, gy) & TILE_FLAG_SURFABLE
@@ -80,6 +109,7 @@ def route_stats(p, m):
         return out
 
     crossings, reach = {}, set()
+    forced = forced_trainers(p, m, world, ents)
     for a, (da, _, starts) in ents.items():
         fast = _search(world, starts, False, is_grass)
         calm = _search(world, starts, True, is_grass)
@@ -91,7 +121,8 @@ def route_stats(p, m):
             if a != b:
                 crossings[(a, b)] = {"steps": f[b][0] if b in f else None,
                                      "grass_steps": g[b][0] if b in g else None,
-                                     "grass_route": g[b][1] if b in g else None}
+                                     "grass_route": g[b][1] if b in g else None,
+                                     "trainers": forced.get((a, b), []) if b in f else []}
     total = sum(1 for y in range(L.height) for x in range(L.width) if is_grass(*world.to_grid(x, y)))
     got = sum(1 for gx, gy in reach if is_grass(gx, gy))
     return {"crossings": crossings, "grass_reachable": got, "grass_total": total}
@@ -105,7 +136,8 @@ def describe(before, after):
     old = (before or {}).get("crossings", {})
     fmt = lambda r: ("unreachable" if r is None or r["steps"] is None else
                      f"{r['steps']} steps, {r['grass_steps']} in tall grass at least"
-                     f" ({r['grass_route']} steps that way)")
+                     f" ({r['grass_route']} steps that way)"
+                     + (f", can't avoid {', '.join(r['trainers'])}" if r.get("trainers") else ""))
     # a crossing that existed before but not after: an entrance with no walkable tile left
     for a, b in sorted(set(old) | set(after["crossings"])):
         o, r = old.get((a, b)), after["crossings"].get((a, b))
