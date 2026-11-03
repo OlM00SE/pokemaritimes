@@ -170,6 +170,8 @@ def against_kept():
     its spare tile at the open end, not against the block, where it could be a cut-off pocket
     (Route 201's cliff corner had one before plant() treated '#' as closed)."""
     bad = []
+    # plant() starts flush at a run's west end by default, so it's the kept block at the east end
+    # that needs the rule (the old helper failed these 3); the west cases guard the default
     for odd_w in (7, 9, 11):
         for side in ("E", "W"):
             sk = Sketch("t", ["." * 24 for _ in range(8)])
@@ -180,8 +182,16 @@ def against_kept():
             ls.plant(sk, run, ls.rect(0, 0, 23, 7))
             beside = kx - 1 if side == "E" else kx + 1
             if sk.rows[2][beside] != "T" or sk.rows[3][beside] != "T":
-                bad.append((odd_w, side))
-    print(f"  {6 - len(bad)}/6 odd runs against a kept block leave their spare tile at the open end"
+                bad.append(f"spare tile against the block ({odd_w} wide, block {side})")
+    # a kept block may be walkable (a hand-painted path): a one-tile gap between it and the
+    # forest is a walkway, never filled in
+    sk = Sketch("t", ["." * 24 for _ in range(8)])
+    for y in range(8):
+        sk.set(12, y, "#")
+    ls.plant(sk, ls.rect(3, 2, 10, 3), ls.rect(0, 0, 23, 7))
+    if sk.rows[2][11] != "." or sk.rows[3][11] != ".":
+        bad.append("the walkway beside a kept block was filled")
+    print(f"  {7 - len(bad)}/7 kept-block cases: spare tiles go to the open end, walkways stay open"
           + (f"; FAIL {bad}" if bad else ""))
     return not bad
 

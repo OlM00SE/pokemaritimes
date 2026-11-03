@@ -131,12 +131,14 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
                         and sk.rows[y][x] in FOREST_OK)
     band_in = lambda x, y: can(x, y) and can(x, y + 1) and ((x, y) in mask or (x, y + 1) in mask)
 
-    def closed(x, y):
-        """Beyond a run's end: forest that stays (outside the area), a kept '#' block (it may be
-        solid: a cliff, a building), or the map edge. A leftover tile never goes there."""
+    def closed(x, y, kept=True):
+        """Beyond a run's end: forest that stays (outside the area) or the map edge, and with
+        `kept`, a kept '#' block (it may be solid: a cliff, a building). A leftover tile never
+        goes against one. Gap filling passes kept=False: a kept block may also be walkable (a
+        hand-painted path), and a one-tile walkway beside it must stay open."""
         if not inmap(x, y) or not inmap(x, y + 1):
             return True
-        return any(sk.rows[cy][cx] == "#" or ((cx, cy) not in area and sk.rows[cy][cx] in "Ty")
+        return any((kept and sk.rows[cy][cx] == "#") or ((cx, cy) not in area and sk.rows[cy][cx] in "Ty")
                    for cx, cy in ((x, y), (x, y + 1)))
 
     # close one-tile gaps (per band) between two runs, or between a run and the map edge or
@@ -148,7 +150,7 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
             continue
         for g, beyond in ((x + 1, x + 2), (x - 1, x - 2)):
             if not band_in(g, yb) and can(g, yb) and can(g, yb + 1) and \
-                    (band_in(beyond, yb) or closed(beyond, yb)):
+                    (band_in(beyond, yb) or closed(beyond, yb, kept=False)):
                 filled.add((g, yb))
     ok = lambda x, y: band_in(x, y - (y - py) % 2) or (x, y - (y - py) % 2) in filled
 

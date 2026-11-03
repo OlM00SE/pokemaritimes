@@ -198,34 +198,56 @@ def render_sheet(project, primary, secondary, start=0, count=None, cols=16, cell
     return img
 
 
-def render_context(project, name, margin=8, scale=1, layout=None, dim=0.45):
-    """The map plus a `margin`-tile strip of each directly connected neighbour, as the player
-    sees it walking across a seam. Neighbours are dimmed (`dim` = how much grey is blended in)
-    and the map's own outline is drawn, so seams can be judged at a glance.
-    layout: draw this layout for the map itself instead of the one on disk (e.g. a preview)."""
+EDGE_DIRECTIONS = ("up", "down", "left", "right")      # dive / emerge aren't edge connections
+
+
+def neighbour_origin(c, w, h, other):
+    """Top-left tile of a neighbour connected by `c`, relative to a w x h map, or None for a
+    connection that isn't an edge (dive, emerge)."""
+    if c["direction"] not in EDGE_DIRECTIONS:
+        return None
+    o = c["offset"]
+    return {"up": (o, -other.height), "down": (o, h), "left": (-other.width, o),
+            "right": (w, o)}[c["direction"]]
+
+
+def render_contexts(project, name, layouts, margin=8, scale=1, dim=0.45):
+    """For each layout in `layouts` (versions of the map, e.g. before and after an edit): that
+    layout plus a `margin`-tile strip of each directly connected neighbour, as the player sees
+    it walking across a seam. Neighbours are dimmed (`dim` = how much grey is blended in) and
+    the map's own outline is drawn, so seams can be judged at a glance. The neighbours are
+    rendered once and shared."""
     m = project.load_map(name)
-    lay = layout or m.layout
-    w, h = lay.width, lay.height
+    w, h = layouts[0].width, layouts[0].height
     x0, y0, x1, y1 = -margin, -margin, w + margin, h + margin     # canvas, in the map's tiles
-    canvas = Image.new("RGB", ((x1 - x0) * 16, (y1 - y0) * 16), (24, 24, 32))
+    base = Image.new("RGB", ((x1 - x0) * 16, (y1 - y0) * 16), (24, 24, 32))
     for c in m.connections:
         other = project.const_to_map.get(c["map"])
         if not other:
             continue
         ol = project.load_map(other).layout
-        o = c["offset"]
-        ox, oy = {"up": (o, -ol.height), "down": (o, h), "left": (-ol.width, o),
-                  "right": (w, o)}[c["direction"]]
+        origin = neighbour_origin(c, w, h, ol)
+        if origin is None:
+            continue
         img = render_layout(project, ol, 1)
         if dim:
             img = Image.blend(img, Image.new("RGB", img.size, (40, 40, 48)), dim)
-        canvas.paste(img, ((ox - x0) * 16, (oy - y0) * 16))
-    canvas.paste(render_layout(project, lay, 1), (-x0 * 16, -y0 * 16))
-    d = ImageDraw.Draw(canvas)
-    d.rectangle((-x0 * 16 - 1, -y0 * 16 - 1, (w - x0) * 16, (h - y0) * 16), outline=(255, 255, 255))
-    if scale != 1:
-        canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
-    return canvas
+        base.paste(img, ((origin[0] - x0) * 16, (origin[1] - y0) * 16))
+    out = []
+    for lay in layouts:
+        canvas = base.copy()
+        canvas.paste(render_layout(project, lay, 1), (-x0 * 16, -y0 * 16))
+        d = ImageDraw.Draw(canvas)
+        d.rectangle((-x0 * 16 - 1, -y0 * 16 - 1, (w - x0) * 16, (h - y0) * 16), outline=(255, 255, 255))
+        if scale != 1:
+            canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
+        out.append(canvas)
+    return out
+
+
+def render_context(project, name, margin=8, scale=1, layout=None, dim=0.45):
+    """The map (or `layout`, e.g. a preview) with its neighbours' edges; see render_contexts."""
+    return render_contexts(project, name, [layout or project.load_map(name).layout], margin, scale, dim)[0]
 
 
 def render_world(project, start, shrink=2):
@@ -240,9 +262,10 @@ def render_world(project, start, shrink=2):
             if not other or other in pos:
                 continue
             ol = project.load_map(other).layout
-            ax, ay = pos[name]; aw, ah = size[name]; o = c["offset"]
-            pos[other] = {"up": (ax + o, ay - ol.height), "down": (ax + o, ay + ah),
-                          "left": (ax - ol.width, ay + o), "right": (ax + aw, ay + o)}[c["direction"]]
+            origin = neighbour_origin(c, *size[name], ol)
+            if origin is None:
+                continue
+            pos[other] = (pos[name][0] + origin[0], pos[name][1] + origin[1])
             queue.append(other)
     minx = min(p[0] for p in pos.values()); miny = min(p[1] for p in pos.values())
     maxx = max(pos[n][0] + size[n][0] for n in pos); maxy = max(pos[n][1] + size[n][1] for n in pos)

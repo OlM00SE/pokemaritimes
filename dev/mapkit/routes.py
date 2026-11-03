@@ -36,12 +36,13 @@ def _entrances(world, m, p):
 def _search(world, starts, grass_first, is_grass):
     """Dijkstra over movement states. Cost = (grass, steps) if grass_first else (steps, grass).
     Returns {state: cost}; states outside the map are reached but not expanded."""
+    starts = set(starts)
     best = {s: (0, 0) for s in starts}
     q = [((0, 0), s) for s in starts]
     heapq.heapify(q)
     while q:
         cost, s = heapq.heappop(q)
-        if best.get(s) != cost or not world.in_map(s[0], s[1]) and s not in starts:
+        if best.get(s) != cost or (not world.in_map(s[0], s[1]) and s not in starts):
             continue
         if len(best) > LIMIT:
             return None
@@ -66,6 +67,18 @@ def route_stats(p, m):
     fl = lambda gx, gy: world.flags(gx, gy)
     is_grass = lambda gx, gy: bool(fl(gx, gy) & TILE_FLAG_HAS_ENCOUNTERS) and not fl(gx, gy) & TILE_FLAG_SURFABLE
     ents = _entrances(world, m, p)
+    label = {(d, dest): a for a, (d, dest, _) in ents.items()}
+
+    def best_exit(costs):
+        """{entrance label: the cheapest cost of stepping out across that entrance's edge}"""
+        out = {}
+        for s, c in costs.items():
+            if not world.in_map(s[0], s[1]):
+                b = label.get(world.conn_side.get((s[0], s[1])))
+                if b and (b not in out or c < out[b]):
+                    out[b] = c
+        return out
+
     crossings, reach = {}, set()
     for a, (da, _, starts) in ents.items():
         fast = _search(world, starts, False, is_grass)
@@ -73,15 +86,12 @@ def route_stats(p, m):
         if fast is None or calm is None:
             return None
         reach |= {(s[0], s[1]) for s in fast if world.in_map(s[0], s[1])}
-        for b, (db, dest, _) in ents.items():
-            if a == b:
-                continue
-            goal = lambda s: not world.in_map(s[0], s[1]) and world.conn_side.get((s[0], s[1])) == (db, dest)
-            f = [c for s, c in fast.items() if goal(s)]
-            g = [c for s, c in calm.items() if goal(s)]
-            crossings[(a, b)] = {"steps": min(f)[0] if f else None,
-                                 "grass_steps": min(g)[0] if g else None,
-                                 "grass_route": min(g)[1] if g else None}
+        f, g = best_exit(fast), best_exit(calm)
+        for b in ents:
+            if a != b:
+                crossings[(a, b)] = {"steps": f[b][0] if b in f else None,
+                                     "grass_steps": g[b][0] if b in g else None,
+                                     "grass_route": g[b][1] if b in g else None}
     total = sum(1 for y in range(L.height) for x in range(L.width) if is_grass(*world.to_grid(x, y)))
     got = sum(1 for gx, gy in reach if is_grass(gx, gy))
     return {"crossings": crossings, "grass_reachable": got, "grass_total": total}
@@ -92,12 +102,16 @@ def describe(before, after):
     if after is None:
         return ["routes: not measured (search too big)"]
     lines = []
-    for (a, b), r in sorted(after["crossings"].items()):
-        o = (before or {}).get("crossings", {}).get((a, b))
-        fmt = lambda r: ("unreachable" if r["steps"] is None else
-                         f"{r['steps']} steps, {r['grass_steps']} in tall grass at least"
-                         f" ({r['grass_route']} steps that way)")
-        lines.append(f"  {a} -> {b}: " + (f"{fmt(o)}  ->  " if o else "") + fmt(r))
+    old = (before or {}).get("crossings", {})
+    fmt = lambda r: ("unreachable" if r is None or r["steps"] is None else
+                     f"{r['steps']} steps, {r['grass_steps']} in tall grass at least"
+                     f" ({r['grass_route']} steps that way)")
+    # a crossing that existed before but not after: an entrance with no walkable tile left
+    for a, b in sorted(set(old) | set(after["crossings"])):
+        o, r = old.get((a, b)), after["crossings"].get((a, b))
+        lost = r is None or (r["steps"] is None and o is not None and o["steps"] is not None)
+        lines.append(f"  {a} -> {b}: " + (f"{fmt(o)}  ->  " if before else "") + fmt(r)
+                     + ("   <- CROSSING LOST" if lost and o else ""))
     g0 = f"{before['grass_reachable']}/{before['grass_total']} -> " if before else ""
     lines.append(f"  tall grass reachable/total: {g0}{after['grass_reachable']}/{after['grass_total']}")
     return lines

@@ -17,21 +17,18 @@ from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
-from mapkit.render import render_layout, render_diff, render_context
+from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
 from mapkit import landscape, routes
 
 
 def render_context_pair(p, m, old_blocks, margin=6):
     """The map with its neighbours' edges (render.render_context), before above after."""
+    import copy
     from PIL import Image, ImageDraw
-    new_blocks = m.layout.blocks
-    m.layout.blocks = old_blocks
-    try:
-        before = render_context(p, m.name, margin, layout=m.layout)
-    finally:
-        m.layout.blocks = new_blocks
-    after = render_context(p, m.name, margin, layout=m.layout)
+    old = copy.copy(m.layout)            # the same layout with the old blocks; m stays untouched
+    old.blocks = list(old_blocks)
+    before, after = render_contexts(p, m.name, [old, m.layout], margin)
     head = 14
     out = Image.new("RGB", (before.width, (before.height + head) * 2), (24, 24, 32))
     d = ImageDraw.Draw(out)
@@ -87,7 +84,7 @@ def main():
     before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m, detail=old_detail)
               if s == "ERROR"}
     old_metrics = landscape.metrics(m.layout)
-    old_routes = routes.route_stats(p, m)
+    old_routes = routes.route_stats(p, m) if m.connections else None
     old_blocks = list(m.layout.blocks)
     m.layout.blocks = blocks          # in memory only; nothing is written without --apply
     outdir = p.path("dev", "out")
