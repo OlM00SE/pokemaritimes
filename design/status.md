@@ -31,9 +31,10 @@ The design (`design/maps/route201_design.py`):
 
 Tooling built along the way, all reusable:
 - **Route numbers** (`mapkit/routes.py`, `dev/route_stats.py`): for each pair of edge connections, the steps across, the fewest tall-grass tiles that can't be avoided, and the reachable encounter ground, on the engine model (ledges included). `mapgen build` prints them before and after, so "plays the same" is a number.
-- **Context renders:** `render_map.py --context [N]` draws a map with strips of its connected neighbours. `mapgen build` writes `_preview_context.png` (before above after) for any map with connections.
+- **Context renders:** `render_map.py --context [--margin N]` draws a map with strips of its connected neighbours. `mapgen build` writes `_preview_context.png` (before above after) for any map with connections.
 - **Metrics say where:** the longest straight edge and the largest bare square now come with their location.
-- **`plant()` treats a kept `#` block as closed:** an odd run's spare tile no longer lands against a hand-painted cliff, where it was a cut-off pocket. This is covered by a new check in `flora_pieces.py`, which fails on the old helper.
+- **`plant()` treats a kept `#` block as closed:** an odd run's spare tile no longer lands against a hand-painted cliff, where it was a cut-off pocket. One-tile gaps beside a kept block are still left open, since it may be a walkable path. A new check in `flora_pieces.py` covers both (the old helper fails its three east-side cases).
+- **The routes report flags a lost crossing** (`<- CROSSING LOST`), including one whose entrance has no walkable tile left. Context and world renders skip dive/emerge connections.
 - **`shoot.py --settle N`:** waits for the area-name popup to clear before the screenshot.
 
 Before/after: `dev/out/Route201_1_preview_diff.png`, `_preview_context.png`, `Route201_1_before.png` vs `_preview.png`, and in-game `Route201_1_ingame_compare.png` (five viewpoints; regenerate with `shoot.py --tag ... --settle 240`).
@@ -45,6 +46,7 @@ How it was verified:
 | Rebuild | `mapgen build` from the design reproduces the applied map exactly. Extract round trip on Route 201: 99.1% (the HomeTown gap's trees beside sand, and Tom's cliff corner; see limits). |
 | Play | The playthrough (wild battles on) crosses the new route both ways; all autowalks pass, plus Woodstock → Route 201 → HomeTown. Encounters: Route 201's table only; none with an empty party. |
 | In-game pieces | Ledge: 20/20 approaches agree, and the terrace tour jumps the ledge and walks back to Woodstock. Flora: 77/77 pieces and 60/60 edge trees behave as the engine model says. |
+| Code review | `/code-review medium` raised 10 findings; 8 fixed. `mapgen build` crashed on maps with dive/emerge connections (the new context render). The routes report stayed silent when an edit sealed an entrance. `plant()` would also have filled a walkway beside a walkable `#`. There were argument-parsing bugs in `shoot.py` and `render_map.py --context`, double rendering and a slow goal scan, and the new test overstated its coverage. Deferred: the grammar's tree-beside-sand repair (see limits); and the first tooling commit bundles five changes. |
 | Regression set | Conformance 562/562, ledges 490/490 (tours 9/9 groups), shores 624/624, flora 433/433; playthrough, doors, encounters and all autowalks pass; ledge, shore and flora piece tests PASS. Route 201 is now in the default ledge and flora tests. |
 
 Known limits:
@@ -238,7 +240,7 @@ dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanil
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
-dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 6/6)
+dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 433/433 (flora pieces, staggered edge trees)
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 88-100% (Route 201 99.1%); only when mapgen/terrain code changes
