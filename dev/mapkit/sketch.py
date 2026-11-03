@@ -12,6 +12,7 @@ Legend (one character per metatile):
     v  ledge, jump south   <  ledge, jump west          >  ledge, jump east   (mapkit/ledges.py)
     r  rock standing in water (2x2)                                            (mapkit/shores.py)
     *  flowers    b  boulder    y  sapling (a vertical run of 2-3)              (mapkit/flora.py)
+    s  sign post (its text is a sign event: dev/events.py)                     (mapkit/flora.py)
     #  keep the map's current block unchanged (buildings, signs, ...)
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
 by shape (mapkit/shores.py). Flora stands on plain grass only.

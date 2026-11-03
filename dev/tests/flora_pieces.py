@@ -1,7 +1,7 @@
 """Flora and landscape tests (no emulator).
 
 1. Vanilla agreement: on the vanilla routes that use them most, extract finds every flower bed,
-   boulder and Route 116-style sapling (00E [0C6] 017), and keeps as '#' only the ones a compile
+   boulder, route sign post (003) and Route 116-style sapling (00E [0C6] 017), and keeps as '#' only the ones a compile
    wouldn't put back exactly. Reported per piece; then extract -> compile must leave every flora
    block, and every block beside one, unchanged, attributes included.
 2. Shapes: small sketches that must build (flowers, boulders, saplings 2 and 3 tall, a ledge
@@ -31,7 +31,7 @@ VANILLA = ["ROUTE116", "ROUTE102", "ROUTE103", "ROUTE104", "ROUTE110", "ROUTE111
            "SAFARI_ZONE_NORTHWEST", "MOSSDEEP_CITY", "LILYCOVE_CITY"]
 
 
-KIND = {"*": "flowers", "b": "boulders", "y": "saplings"}
+KIND = {"*": "flowers", "b": "boulders", "y": "saplings", "s": "signs"}
 
 
 def vanilla(p, c, v, rules, forbidden, verbose):
@@ -62,13 +62,13 @@ def vanilla(p, c, v, rules, forbidden, verbose):
         if verbose:
             n = Counter(KIND[ch] for ch in heads.values())
             print(f"    {name}: {dict(n)}, kept {sum(sk.rows[y][x] == '#' for x, y in heads)}")
-    for kind in ("flowers", "boulders", "saplings"):
+    for kind in ("flowers", "boulders", "saplings", "signs"):
         print(f"  {kind:8}: {found[kind] - kept[kind]}/{found[kind]} extracted as flora "
               f"({kept[kind]} kept as '#': an odd elevation, a non-grass spot, or a neighbour "
               "vanilla drew for an object there)")
     print(f"  out of scope: {other} trunks in other sapling forms (jungle hedges, under a canopy) stay '#'")
     print(f"  extract -> compile changes {changed} flora blocks or blocks beside flora")
-    return changed == 0 and all(found[k] - kept[k] > 0 for k in ("flowers", "boulders", "saplings"))
+    return changed == 0 and all(found[k] - kept[k] > 0 for k in ("flowers", "boulders", "saplings", "signs"))
 
 
 SHAPES = [
@@ -91,6 +91,11 @@ SHAPES = [
      None),                                   # the crown top is walkable (00E)
     ("ledge landing on a sapling's trunk", [(10, y, "<") for y in range(8, 13)] + [(9, 9, "y"), (9, 10, "y")],
      "lands on a sapling"),
+    ("sign post in the open", [(10, 10, "s")], None),
+    ("sign post beside a tree", [(12, 10, "s")] + [(10 + dx, 10 + dy, "T") for dx in (0, 1) for dy in (0, 1)], None),
+    ("sign post under a canopy", [(10, 9, "s")] + [(10 + dx, 10 + dy, "T") for dx in (0, 1) for dy in (0, 1)],
+     "plain grass"),
+    ("ledge landing on a sign post", [(x, 10, "v") for x in range(8, 13)] + [(10, 11, "s")], "a sign post"),
 ]
 
 
