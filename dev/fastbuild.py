@@ -12,7 +12,7 @@ source of truth (Porymap, git, editing all happen there). This script:
   python dev/fastbuild.py --reseed   # rebuild the mirror from scratch
   python dev/fastbuild.py clean      # extra args go to make
 """
-import filecmp, json, os, shutil, subprocess, sys, time
+import filecmp, json, os, re, shutil, subprocess, sys, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DISTRO, MIRROR_LINUX = "Debian", "~/maritimes-build"
@@ -126,6 +126,39 @@ def main(argv):
     json.dump(now, open(MANIFEST, "w"))
     print(f"BUILD OK: make {time.time() - t1:.0f}s, total {time.time() - t0:.0f}s")
     return 0
+
+
+def probe(src_rel, text, section=".rodata"):
+    """Compile a throwaway source file with the build's own tools and flags, and return the
+    bytes of one section of its object. src_rel is its path in the repo, e.g.
+    'src/zz_dev_probe.c' or 'data/zz_dev_probe.s'; it is written in the WSL mirror only (synced
+    from E: first) and deleted with its object afterwards, so it never reaches E: or the ROM.
+    dev/save_layout.py measures the save layout this way, dev/tests/var_macros.py the macros."""
+    unc = mirror_unc()
+    if not os.path.isdir(unc) or not os.path.exists(MANIFEST):
+        # main() would reseed the mirror (rm -rf) and take the probe with it
+        sys.exit("no WSL build mirror (or its manifest): run dev/fastbuild.py once first")
+    stem = os.path.splitext(src_rel)[0]
+    obj = f"build/emerald/{stem}.o"
+    src = os.path.join(unc, src_rel.replace("/", "\\"))
+    with open(src, "w", newline="\n") as f:
+        f.write(text)
+    try:
+        # main() with a make target: syncs E: -> mirror, then builds just that object
+        if main([obj]) != 0:
+            sys.exit(f"the probe {src_rel} didn't build (see the log above)")
+        path = 'export PATH="$HOME/.local/arm-gnu-toolchain/bin:$PATH"; '
+        out = wsl(f"{path}cd {MIRROR_LINUX} && arm-none-eabi-objdump -s -j {section} {obj}").stdout
+    finally:
+        for p in (src, os.path.join(unc, obj.replace("/", "\\")), os.path.join(unc, obj[:-2].replace("/", "\\") + ".d")):
+            if os.path.exists(p):
+                os.remove(p)
+    raw = b""
+    for line in out.splitlines():
+        m = re.match(r"^\s*[0-9a-f]+ ((?:[0-9a-f]{2,8} ?){1,4})", line)
+        if m:
+            raw += bytes.fromhex(m.group(1).replace(" ", ""))
+    return raw, out
 
 
 if __name__ == "__main__":

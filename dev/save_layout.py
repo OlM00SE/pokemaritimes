@@ -61,29 +61,7 @@ def probe_source():
 def measure():
     """[values] in FIELDS + CAPACITY order, then SB3_ALWAYS_WRITTEN; compiled in the mirror
     (synced from E: first)."""
-    unc = fastbuild.mirror_unc()
-    if not os.path.isdir(unc) or not os.path.exists(fastbuild.MANIFEST):
-        # fastbuild would reseed the mirror (rm -rf) and take the probe with it
-        sys.exit("no WSL build mirror (or its manifest): run dev/fastbuild.py once first")
-    src = os.path.join(unc, "src", PROBE + ".c")
-    obj = f"build/emerald/src/{PROBE}.o"
-    with open(src, "w", newline="\n") as f:
-        f.write(probe_source())
-    try:
-        # fastbuild with a make target: syncs E: -> mirror, then builds just that object
-        if fastbuild.main([obj]) != 0:
-            sys.exit("the probe didn't compile (see the log above)")
-        path = 'export PATH="$HOME/.local/arm-gnu-toolchain/bin:$PATH"; '
-        out = fastbuild.wsl(f"{path}cd {fastbuild.MIRROR_LINUX} && arm-none-eabi-objdump -s -j .rodata {obj}").stdout
-    finally:
-        for p in (src, os.path.join(unc, obj.replace("/", "\\")), os.path.join(unc, obj[:-2].replace("/", "\\") + ".d")):
-            if os.path.exists(p):
-                os.remove(p)
-    raw = b""
-    for line in out.splitlines():
-        m = re.match(r"^\s*[0-9a-f]+ ((?:[0-9a-f]{2,8} ?){1,4})", line)
-        if m:
-            raw += bytes.fromhex(m.group(1).replace(" ", ""))
+    raw, out = fastbuild.probe(f"src/{PROBE}.c", probe_source())
     n = len(FIELDS) + len(CAPACITY) + 1
     if len(raw) < 4 * n:
         sys.exit("couldn't read the probe's table from objdump (an LTO or -fdata-sections build keeps no "
