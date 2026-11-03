@@ -287,9 +287,11 @@ def forbidden_pairs(adj, min_count=30):
 KEEP_PRIORITY = {"S": 6, "W": 6, "T": 5, "SA": 4, "P": 3, "TG": 2, "G": 0}
 
 
-def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4):
+def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4, where=None):
     """Repair forbidden adjacencies by turning the lower-priority cell into grass.
-    Operates on sketch classes ('T' = forest). Returns Counter of repaired pairs."""
+    Operates on sketch classes ('T' = forest). Returns Counter of repaired pairs.
+    where: optional dict, filled with {(x, y): (class the sketch drew, (x, y) of the cell that
+    outranked it)} for every cell the repair turned into grass."""
     fixed = Counter()
     for _ in range(max_passes):
         changed = False
@@ -303,8 +305,12 @@ def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4):
                     if (a, b) in forbidden and a in KEEP_PRIORITY and b in KEEP_PRIORITY:
                         if KEEP_PRIORITY[a] >= KEEP_PRIORITY[b]:
                             cls_grid[ny][nx] = "G"
+                            lost, by = (nx, ny), (x, y)
                         else:
                             cls_grid[y][x] = "G"
+                            lost, by = (x, y), (nx, ny)
+                        if where is not None and lost not in where:
+                            where[lost] = (b if lost == (nx, ny) else a, by)
                         fixed[f"{a}|{b}"] += 1
                         changed = True
         if not changed:

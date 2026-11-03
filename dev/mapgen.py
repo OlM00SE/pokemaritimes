@@ -15,7 +15,8 @@ import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
-from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
+from mapkit.terrain import (Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs,
+                            grid_labels, TREE_Q)
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
@@ -37,6 +38,26 @@ def render_context_pair(p, m, old_blocks, margin=6):
         d.text((4, y + 1), f"{label} (neighbours dimmed, {margin}-tile strips)", fill=(255, 255, 0))
         out.paste(im, (0, y + head))
     return out
+
+
+def terrain_guard(vocab, layout, repaired):
+    """The grammar repairs forbidden joins by turning the lower-ranked cell into grass (trees
+    outrank sand). On a fresh design that is design feedback; on terrain the map already has,
+    it is damage: e.g. a hand-painted tree beside a sand lane makes the build clear the lane.
+    Returns a message naming the cells where a repair overwrites terrain the current map already
+    has as the sketch draws it, or None. mapgen counts it as a new error (--apply refuses)."""
+    if not repaired:
+        return None
+    cur = grid_labels(vocab, layout.entry, layout.blocks, layout.width, layout.height)
+    norm = lambda c: "T" if c in TREE_Q else c
+    hit = sorted((x, y) for (x, y), (drawn, _) in repaired.items() if norm(cur[y][x]) == drawn)
+    if not hit:
+        return None
+    kinds = sorted({repaired[c][0] for c in hit})
+    return (f"the grammar would turn {len(hit)} cells of existing terrain ({', '.join(kinds)}) into grass, "
+            f"e.g. {hit[:6]} (outranked by {[repaired[c][1] for c in hit[:6]]}). A hand-painted join "
+            "the grammar forbids, such as trees beside a sand lane: keep both sides as '#' (whole "
+            "trees), or give the road a grass verge")
 
 
 def main():
@@ -76,9 +97,13 @@ def main():
         print(ex)
         return 1
     warnings = report.pop("ledge_warnings", [])
+    repaired = report.pop("grammar_cells", {})
     print(f"{sk.map_name}: compiled {sk.w}x{sk.h}; {report}")
     for wmsg in warnings:
         print(f"  ledge warning {wmsg}")
+    guard = terrain_guard(vocab, m.layout, repaired)
+    if guard:
+        print(f"  GUARD terrain: {guard}   <- NEW")
     # errors the map already has (accepted or known) don't block a rebuild; only new ones do
     old_detail = {}
     before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m, detail=old_detail)
@@ -156,7 +181,7 @@ def main():
                   f"changed by this build), e.g. {cut[:6]}   <- a pocket? check the overlay")
     elif diff is not None:
         print("  (reach not compared: the walk exploration was truncated on this map)")
-    new = []
+    new = [guard] if guard else []
     for s, c, msg in issues:
         is_new = s == "ERROR" and (c, msg) not in before
         new += [msg] if is_new else []
