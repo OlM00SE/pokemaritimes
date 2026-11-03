@@ -136,7 +136,8 @@ def design_issues(cls, pieces, w, h, kept_walkable=None):
     water), e.g. mountain ground or flowers. Without it, '#' counts as solid."""
     errors, warnings = [], []
     name = {"T": "a tree", "TL": "a tree", "TR": "a tree", "BL": "a tree", "BR": "a tree",
-            "S": "water", "W": "water", "F": "a solid kept '#' tile", "LD": "another ledge"}
+            "S": "water", "W": "water", "F": "a solid kept '#' tile", "LD": "another ledge",
+            "BO": "a boulder", "SP": "a sapling's trunk", "RK": "a rock"}
     ok = lambda x, y: cls[y][x] in WALKABLE or (cls[y][x] == "F" and kept_walkable and kept_walkable(x, y))
     for (x, y), mid in sorted(pieces.items()):
         d = PIECE_DIR[mid]
