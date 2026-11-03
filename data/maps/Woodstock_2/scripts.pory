@@ -28,11 +28,10 @@ script Woodstock_2_EventScript_Gardener {
         msgbox(format("The berry bushes came in so well this year, there's plenty to go around.\pHere, take one for your Pokémon!"))
         giveitem(ITEM_ORAN_BERRY)
         if (var(VAR_RESULT) == FALSE) {
-            call(Common_EventScript_ShowBagIsFull)
-        } else {
-            setflag(FLAG_WOODSTOCK_2_GARDENER_GIFT)
-            msgbox(format("A Pokémon holding an Oran Berry will eat it when it gets weak in battle."))
+            goto(Common_EventScript_ShowBagIsFull)
         }
+        setflag(FLAG_WOODSTOCK_2_GARDENER_GIFT)
+        msgbox(format("A Pokémon holding an Oran Berry will eat it when it gets weak in battle."))
     }
     release
     end

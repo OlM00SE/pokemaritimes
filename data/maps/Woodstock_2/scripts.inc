@@ -33,13 +33,14 @@ Woodstock_2_EventScript_Gardener::
 	giveitem ITEM_ORAN_BERRY
 # 30 "data/maps/Woodstock_2/scripts.pory"
 	compare VAR_RESULT, FALSE
-	goto_if_eq Woodstock_2_EventScript_Gardener_5
+	goto_if_eq Woodstock_2_EventScript_Gardener_6
+Woodstock_2_EventScript_Gardener_5:
 # 33 "data/maps/Woodstock_2/scripts.pory"
 	setflag FLAG_WOODSTOCK_2_GARDENER_GIFT
 # 34 "data/maps/Woodstock_2/scripts.pory"
 	msgbox Woodstock_2_EventScript_Gardener_Text_0
 Woodstock_2_EventScript_Gardener_1:
-# 37 "data/maps/Woodstock_2/scripts.pory"
+# 36 "data/maps/Woodstock_2/scripts.pory"
 	release
 	end
 
@@ -48,32 +49,32 @@ Woodstock_2_EventScript_Gardener_2:
 	msgbox Woodstock_2_EventScript_Gardener_Text_0
 	goto Woodstock_2_EventScript_Gardener_1
 
-Woodstock_2_EventScript_Gardener_5:
+Woodstock_2_EventScript_Gardener_6:
 # 31 "data/maps/Woodstock_2/scripts.pory"
-	call Common_EventScript_ShowBagIsFull
-	goto Woodstock_2_EventScript_Gardener_1
+	goto Common_EventScript_ShowBagIsFull
+	goto Woodstock_2_EventScript_Gardener_5
 
 
 Woodstock_2_EventScript_StationWorker::
-# 42 "data/maps/Woodstock_2/scripts.pory"
+# 41 "data/maps/Woodstock_2/scripts.pory"
 	msgbox Woodstock_2_EventScript_StationWorker_Text_0, MSGBOX_NPC
 	end
 
 
 Woodstock_2_EventScript_Kid::
-# 47 "data/maps/Woodstock_2/scripts.pory"
+# 46 "data/maps/Woodstock_2/scripts.pory"
 	msgbox Woodstock_2_EventScript_Kid_Text_0, MSGBOX_NPC
 	end
 
 
 Woodstock_2_EventScript_Angler::
-# 52 "data/maps/Woodstock_2/scripts.pory"
+# 51 "data/maps/Woodstock_2/scripts.pory"
 	msgbox Woodstock_2_EventScript_Angler_Text_0, MSGBOX_NPC
 	end
 
 
 Woodstock_2_EventScript_Walker::
-# 57 "data/maps/Woodstock_2/scripts.pory"
+# 56 "data/maps/Woodstock_2/scripts.pory"
 	msgbox Woodstock_2_EventScript_Walker_Text_0, MSGBOX_NPC
 	end
 
@@ -102,28 +103,28 @@ Woodstock_2_EventScript_Gardener_Text_1:
 	.string "Here, take one for your Pokémon!$"
 
 Woodstock_2_EventScript_StationWorker_Text_0:
-# 42 "data/maps/Woodstock_2/scripts.pory"
+# 41 "data/maps/Woodstock_2/scripts.pory"
 	.string "We count the Pokémon living along the\n"
 	.string "river and in the woods around town.\p"
 	.string "Our field researchers go as far as the\n"
 	.string "forestry village up Route 201.$"
 
 Woodstock_2_EventScript_Kid_Text_0:
-# 47 "data/maps/Woodstock_2/scripts.pory"
+# 46 "data/maps/Woodstock_2/scripts.pory"
 	.string "I'm going to be a Pokémon researcher\n"
 	.string "when I grow up!\p"
 	.string "I already know every Pokémon in the\n"
 	.string "garden.$"
 
 Woodstock_2_EventScript_Angler_Text_0:
-# 52 "data/maps/Woodstock_2/scripts.pory"
+# 51 "data/maps/Woodstock_2/scripts.pory"
 	.string "Nothing's biting today. You need a\n"
 	.string "fishing rod to catch Pokémon in the\l"
 	.string "water.\p"
 	.string "The big ones stay out in the river.$"
 
 Woodstock_2_EventScript_Walker_Text_0:
-# 57 "data/maps/Woodstock_2/scripts.pory"
+# 56 "data/maps/Woodstock_2/scripts.pory"
 	.string "This road heads south along the river\n"
 	.string "to the city.\p"
 	.string "It's a long walk, but it's pretty this\n"
