@@ -49,7 +49,9 @@ meaning silently.
    The one subtlety is that a link or Battle Frontier save rewrites only sectors 0–4. The block is
    SaveBlock3's first field, so it lies in those sectors' chunks and is saved together with the
    flags on every kind of save. `save.c` asserts this, and the in-game test checks a link save and
-   the bytes on flash.
+   the bytes on flash. The other subtlety, found by the code review: expansion's sector checksum
+   skipped the chunks, so story vars would have lost the protection vanilla's vars have. The
+   checksum now covers them (a flipped story var on flash is refused, in-game test).
 
 The flag block was raised from 256 to 768 in the same version, so that the region's story flags cost
 one save break rather than two. That took 64 bytes of SaveBlock1; 148 are left for expansion's options
@@ -59,8 +61,10 @@ and any later need.
 
 - **Flash:** two save slots of 14 sectors (they alternate; the slot with the higher counter loads),
   then the Hall of Fame (2), Trainer Hill (1) and a recorded battle (1). Each 4 KB sector holds
-  3,968 data bytes, then a 116-byte SaveBlock3 chunk, then the footer: id, checksum (of the data
-  bytes only), signature `0x08012025` and counter.
+  3,968 data bytes, then a 116-byte SaveBlock3 chunk, then the footer: id, checksum, signature
+  `0x08012025` and counter. **The checksum covers the data bytes and, since version 2, the chunk**
+  (`CalculateSectorChecksum`; expansion covered only the data, so a damaged SaveBlock3 loaded
+  silently). A sector that fails it makes its slot unusable, and the other slot loads instead.
 - **Sector 0:** SaveBlock2 (3,884 bytes: the player, options, Pokédex). The **layout stamp**
   `SAVE_LAYOUT_STAMP` = `0x4D00 + SAVE_LAYOUT_VERSION` is at offset 0x16, among vanilla fields, so a
   save of any version can be read for it.
@@ -101,14 +105,13 @@ places, then stamp the new version. Released ids must also keep their meaning fo
 | (none) | up to 8 | Vanilla expansion layout, plus Maritimes data only. | |
 | (none) | 9 | Trainer ceiling 864 → 1376; a 256-flag Maritimes block after the daily flags. `flags[]` grew 96 bytes, shifting the rest of SaveBlock1. | Loaded without complaint but with wrong flags and vars: there was no stamp yet. |
 | 1 | 10 | The stamp itself (in SaveBlock2's padding) and the layout guard. Same layout as milestone 9. | Unstamped saves refused with the message. |
-| 2 | 11 | A 256-var story block first in SaveBlock3 (+512 bytes; expansion's SaveBlock3 fields moved up by 512). The Maritimes flag block 256 → 768 (+64 bytes of SaveBlock1: `vars[]` and every field after `flags[]` moved). | Version 1 refused with the message. |
+| 2 | 11 | A 256-var story block first in SaveBlock3 (+512 bytes; expansion's SaveBlock3 fields moved up by 512). The Maritimes flag block 256 → 768 (+64 bytes of SaveBlock1: `vars[]` and every field after `flags[]` moved). Save slot checksums also cover the SaveBlock3 chunk. | Version 1 refused with the outdated message. (A version 1 save whose SaveBlock3 bytes weren't all 0 fails the new checksum instead, and is refused as a damaged save: also a new game.) |
 
 ## Known limits
 
-- SaveBlock3's chunks aren't covered by the sector checksum (expansion's design). A torn write is
-  still caught, because the signature is written last; a bit flipped in a chunk later is not.
 - Expansion's `USE_DEXNAV_SEARCH_LEVELS` needs a byte per species (about 1.7 KB), more than SaveBlock3
   holds even without the story block, so it can't be enabled either way.
 - Script macros decide by value whether an argument is a var. A literal between 0x4100 and 0x41FF
-  passed to `compare` now reads a story var. No existing script does it: every script assembles
-  byte-identically before and after the change.
+  passed to `compare` now reads a story var, as vanilla's macros already do for 0x4000–0x40FF and
+  0x8000+. No existing script does it (every script assembles byte-identically before and after the
+  change), and `id_budget.py` fails on any script that compares a var with such a number.
