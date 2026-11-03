@@ -56,6 +56,7 @@ from mapkit.layout import MapData
 from mapkit.checks import check_map
 from mapkit import events as ev, routes
 from mapkit.render import render_layout
+import save_ids
 
 BEGIN = "// ---- dev/events.py: generated from {spec}. Edit the spec, not this block. ----"
 END = "// ---- end of dev/events.py block ----"
@@ -67,8 +68,8 @@ SIGN_FACING = {"any": "BG_EVENT_PLAYER_FACING_ANY", "up": "BG_EVENT_PLAYER_FACIN
                "down": "BG_EVENT_PLAYER_FACING_SOUTH", "left": "BG_EVENT_PLAYER_FACING_WEST",
                "right": "BG_EVENT_PLAYER_FACING_EAST"}
 KINDS = ("sign", "inspect", "person", "trainer", "item", "hidden_item")
-FLAG_BLOCK = "MARITIMES_FLAGS_START"  # new flags: (MARITIMES_FLAGS_START + n), include/constants/flags.h
-FLAG_BLOCK_END = "// ---- end of Maritimes flags ----"
+FLAG_BLOCK = save_ids.FLAGS.start    # new flags: (MARITIMES_FLAGS_START + n), include/constants/flags.h
+EVENTS_TAG = save_ids.EVENTS_TAG     # the comment on the flags allocated here (dev/tests/id_budget.py reads it)
 WANDER_MAX = 4                        # a wander range beyond this leaves the camera view
 TRAINER_NAME_LENGTH = 10
 PARAGRAPH = "\\p"                     # a new message box
@@ -467,38 +468,18 @@ def write_trainers(p, new, parties):
     open(path, "w", encoding="utf-8", newline="\n").write(party)
 
 
-def flag_block(p):
-    """({flag: offset} already in the Maritimes block, its size) from include/constants/flags.h."""
-    txt = open(p.path("include/constants/flags.h"), encoding="utf-8").read()
-    have = {n: int(v, 0) for n, v in re.findall(rf"^#define (FLAG_\w+)\s+\({FLAG_BLOCK} \+ (0x[0-9A-Fa-f]+|\d+)\)", txt, re.M)}
-    size = int(re.search(r"#define MARITIMES_FLAGS_COUNT\s+(\d+)", txt).group(1))
-    return have, size
-
-
 def plan_flags(p, flags):
-    """{flag: offset in the Maritimes block} for flags that don't exist yet, after the last one.
-    Flags that exist anywhere in flags.h (e.g. milestone 8's renamed unused flag) are kept."""
-    txt = open(p.path("include/constants/flags.h"), encoding="utf-8").read()
-    exists = set(re.findall(r"#define (FLAG_\w+)", txt))
-    have, size = flag_block(p)
-    nxt = max(have.values(), default=-1) + 1
-    plan = {f: nxt + i for i, f in enumerate(f for f in flags if f not in exists)}
-    if nxt + len(plan) > size:
-        raise SpecError(f"  no room for {len(plan)} new flags: {nxt} of {size} in the Maritimes block used; "
-                        "raise MARITIMES_FLAGS_COUNT in include/constants/flags.h (8 flags = 1 save byte; "
-                        "dev/tests/id_budget.py shows the save block's room)")
-    return plan, size - nxt - len(plan)
+    """{flag: offset in the Maritimes block} for flags that don't exist yet, after the last one
+    (dev/save_ids.py owns the block). Flags that exist anywhere in flags.h (e.g. milestone 8's
+    renamed unused flag) are kept."""
+    try:
+        return save_ids.FLAGS.plan(flags, p.root)
+    except save_ids.BlockFull as ex:
+        raise SpecError(f"  {ex}")
 
 
 def write_flags(p, plan):
-    if not plan:
-        return
-    path = p.path("include/constants/flags.h")
-    txt = open(path, encoding="utf-8").read()
-    add = "".join(f"#define {f:<43} ({FLAG_BLOCK} + 0x{o:X})  // Maritimes: dev/events.py\n" for f, o in plan.items())
-    assert txt.count(FLAG_BLOCK_END) == 1, "flags.h: the Maritimes flag block marker is missing"
-    txt = txt.replace(FLAG_BLOCK_END, add + FLAG_BLOCK_END)
-    open(path, "w", encoding="utf-8", newline="\n").write(txt)
+    save_ids.FLAGS.write(plan, EVENTS_TAG, repo=p.root)
 
 
 # ---------- commands ----------

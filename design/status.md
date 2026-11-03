@@ -1,9 +1,38 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-03 (milestone 10). Read this first in a new session. Creative direction lives in
+> Updated 2026-11-03 (milestone 11). Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 11 done: room for the whole region's story in the save** (branch `milestone11-save-vars`, merged into `develop`). Foundation only: no gameplay or map changed. The plan, the format and the version history: `design/save_format.md`.
+
+**Save compatibility: layout version 2.** Saves from milestone 10 (version 1) are refused with the outdated-save message. Tom: if you're partway through the slice on the milestone 10 build, finish on that build; on this one, start a new game once.
+
+**The recommendation, done:**
+| Budget | Before | Now | Why |
+|---|---|---|---|
+| Story vars | 23 unused vanilla vars | **256 story vars** (`0x4100–0x41FF`) in SaveBlock3, plus the 23 as a reserve for engine features | Vanilla's Hoenn story uses about 200. SaveBlock3 had 1,620 free bytes; SaveBlock1 had 212 (about 100 vars at most) and nothing moved in it for them. |
+| Maritimes flags | 256 (2 used) | **768** (2 used) | Hoenn's story uses about 800 non-trainer flags (582 hide flags, 168 item balls, 112 hidden items); with the 249 unused vanilla flags that's covered. Raised in the same version so the story costs one save break, not two. |
+| SaveBlock1 room | 212 bytes | 148 | 64 bytes for the flags. |
+| SaveBlock3 room | 1,620 bytes | 1,108 | 512 for the vars. |
+| Trainer ids | 520 | 520 | Unchanged. |
+
+- **Two subtleties:** SaveBlock3 is spread over the spare bytes of all 14 flash sectors, and a link or Battle Frontier save (`SAVE_LINK`) rewrites only sectors 0–4. The story block is SaveBlock3's first field, so it lies in those five sectors and is saved with the flags on every kind of save; `save.c` asserts it. And expansion never checksummed those spare bytes (the review caught it): every save slot sector's checksum now covers them, so a damaged story var is caught like a damaged vanilla var.
+- **Engine** (small, marked `Maritimes:`): `GetVarPointer` maps the block, and an id between the blocks is no longer a var (vanilla pointed it into the next SaveBlock1 field). `compare`/`setvar`/`copyvar` know the block: every existing script assembles byte-identically. The debug menu's var editor and the test framework's script header know it too. The guard records the block's offset and size. Dev bridge: `VGET`, `VSET`, and `SAVE` as a link save.
+- **Tooling:** `dev/save_ids.py var|flag NAME "note" [--apply]` allocates story vars and flags (append-only; re-running is a no-op; vanilla names refused); `list` shows them. `events.py` allocates its item and gift flags through the same code. `id_budget.py` checks the var block (range, contiguous ids, allocated by the tool, inside the always-written sectors) and keeps story flags out of the one-event-per-flag check. `fastbuild.probe()` compiles a throwaway file in the mirror (save_layout.py and the new macro test use it).
+- **How story scripts use it:** allocate `VAR_HOMETOWN_STATE` with `save_ids.py`, then `setvar(VAR_HOMETOWN_STATE, 1)` / `if (var(VAR_HOMETOWN_STATE) == 1)` in `scripts.pory`, as with any var. Nothing is allocated yet: the names wait for the story.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Save | `ingame_save.py` 42/42: story vars at both ends of the block and a vanilla var survive save → reset → CONTINUE, then a link save; on flash they sit in sector 0's and sector 4's SaveBlock3 chunks; the sector checksum covers the chunk, and a story var flipped on flash makes the save refused as damaged; the id past the block can't be set and reads as itself; a NEW GAME over the save starts them at 0; the flag checks and the stale-stamp refusal as before. |
+| Macros | `tests/var_macros.py` 8/8 (fails 4/8 with the old macros). Old vs new macros: `event_scripts.o` and `mystery_gift.o` (every map's scripts) assemble byte-identically. |
+| Guard | Before `--update`, `save_layout.py` exited 1 naming the six changed numbers; afterwards it matches version 2. |
+| Allocator | Dry runs, a refused vanilla name and bad name; on a scratch copy of the headers: appends in order, re-running is a no-op, the note is kept on one line, a full block is refused with the fix to make. |
+| Budget | `id_budget.py` PASS: 520 trainer ids, 766 block flags, 256 story vars, 148 SaveBlock1 bytes. |
+| Regression set | All pass, before and after the review fixes: checker (vanilla 0 unexpected, 8 known; 19 maps 0 errors), conformance 532/532, playthrough, doors, encounters (with and without a party), all four autowalks, ledges, events, shores 624/624, flora 435/435, piece tests. |
+| Code review | `/code-review medium` raised 10 findings; 8 fixed, 1 guarded, 1 left. **Fixed:** the story vars had lost checksum protection (expansion never checksummed SaveBlock3's chunks; now every save slot sector's checksum covers its chunk); a recorded offset of 0 that moves didn't bump the version; a story flag reused as an item flag passed the budget; the macro test's warning check wasn't scoped to its probe; the debug var range assumed the blocks adjacent (now asserted); flash constants copied into the tests (now read from `save.h`, checked against the compiler); a duplicated sector scan; the probe's file encoding. **Guarded:** a literal in 0x4100–0x41FF given to `compare` reads as a story var (vanilla's macros do the same for their ranges): `id_budget.py` now fails on such a script. **Left:** the engine commit carries `save_layout.h` numbers that the tool commit after it teaches `save_layout.py` to measure, so `--update` run at exactly that commit would drop two lines (a bisect-only hazard; fixing it means rewriting history). |
+
 **Milestone 10 done: the slice's towns come alive, and stale saves can't load as garbage** (branch `milestone10-slice-life`, merged into `develop`).
 
 **Save compatibility from now on:** every save is stamped with a layout version (`include/save_layout.h`, version 1). A save from another layout is refused with a message ("This save is from an older version of the game. Please start a new game.") and the menu offers NEW GAME only. Saves from milestone 9 and earlier carry no stamp, so they get that message too. Tom: start a new game once.
@@ -435,18 +464,21 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | No wild battles while the party is empty | `src/wild_encounter.c` (StandardWildEncounter) |
 | No fishing while the party is empty | `src/item_use.c` (CanFish) |
 | `ChooseStarterNoBattle` special: the starter bag without Birch's rescue battle | `src/battle_setup.c`, appended to `data/specials.inc` |
-| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0, MOVE, FGET, ITEM, SAVE | `src/field_control_avatar.c` |
+| Dev bridge (debug builds only): WARP, FLAG, GIVE, MON0, MOVE, FGET, ITEM, SAVE (normal or link), VGET, VSET | `src/field_control_avatar.c` |
 | Trainer ceiling 864 → 1376; Maritimes flag block (256) after the daily flags; static asserts | `include/constants/opponents.h`, `flags.h`, `src/event_data.c` |
 | Trainer-slide table sized by `TRAINERS_COUNT` (not the ceiling) | `src/trainer_slide.c` |
 | Own map sections, appended so no MAPSEC id moves | `src/data/region_map/region_map_sections.json` |
 | Save layout stamp (SaveBlock2 0x16, was padding); stale saves refused with a message; build asserts the layout | `include/save_layout.h`, `include/global.h`, `src/save.c`, `src/main_menu.c` |
+| Story var block 0x4100–0x41FF in SaveBlock3 (first field; asserted inside sectors 0–4); other ids below 0x8000 aren't vars; Maritimes flag block 768 | `include/constants/vars.h`, `flags.h`, `include/global.h`, `src/event_data.c`, `src/save.c` |
+| Save slot sector checksums cover the SaveBlock3 chunk (`CalculateSectorChecksum`) | `src/save.c` |
+| Script macros, the debug var editor and the test framework's script header know the story vars | `asm/macros/event.inc`, `src/debug.c`, `include/test/overworld_script.h` |
 
 ## Regression set (run before merging anything)
 ```
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 8 known
 dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 254 block flags, 23 unused vars, 212 save bytes)
+dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 766 block flags, 256 story vars, 148 save bytes)
 dev/save_layout.py                    # "matches include/save_layout.h" (after any save-related change)
 dev/tests/conformance.py              # 532/532 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
@@ -458,7 +490,8 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
 dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 10/10 groups
 dev/tests/ingame_events.py            # every spec'd map: 114/114 on seven maps (signs, inspect, people, gift, wanderers, item ball, trainer)
-dev/tests/ingame_save.py              # 19/19: flags survive save/reset/CONTINUE; a stale-stamped save is refused
+dev/tests/ingame_save.py              # 42/42: flags and story vars survive save/reset/CONTINUE and a link save; a stale-stamped save is refused
+dev/tests/var_macros.py               # no emulator (WSL mirror); 8/8: the script macros treat story vars as vars (after macro or var-range changes)
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
@@ -474,7 +507,7 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 
 ## Next milestone (proposed, not started)
 1. **Tom plays the slice by hand (recommended next, needs Tom):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
-2. **Decide the var plan before any story work** (see the save assessment above): reclaim Hoenn's vars and flags when the Hoenn maps go, or add one generous Maritimes var block. Whichever, one planned layout bump with `save_layout.py --update`.
+2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
 3. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
 4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
 5. **Shore follow-ups:** shores for Woodstock's and Fredericton's rivers (Woodstock only with Tom's okay: hand-mapped); pond shores by shape; a bank-to-beach transition tile.
@@ -491,7 +524,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
-- **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Saved vars are the scarcest budget (23 unused). Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
+- **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Story state: vars and flags come from `dev/save_ids.py` (256 story vars in SaveBlock3, 766 block flags); keep the 23 unused vanilla vars for engine features. The story block must stay SaveBlock3's first field (a link save writes only sectors 0–4; `save.c` asserts it). `design/save_format.md` has the version history: add a row on every bump. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
 - **Hand-painted maps:** add a sign post or a flower with `dev/mapgen.py patch <Map> s@x,y`, not a rebuild from an extract (Woodstock rebuilds at 95.8%).
 - **Wander ranges:** a 0 in `movement_range_x/y` means *no limit* on that axis, not "stay in the row". Use 1–4 (the spec refuses 0), or a one-axis type like `WANDER_LEFT_AND_RIGHT`.
 - **Spec text:** write straight quotes, they become “ ”. `{PLAYER}` works in any text. A text Poryscript rejects only fails at `fastbuild`, not in the dry run.

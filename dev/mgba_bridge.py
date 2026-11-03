@@ -57,12 +57,13 @@ def item_id(name, repo=REPO):
 
 
 def flag_id(name, repo=REPO, _cache={}):
-    """Value of a flag constant, evaluating flags.h expressions like (SYSTEM_FLAGS + 0x0).
+    """Value of a flag, trainer or var constant, evaluating header expressions like
+    (SYSTEM_FLAGS + 0x0) or (MARITIMES_VARS_START + 0x2).
     Where a header defines a name twice under #if (Emerald vs FRLG), the Emerald one wins.
     Cross-checked against the '// FLAG_0x...' comment flags.h keeps next to most flags."""
     if not _cache:
         notes = {}
-        for h in ("flags.h", "opponents.h"):
+        for h in ("flags.h", "opponents.h", "vars.h"):
             txt = open(os.path.join(repo, "include", "constants", h), encoding="utf-8").read()
             for n, expr, note in re.findall(r"^#define\s+(\w+)\s+([^\n/]+)(//[^\n]*)?", txt, re.M):
                 expr = expr.strip()
@@ -295,9 +296,20 @@ class Emu:
         """How many of an item the bag holds (dev mailbox 'ITEM'). item: 'ITEM_POTION' or an id."""
         return self._request("ITEM", item_id(item) if isinstance(item, str) else item)
 
-    def save_game(self):
-        """Save as the start menu does (dev mailbox 'SAVE'); True if TrySavingData succeeded."""
-        return self._request("SAVE", timeout_frames=900) == 1     # SAVE_STATUS_OK
+    def save_game(self, link=False):
+        """Save as the start menu does (dev mailbox 'SAVE'); True if TrySavingData succeeded.
+        link=True saves as a link or Battle Frontier save does (SAVE_LINK: SaveBlock2 and
+        SaveBlock1's sectors only, the PC's are left as they were)."""
+        return self._request("SAVE", 0, 1 if link else 0, timeout_frames=900) == 1     # SAVE_STATUS_OK
+
+    def get_var(self, var):
+        """A var's value (dev mailbox 'VGET', VarGet). var: a name or an id. An id that isn't a
+        var reads as itself, as VarGet does."""
+        return self._request("VGET", flag_id(var) if isinstance(var, str) else var)
+
+    def set_var(self, var, value):
+        """Set a var (dev mailbox 'VSET', VarSet); True if it is a var that could be set."""
+        return bool(self._request("VSET", flag_id(var) if isinstance(var, str) else var, value & 0xFFFF))
 
     def objects(self):
         """[(local id, x, y)] of the active object events other than the player (map tiles)."""

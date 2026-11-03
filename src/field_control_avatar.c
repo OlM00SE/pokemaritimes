@@ -58,7 +58,10 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 //   'MON0': party slot 0 -> outHp/outMaxHp; if flagValue != 0xFFFF, first set its HP to flagValue
 //   'MOVE': teach party slot 0 move flagId in move slot flagValue (full PP), e.g. Surf for tests
 //   'FGET': outHp = whether flag flagId is set      'ITEM': outHp = how many of item flagId the bag holds
-//   'SAVE': save the game as the start menu does; outHp = TrySavingData's result (SAVE_STATUS_OK = 1)
+//   'SAVE': save the game as the start menu does; outHp = TrySavingData's result (SAVE_STATUS_OK = 1).
+//           flagValue 1 saves as a link / Battle Frontier save does instead (SAVE_LINK: SaveBlock2
+//           and SaveBlock1's sectors only)
+//   'VGET': outHp = VarGet(flagId)                  'VSET': VarSet(flagId, flagValue); outHp = its result
 #define DEV_BRIDGE_WARP 0x57415250 // 'WARP'
 #define DEV_BRIDGE_FLAG 0x464C4147 // 'FLAG'
 #define DEV_BRIDGE_GIVE 0x47495645 // 'GIVE'
@@ -67,6 +70,8 @@ static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 #define DEV_BRIDGE_FGET 0x46474554 // 'FGET'
 #define DEV_BRIDGE_ITEM 0x4954454D // 'ITEM'
 #define DEV_BRIDGE_SAVE 0x53415645 // 'SAVE'
+#define DEV_BRIDGE_VGET 0x56474554 // 'VGET'
+#define DEV_BRIDGE_VSET 0x56534554 // 'VSET'
 struct DevBridgeMailbox
 {
     u32 request;
@@ -142,7 +147,17 @@ static bool32 TryDevBridgeRequest(void)
     case DEV_BRIDGE_SAVE:
         gDevBridge.request = 0;
         SaveMapView();
-        gDevBridge.outHp = TrySavingData(SAVE_NORMAL);
+        gDevBridge.outHp = TrySavingData(gDevBridge.flagValue == 1 ? SAVE_LINK : SAVE_NORMAL);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_VGET:
+        gDevBridge.request = 0;
+        gDevBridge.outHp = VarGet(gDevBridge.flagId);
+        gDevBridge.done++;
+        return FALSE;
+    case DEV_BRIDGE_VSET:
+        gDevBridge.request = 0;
+        gDevBridge.outHp = VarSet(gDevBridge.flagId, gDevBridge.flagValue);
         gDevBridge.done++;
         return FALSE;
     }

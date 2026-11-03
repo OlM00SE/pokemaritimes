@@ -34,7 +34,12 @@ FIELDS = [
     ("SAVE_LAYOUT_SYSTEM_FLAGS", "SYSTEM_FLAGS"),
     ("SAVE_LAYOUT_DAILY_FLAGS_START", "DAILY_FLAGS_START"),
     ("SAVE_LAYOUT_MARITIMES_FLAGS_START", "MARITIMES_FLAGS_START"),
+    # the story var block in SaveBlock3 (milestone 11)
+    ("SAVE_LAYOUT_MARITIMES_VARS_OFFSET", "offsetof(struct SaveBlock3, maritimesVars)"),
+    ("SAVE_LAYOUT_MARITIMES_VARS_COUNT", "MARITIMES_VARS_COUNT"),
 ]
+# the SaveBlock3 chunks that every save writes (sectors 0-4); src/save.c asserts the var block fits
+SB3_ALWAYS_WRITTEN = "SAVE_BLOCK_3_CHUNK_SIZE * (SECTOR_ID_SAVEBLOCK1_END + 1)"
 # capacities, for the report (not recorded: they're the flash format, not the layout)
 CAPACITY = [
     ("SaveBlock1", "SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1)", 0),
@@ -46,7 +51,7 @@ BEGIN, END = "// ---- measured by dev/save_layout.py; don't edit by hand ----", 
 
 
 def probe_source():
-    exprs = [e for _, e in FIELDS] + [e for _, e, _ in CAPACITY]
+    exprs = [e for _, e in FIELDS] + [e for _, e, _ in CAPACITY] + [SB3_ALWAYS_WRITTEN]
     body = ",\n    ".join(f"(u32)({e})" for e in exprs)
     return ('// dev/save_layout.py probe: deleted after use, never part of the game\n'
             '#include "global.h"\n#include "save.h"\n#include "pokemon_storage_system.h"\n'
@@ -54,31 +59,10 @@ def probe_source():
 
 
 def measure():
-    """[values] in FIELDS + CAPACITY order, compiled in the mirror (synced from E: first)."""
-    unc = fastbuild.mirror_unc()
-    if not os.path.isdir(unc) or not os.path.exists(fastbuild.MANIFEST):
-        # fastbuild would reseed the mirror (rm -rf) and take the probe with it
-        sys.exit("no WSL build mirror (or its manifest): run dev/fastbuild.py once first")
-    src = os.path.join(unc, "src", PROBE + ".c")
-    obj = f"build/emerald/src/{PROBE}.o"
-    with open(src, "w", newline="\n") as f:
-        f.write(probe_source())
-    try:
-        # fastbuild with a make target: syncs E: -> mirror, then builds just that object
-        if fastbuild.main([obj]) != 0:
-            sys.exit("the probe didn't compile (see the log above)")
-        path = 'export PATH="$HOME/.local/arm-gnu-toolchain/bin:$PATH"; '
-        out = fastbuild.wsl(f"{path}cd {fastbuild.MIRROR_LINUX} && arm-none-eabi-objdump -s -j .rodata {obj}").stdout
-    finally:
-        for p in (src, os.path.join(unc, obj.replace("/", "\\")), os.path.join(unc, obj[:-2].replace("/", "\\") + ".d")):
-            if os.path.exists(p):
-                os.remove(p)
-    raw = b""
-    for line in out.splitlines():
-        m = re.match(r"^\s*[0-9a-f]+ ((?:[0-9a-f]{2,8} ?){1,4})", line)
-        if m:
-            raw += bytes.fromhex(m.group(1).replace(" ", ""))
-    n = len(FIELDS) + len(CAPACITY)
+    """[values] in FIELDS + CAPACITY order, then SB3_ALWAYS_WRITTEN; compiled in the mirror
+    (synced from E: first)."""
+    raw, out = fastbuild.probe(f"src/{PROBE}.c", probe_source())
+    n = len(FIELDS) + len(CAPACITY) + 1
     if len(raw) < 4 * n:
         sys.exit("couldn't read the probe's table from objdump (an LTO or -fdata-sections build keeps no "
                  f"plain .rodata; measure with a normal dev build):\n{out}")
@@ -94,6 +78,26 @@ def recorded(text=None):
     if base:
         rec["SAVE_LAYOUT_STAMP"] = int(base.group(1), 0) + rec["SAVE_LAYOUT_VERSION"]
     return rec
+
+
+SAVE_H = os.path.join(REPO, "include", "save.h")
+FLASH_NAMES = ("SECTOR_DATA_SIZE", "SAVE_BLOCK_3_CHUNK_SIZE", "SECTOR_FOOTER_SIZE", "NUM_SAVE_SLOTS",
+               "SECTOR_ID_SAVEBLOCK1_START", "SECTOR_ID_SAVEBLOCK1_END", "NUM_SECTORS_PER_SLOT")
+
+
+def flash_format():
+    """The flash format's numbers from include/save.h ({name: int}, the names above), plus
+    SB3_ALWAYS_WRITTEN: the SaveBlock3 bytes in sectors 0-4, which every save writes. The one
+    parser of them for the tests; main() checks it against the compiler's value."""
+    text = open(SAVE_H, encoding="utf-8").read()
+    fmt = {}
+    for n in FLASH_NAMES:
+        m = re.search(rf"^#define {n}\s+(\d+)\s*$", text, re.M)
+        if not m:
+            raise ValueError(f"include/save.h: no plain number for {n}")
+        fmt[n] = int(m.group(1))
+    fmt["SB3_ALWAYS_WRITTEN"] = fmt["SAVE_BLOCK_3_CHUNK_SIZE"] * (fmt["SECTOR_ID_SAVEBLOCK1_END"] + 1)
+    return fmt
 
 
 def main():
@@ -112,6 +116,13 @@ def main():
     print(f"  flags      {got['SAVE_LAYOUT_FLAGS_BYTES'] * 8} saved flags ({got['SAVE_LAYOUT_FLAGS_BYTES']} bytes at "
           f"SaveBlock1+{got['SAVE_LAYOUT_FLAGS_OFFSET']:#x})")
     print(f"  vars       {got['SAVE_LAYOUT_VARS_COUNT']} saved vars (at SaveBlock1+{got['SAVE_LAYOUT_VARS_OFFSET']:#x})")
+    vo, vn, window = got["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"], got["SAVE_LAYOUT_MARITIMES_VARS_COUNT"], vals[-1]
+    print(f"  story vars {vn} Maritimes vars (at SaveBlock3+{vo:#x}..{vo + 2 * vn - 1:#x}; every save writes "
+          f"SaveBlock3+0..{window - 1:#x})")
+    if flash_format()["SB3_ALWAYS_WRITTEN"] != window:
+        print(f"WARNING: flash_format() reads include/save.h as {flash_format()['SB3_ALWAYS_WRITTEN']} always-written "
+              f"SaveBlock3 bytes, the compiler says {window}: fix flash_format() (the tests use it)")
+        return 1
     diff = {k: (rec.get(k), v) for k, v in got.items() if rec.get(k) != v}
     if not diff:
         print("matches include/save_layout.h: saves of this version load")
@@ -123,8 +134,9 @@ def main():
               "meant, run dev/save_layout.py --update (old saves will be refused).")
         return 1
     # only a number that was recorded and moved is a layout change; a newly recorded one (this
-    # tool learned to measure it) or the placeholder 0s of the first measurement aren't
-    moved = [k for k, (old, new) in diff.items() if old not in (None, 0)]
+    # tool learned to measure it) isn't. 0 is a real value (the story var block's offset), so a
+    # recorded 0 that changes is a move too.
+    moved = [k for k, (old, new) in diff.items() if old is not None]
     first = not moved
     block = BEGIN + "\n" + "".join(f"#define {k:<33} {v}\n" for k, v in got.items()) + END
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)

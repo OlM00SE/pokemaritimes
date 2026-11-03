@@ -279,6 +279,19 @@
 #define VARS_END                                         0x40FF
 #define VARS_COUNT                                       (VARS_END - VARS_START + 1)
 
+// Maritimes: a block of saved vars for the region's story (a town's progress, a quest's stage).
+// They live in SaveBlock3 (gSaveBlock3Ptr->maritimesVars), not SaveBlock1, so adding them moved
+// nothing in SaveBlock1 and they don't use up its last bytes; src/save.c asserts they lie in the
+// part of SaveBlock3 that every kind of save writes. Scripts use them like any var (setvar,
+// compare, Poryscript's var()). Allocate with dev/save_ids.py, which appends them in order as
+// (MARITIMES_VARS_START + n) below the marker; ids never move. Each var costs 2 bytes of
+// SaveBlock3 (dev/tests/id_budget.py prints what is left). design/save_format.md has the plan.
+#define MARITIMES_VARS_START                             0x4100
+#define MARITIMES_VARS_COUNT                             256
+#define MARITIMES_VARS_END                               (MARITIMES_VARS_START + MARITIMES_VARS_COUNT - 1)
+// ---- dev/save_ids.py: Maritimes vars (appended here) ----
+// ---- end of Maritimes vars ----
+
 #define SPECIAL_VARS_START            0x8000
 // special vars
 // They are commonly used as parameters to commands, or return values from commands.

@@ -15,6 +15,7 @@
 #include "save_layout.h"
 
 static u16 CalculateChecksum(void *, u16);
+static u16 CalculateSectorChecksum(struct SaveSector *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
 static u8 GetSaveValidStatus(const struct SaveSectorLocation *);
 static u8 CopySaveSlotData(u16, struct SaveSectorLocation *);
@@ -83,6 +84,13 @@ STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
 
+// Maritimes: SaveBlock3 is split across all 14 sectors (a chunk in each footer), but a link or
+// Battle Frontier save (SAVE_LINK, WriteSaveBlock1Sector) rewrites only sectors 0-4. The story
+// vars must sit in those sectors' chunks, so that they are saved together with SaveBlock1's
+// flags and vars on every kind of save; a var in a PC sector's chunk could come back stale.
+STATIC_ASSERT(offsetof(struct SaveBlock3, maritimesVars) + sizeof(((struct SaveBlock3 *)0)->maritimesVars)
+              <= SAVE_BLOCK_3_CHUNK_SIZE * (SECTOR_ID_SAVEBLOCK1_END + 1), MaritimesVarsInSectorsWrittenByEverySave);
+
 // Maritimes: the save layout is the one include/save_layout.h records for SAVE_LAYOUT_VERSION.
 // If one of these fails, the layout changed and saves stamped with the old version would load as
 // garbage: run `python dev/save_layout.py --update` (it bumps the version), rebuild, and run
@@ -101,6 +109,8 @@ STATIC_ASSERT(TRAINER_FLAGS_START == SAVE_LAYOUT_TRAINER_FLAGS_START, SaveLayout
 STATIC_ASSERT(SYSTEM_FLAGS == SAVE_LAYOUT_SYSTEM_FLAGS, SaveLayoutChanged_SystemFlags_RunDevSaveLayoutPy);
 STATIC_ASSERT(DAILY_FLAGS_START == SAVE_LAYOUT_DAILY_FLAGS_START, SaveLayoutChanged_DailyFlags_RunDevSaveLayoutPy);
 STATIC_ASSERT(MARITIMES_FLAGS_START == SAVE_LAYOUT_MARITIMES_FLAGS_START, SaveLayoutChanged_MaritimesFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(offsetof(struct SaveBlock3, maritimesVars) == SAVE_LAYOUT_MARITIMES_VARS_OFFSET, SaveLayoutChanged_MaritimesVarsOffset_RunDevSaveLayoutPy);
+STATIC_ASSERT(MARITIMES_VARS_COUNT == SAVE_LAYOUT_MARITIMES_VARS_COUNT, SaveLayoutChanged_MaritimesVarCount_RunDevSaveLayoutPy);
 
 COMMON_DATA u16 gLastWrittenSector = 0;
 COMMON_DATA u32 gLastSaveCounter = 0;
@@ -226,7 +236,7 @@ static u8 HandleWriteSector(u16 sectorId, const struct SaveSectorLocation *locat
 
     CopyFromSaveBlock3(sectorId, gReadWriteSector);
 
-    gReadWriteSector->checksum = CalculateChecksum(data, size);
+    gReadWriteSector->checksum = CalculateSectorChecksum(gReadWriteSector, size);
 
     return TryWriteSector(sector, gReadWriteSector->data);
 }
@@ -362,7 +372,7 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
 
     CopyFromSaveBlock3(sectorId, gReadWriteSector);
 
-    gReadWriteSector->checksum = CalculateChecksum(data, size);
+    gReadWriteSector->checksum = CalculateSectorChecksum(gReadWriteSector, size);
 
     // Erase old save data
     EraseFlashSector(sector);
@@ -523,7 +533,7 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
         if (id == 0)
             gLastWrittenSector = i;
 
-        checksum = CalculateChecksum(gReadWriteSector->data, locations[id].size);
+        checksum = CalculateSectorChecksum(gReadWriteSector, locations[id].size);
 
         // Only copy data for sectors whose signature and checksum fields are correct
         if (gReadWriteSector->signature == SECTOR_SIGNATURE && gReadWriteSector->checksum == checksum)
@@ -556,7 +566,7 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
-            checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
+            checksum = CalculateSectorChecksum(gReadWriteSector, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
                 saveSlot1Counter = gReadWriteSector->counter;
@@ -588,7 +598,7 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
-            checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
+            checksum = CalculateSectorChecksum(gReadWriteSector, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
                 saveSlot2Counter = gReadWriteSector->counter;
@@ -698,7 +708,7 @@ static bool8 ReadFlashSector(u8 sectorId, struct SaveSector *sector)
     return TRUE;
 }
 
-static u16 CalculateChecksum(void *data, u16 size)
+static u32 SumWords(void *data, u16 size)
 {
     u16 i;
     u32 checksum = 0;
@@ -709,6 +719,23 @@ static u16 CalculateChecksum(void *data, u16 size)
         data += sizeof(u32);
     }
 
+    return checksum;
+}
+
+static u16 CalculateChecksum(void *data, u16 size)
+{
+    u32 checksum = SumWords(data, size);
+    return ((checksum >> 16) + checksum);
+}
+
+// Maritimes: a save slot sector's checksum also covers its SaveBlock3 chunk. Expansion's covered
+// only the data bytes, so a damaged chunk loaded silently; the story vars live there now, and
+// were covered by the checksum while vanilla's vars were their only kind. The chunk is written
+// zeroed beyond SaveBlock3's end, so every byte of it is well defined.
+STATIC_ASSERT(SAVE_BLOCK_3_CHUNK_SIZE % 4 == 0, SaveBlock3ChunkIsWholeWords);
+static u16 CalculateSectorChecksum(struct SaveSector *sector, u16 size)
+{
+    u32 checksum = SumWords(sector->data, size) + SumWords(sector->saveBlock3Chunk, SAVE_BLOCK_3_CHUNK_SIZE);
     return ((checksum >> 16) + checksum);
 }
 
