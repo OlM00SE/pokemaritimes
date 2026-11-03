@@ -24,7 +24,7 @@ from mgba_bridge import Emu, UNTHROTTLED
 from playtest import prepare_rom, OUT
 from mapkit.project import Project
 from mapkit.engine import World, DIRS, DIR_NAME, OPPOSITE
-from mapkit import ledges
+from mapkit import ledges, events
 from mapkit.checks import spawn_point
 
 DEFAULT_MAPS = ["LedgeLab", "Route203_1", "Route201_1", "Route102", "Route103", "Route116", "Route123"]
@@ -235,15 +235,18 @@ def tour(e, p, name):
     down, then walk back to the entrance on foot. Proves in the game that each terrace can be
     used and climbed back. A group that can be jumped somewhere but not reached from the
     entrance fails (it would go untested); groups no one can ever jump (cliff-style ledges with
-    nothing behind them) are only listed. Skipped on maps with NPCs (the model doesn't route
-    around them). Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png."""
+    nothing behind them) are only listed. Paths go around the people standing on the map;
+    skipped on maps with wandering people (one could step into a planned path).
+    Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png."""
     for old in glob.glob(os.path.join(OUT, f"ledges_{name}_tour*.png")):
         os.remove(old)                  # no stale landings from earlier runs or other designs
     m = p.load_map(name)
-    if m.events("object_events"):
-        print(f"{name}: tour skipped (the map has NPCs)")
+    movers = [o for o in m.events("object_events") if events.moves(o)]
+    if movers:
+        print(f"{name}: tour skipped ({len(movers)} wandering people, e.g. at "
+              f"({movers[0]['x']},{movers[0]['y']}))")
         return 0
-    w = World(p, m)
+    w = events.world_with_people(p, m)
     L = m.layout
     at = entrance(p, m, w)
     if at is None:

@@ -10,23 +10,35 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.engine import World, DIR_NAME
 from mapkit.checks import _warp_kinds
+from mapkit import events
 from mgba_bridge import Emu, REPO, UNTHROTTLED
 
 
 class Walker:
-    def __init__(self, emu, project=None, log=print, on_interrupt=None):
+    def __init__(self, emu, project=None, log=print, on_interrupt=None, avoid_sight=True):
         """on_interrupt: called when a battle starts mid-path (e.g. e.flee_battle); the walker
         then re-plans from wherever the player is. None = walk blindly (test mode).
+        Paths go around people (a wanderer's whole range) and, with avoid_sight, around every
+        trainer's sight: a trainer battle can't be fled, so a walker never starts one.
         self.battles counts the battles handled over the walker's life (for reports)."""
         self.e, self.p, self.log = emu, project or Project(), log
         self.on_interrupt = on_interrupt
+        self.avoid_sight = avoid_sight
         self.battles = 0
         self._worlds = {}
         self.step_on, self.door, self.arrow, self.stair = _warp_kinds(self.p)
 
     def world(self, name):
         if name not in self._worlds:
-            self._worlds[name] = World(self.p, self.p.load_map(name))
+            m = self.p.load_map(name)
+            sight = set()
+            if self.avoid_sight:
+                plain, people = World(self.p, m), events.obstacle_tiles(m)
+                for o in m.events("object_events"):
+                    if events.is_trainer(o):
+                        lines = events.sight_lines(plain, o, people - {(o["x"], o["y"])})
+                        sight |= {t for ts in lines.values() for t in ts}
+            self._worlds[name] = events.world_with_people(self.p, m, extra=sight)
         return self._worlds[name]
 
     def here(self):
