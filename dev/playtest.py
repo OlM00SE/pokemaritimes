@@ -8,7 +8,7 @@
 Runs on a copy of the ROM in dev/out/ so tests never touch your real save.
 Screenshots land in dev/out/. Exit code 1 if the overworld is never reached.
 """
-import argparse, os, shutil, sys
+import argparse, os, shutil, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mgba_bridge import Emu, REPO, UNTHROTTLED
 
@@ -23,7 +23,15 @@ def prepare_rom(fresh):
     shutil.copyfile(os.path.join(REPO, "pokeemerald.map"), os.path.join(OUT, "test.map"))
     sav = os.path.join(OUT, "test.sav")
     if fresh and os.path.exists(sav):
-        os.remove(sav)
+        # the previous test's mGBA may still be closing and holding the save (Windows): wait a bit
+        for attempt in range(20):
+            try:
+                os.remove(sav)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.5)
     return rom
 
 
