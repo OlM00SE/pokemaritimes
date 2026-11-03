@@ -24,7 +24,92 @@
       "direction": "down"
     }
   ],
-  "object_events": [],
+  "object_events": [
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_GARDENER",
+      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "x": 6,
+      "y": 12,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Woodstock_2_EventScript_Gardener",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_STATION_WORKER",
+      "graphics_id": "OBJ_EVENT_GFX_SCIENTIST_1",
+      "x": 21,
+      "y": 14,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Woodstock_2_EventScript_StationWorker",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_KID",
+      "graphics_id": "OBJ_EVENT_GFX_LITTLE_GIRL",
+      "x": 15,
+      "y": 19,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 2,
+      "movement_range_y": 2,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Woodstock_2_EventScript_Kid",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_ANGLER",
+      "graphics_id": "OBJ_EVENT_GFX_FISHERMAN",
+      "x": 6,
+      "y": 26,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Woodstock_2_EventScript_Angler",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_WALKER",
+      "graphics_id": "OBJ_EVENT_GFX_MAN_3",
+      "x": 16,
+      "y": 31,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Woodstock_2_EventScript_Walker",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_WOODSTOCK_2_RIVER_NOOK_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
+      "x": 23,
+      "y": 6,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_POKE_BALL",
+      "script": "Common_EventScript_FindItem",
+      "flag": "FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL"
+    }
+  ],
   "warp_events": [
     {
       "x": 7,
@@ -49,5 +134,30 @@
     }
   ],
   "coord_events": [],
-  "bg_events": []
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 9,
+      "y": 16,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Woodstock_2_EventScript_TownSign"
+    },
+    {
+      "type": "sign",
+      "x": 19,
+      "y": 13,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Woodstock_2_EventScript_StationSign"
+    },
+    {
+      "type": "sign",
+      "x": 5,
+      "y": 11,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Woodstock_2_EventScript_GardenSign"
+    }
+  ]
 }
