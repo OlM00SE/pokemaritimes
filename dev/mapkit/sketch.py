@@ -11,20 +11,22 @@ Legend (one character per metatile):
     ~  river/sea water  o  pond water                  T  forest (auto 2x2 trees)
     v  ledge, jump south   <  ledge, jump west          >  ledge, jump east   (mapkit/ledges.py)
     r  rock standing in water (2x2)                                            (mapkit/shores.py)
-    #  keep the map's current block unchanged (buildings, signs, rocks, ...)
+    *  flowers    b  boulder    y  sapling (a vertical run of 2-3)              (mapkit/flora.py)
+    #  keep the map's current block unchanged (buildings, signs, ...)
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
-by shape (mapkit/shores.py).
+by shape (mapkit/shores.py). Flora stands on plain grass only.
 """
 from .terrain import TREE, Rules, autotile, Vocabulary, grid_labels, PRIMARY
 from .layout import pack
 from .project import TILE_FLAG_SURFABLE
-from . import ledges, shores
+from . import ledges, shores, flora
 
 CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F",
-                 "v": "LD", "<": "LD", ">": "LD", shores.ROCK_CHAR: shores.ROCK_CLS}
+                 "v": "LD", "<": "LD", ">": "LD", shores.ROCK_CHAR: shores.ROCK_CLS,
+                 **flora.CHAR_CLASS}
 CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
                  "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#",
-                 shores.ROCK_CLS: shores.ROCK_CHAR}                      # LD: ledges.piece_char
+                 shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR}   # LD: ledges.piece_char
 CLASS_ATTRS = {"G": (0, 3), "TG": (0, 3), "P": (0, 3), "SA": (0, 3), "S": (0, 1), "W": (0, 1),
                "TL": (1, 0), "TR": (1, 0), "BL": (1, 0), "BR": (1, 0), "LD": ledges.LEDGE_ATTRS,
                shores.ROCK_CLS: (1, 0)}
@@ -117,6 +119,11 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
                 c = "F"                     # (General water is judged by shape, below)
             out.append(CLASS_TO_CHAR[c])
         rows.append(out)
+    if L.primary == PRIMARY:
+        # flowers, boulders and whole saplings; extract's compile check below keeps ('#') any
+        # that a compile wouldn't put back exactly (e.g. flowers under a canopy overhang)
+        for (x, y), ch in flora.extract_chars(lambda x, y: L.mid(x, y), L.width, L.height).items():
+            rows[y][x] = ch
     keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
     sk = Sketch(map_name, ["".join(r) for r in rows])
     if L.primary == PRIMARY and rules:
@@ -134,11 +141,22 @@ def shore_owned(cls, x, y, w, h):
         c in (shores.SAND_CLS, "G") and shores.touches_water(cls, x, y, w, h))
 
 
+def verify_owned(cls, x, y, w, h):
+    """Cells extract's compile check compares: shore cells, flora pieces, and the cells around
+    flora (flora reads as grass in a compile, where vanilla's rules saw a kept tile, so a
+    neighbour's learned tile could change)."""
+    return shore_owned(cls, x, y, w, h) or any(
+        0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] in flora.CLASSES
+        for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+
+
 def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None):
-    """Compile the extracted sketch and keep ('#') every shore cell whose block wouldn't come
-    back exactly: e.g. vanilla beach sand that meets grass without a rim, or sand at elevation 0.
+    """Compile the extracted sketch and keep ('#') every shore or flora cell whose block wouldn't
+    come back exactly: e.g. vanilla beach sand that meets grass without a rim, sand at
+    elevation 0, or flowers under a canopy overhang. If a cell beside flora wouldn't come back,
+    the flora next to it is kept instead (verify_owned).
     Cells a compile refuses are kept too. Every round keeps at least one more cell, so the loop
-    ends; it stops when a compile reproduces every shore block, which is what makes
+    ends; it stops when a compile reproduces every shore and flora block, which is what makes
     extract -> compile never change one."""
     if corpus is None:
         from .corpus import Corpus
@@ -150,7 +168,14 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
             blocks, _ = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
             cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
             bad = [(x, y) for y in range(h) for x in range(w)
-                   if shore_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+                   if verify_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+            # a changed neighbour of flora (e.g. a tree quarter, or grass picking another variant)
+            # changed because the flora now reads as grass: keep the flora instead, which puts
+            # back the context vanilla's rules saw (keeping the neighbour could split a tree)
+            bad = [c for x, y in bad for c in (
+                [(x, y)] if shore_owned(cls, x, y, w, h) or cls[y][x] in flora.CLASSES else
+                [(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                 if 0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] in flora.CLASSES])]
         except SketchError as ex:
             refused = ex
             bad = [(x, y) for x, y, _ in ex.problems]
@@ -190,7 +215,50 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
     """Turn 'T' cells into whole 2x2 trees (TL TR / BL BR). Greedy row-major tiling: the first
     free T cell becomes a tree's top-left if the 2x2 block from it is all free T. This places
     trees at any alignment (single trees, staggered rows). Leftover T cells can't hold a whole
-    tree and become grass (returned as a count, so designers can see what was dropped)."""
+    tree and become grass (returned as a count, so designers can see what was dropped).
+    A sketch drawn as whole non-overlapping 2x2 trees always comes back tree for tree.
+    hint (the existing map's labels): each grove (a 4-connected group of T cells) keeps the old
+    map's tree placement if that drops no more cells than tiling it afresh. A redesigned grove
+    edge, e.g. staggered trees beside old aligned ones, is tiled afresh, so old trees that
+    straddle the new ones don't knock them out."""
+    if not hint:
+        return _tile_trees(cls_grid, w, h, None)
+    seen, dropped = set(), 0
+    scratch = [["X"] * w for _ in range(h)]
+    for y0 in range(h):
+        for x0 in range(w):
+            if cls_grid[y0][x0] != "T" or (x0, y0) in seen:
+                continue
+            comp, stack = [], [(x0, y0)]
+            seen.add((x0, y0))
+            while stack:
+                x, y = stack.pop()
+                comp.append((x, y))
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in seen and cls_grid[ny][nx] == "T":
+                        seen.add((nx, ny))
+                        stack.append((nx, ny))
+            # tile the grove alone, on one shared scratch grid, within its bounding box
+            box = (min(x for x, _ in comp), min(y for _, y in comp),
+                   max(x for x, _ in comp), max(y for _, y in comp))
+            trials = []
+            for hh in (hint, None):
+                for x, y in comp:
+                    scratch[y][x] = "T"
+                n = _tile_trees(scratch, w, h, hh, box)
+                trials.append((n, {(x, y): scratch[y][x] for x, y in comp}))
+                for x, y in comp:
+                    scratch[y][x] = "X"
+            n, result = min(trials, key=lambda t: t[0])     # ties keep the old placement (first)
+            dropped += n
+            for (x, y), q in result.items():
+                cls_grid[y][x] = q
+    return dropped
+
+
+def _tile_trees(cls_grid, w, h, hint, box=None):
+    """box (x0, y0, x1, y1): only cells in it can be forest; loops stay inside it."""
+    x0, y0, x1, y1 = box or (0, 0, w - 1, h - 1)
     inside = lambda x, y: 0 <= x < w and 0 <= y < h
 
     def place(x, y, allow_offmap):
@@ -203,12 +271,12 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
                     cls_grid[qy][qx] = q
 
     if hint:                        # pass 0: keep the existing map's tree placement where unchanged
-        for y in range(h):
-            for x in range(w):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
                 if cls_grid[y][x] == "T" and hint[y][x] in ("TL", "TR", "BL", "BR"):
                     cls_grid[y][x] = "t" + hint[y][x]       # provisional
-        for y in range(h):
-            for x in range(w):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
                 c = cls_grid[y][x]
                 if not c.startswith("t"):
                     continue
@@ -219,15 +287,15 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
                          cls_grid[oy + dy][ox + dx] in ("t" + qq, qq)
                          for dx, dy, qq in ((0, 0, "TL"), (1, 0, "TR"), (0, 1, "BL"), (1, 1, "BR")))
                 cls_grid[y][x] = q if ok else "T"
-    for y in range(h):              # pass 1: whole trees inside the map
-        for x in range(w):
+    for y in range(y0, y1 + 1):     # pass 1: whole trees inside the map
+        for x in range(x0, x1 + 1):
             place(x, y, False)
-    for y in range(-1, h):          # pass 2: leftovers at the edges become trees cut by the border
-        for x in range(-1, w):
+    for y in range(y0 - 1, y1 + 1):  # pass 2: leftovers at the edges become trees cut by the border
+        for x in range(x0 - 1, x1 + 1):
             place(x, y, True)
     dropped = 0
-    for y in range(h):
-        for x in range(w):
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
             if cls_grid[y][x] == "T":
                 cls_grid[y][x] = "G"
                 dropped += 1
@@ -255,16 +323,24 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     grammar = dict(enforce_grammar(cls, w, h, forbidden)) if forbidden else {}
     hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
     dropped = assign_tree_quarters(cls, w, h, hint)
+    # flora (flowers, boulders, saplings): resolved by shape; for everything else they read as grass
+    fpieces, flora_errors = flora.resolve(cls, w, h)
+    if fpieces and layout.primary != PRIMARY:
+        raise SketchError([(0, 0, f"flowers, boulders and saplings need {PRIMARY} as the primary tileset")])
+    if flora_errors:
+        raise SketchError(flora_errors)
     # judged on the final classes: grammar repair and leftover forest can change a landing tile
     tp = layout.tiles
     kept_walkable = lambda x, y: layout.coll(x, y) == 0 and not \
         project.tile_flags.get(tp.behavior(layout.mid(x, y)), 0) & TILE_FLAG_SURFABLE
-    ledge_errors, ledge_warnings = ledges.design_issues(cls, pieces, w, h, kept_walkable)
+    ledge_errors, ledge_warnings = ledges.design_issues(flora.walk_view(cls, fpieces), pieces, w, h,
+                                                        kept_walkable)
     if ledge_errors:
         raise SketchError(ledge_errors)
+    gview = flora.grass_view(cls) if fpieces else cls
     # shores: rocks in the water, then the shapes of banks and beaches (on the final classes)
-    rocks, rock_errors = shores.place_rocks(cls, w, h)
-    _, _, _, shore_errors = shores.resolve(cls, w, h)
+    rocks, rock_errors = shores.place_rocks(gview, w, h)
+    _, _, _, shore_errors = shores.resolve(gview, w, h)
     has_water = any(c == shores.WATER_CLS for row in cls for c in row)
     if rocks and layout.primary != PRIMARY:
         raise SketchError([(0, 0, f"water rocks need {PRIMARY} as the primary tileset")])
@@ -274,13 +350,19 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         raise SketchError(sorted(set(rock_errors + shore_errors)))
     pieces = {**pieces, **rocks}
     keep = [[pieces.get((x, y)) or layout.mid(x, y) for x in range(w)] for y in range(h)]
-    learn_view = shores.learning_view(cls) if rocks else cls
+    learn_view = shores.learning_view(gview) if rocks else gview
     mids, levels = autotile(rules, learn_view, w, h, keep)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
         view = shores.sand_view(learn_view, w, h)
         sand_mids = autotile(rules, view, w, h, keep)[0] if view != learn_view else None
-        shore_tiles = shores.apply(cls, mids, w, h, sand_mids)
+        shore_tiles = shores.apply(gview, mids, w, h, sand_mids)
+    if fpieces:
+        bad_spots = flora.placement_errors(fpieces, mids)
+        if bad_spots:
+            raise SketchError(bad_spots)
+        for (x, y), mid in fpieces.items():
+            mids[y][x] = mid
     blocks = []
     for y in range(h):
         for x in range(w):
@@ -289,6 +371,9 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
                 blocks.append(layout.get(x, y))
                 continue
             mid = mids[y][x]
+            if c in flora.CLASSES:
+                blocks.append(pack(mid, *flora.ATTRS[mid]))
+                continue
             if c == "LD":
                 # always solid; vanilla uses elevation 0 or 3 for ledges, so a cell that already
                 # holds a ledge keeps its elevation (re-building a map doesn't touch it)
@@ -314,6 +399,10 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if shore_tiles or rocks:
         report["shore_tiles"] = shore_tiles
         report["water_rocks"] = len(rocks) // 4
+    if fpieces:
+        report["flora"] = {"flowers": sum(m == flora.FLOWER for m in fpieces.values()),
+                           "boulders": sum(m == flora.BOULDER for m in fpieces.values()),
+                           "saplings": sum(m == flora.TRUNK for m in fpieces.values())}
     if ledge_warnings:
         report["ledge_warnings"] = [f"({x},{y}) {m}" for x, y, m in ledge_warnings]
     return blocks, report

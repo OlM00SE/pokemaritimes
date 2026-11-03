@@ -128,6 +128,50 @@ for x0, y0, x1, y1 in ((16, 16, 39, 17), (48, 16, 49, 37)):
             if sk.get(x, y) not in ("=",):
                 sk.set(x, y, "=")
 
+# --- natural groves and open ground (milestone 6, mapkit/landscape.py) ---
+# The valley floor south of the trail had box groves, a ruler-straight forest wall and
+# rectangles of tall grass. It is replanted here; the scope is x 0-47, y 18-34 plus the wooded
+# bench. Rows 35-39 and the east forest stay as they are (the Route101_2 and Route203_1_2 seams);
+# so do the trail, the pond, the ledges with their approach and landing tiles, and the open
+# grass along the west seam (Fredericton, rows 7-28).
+from mapkit import landscape as ls
+FLOOR = ls.rect(0, 18, 47, 34)
+KEEP = (ls.around(ls.cells_of(sk, "="), 1) | ls.ledge_clearance(sk) | ls.cells_of(sk, "v<>o")
+        | ls.rect(0, 0, 1, 28) | ls.rect(0, 35, 59, 39))
+for x, y in ls.cells_of(sk, ",", FLOOR):          # the old tall-grass rectangles, redrawn below
+    sk.set(x, y, ".")
+# The southern forest's edge comes and goes in bays and headlands (rows 27-31, around the old
+# straight edge at row 29). Its trees sit on odd rows (the forest starts at row 29), so it is
+# replanted on that grid, in whole bands (rows 27-34, x 0-43); rows 35-39 stay, and so does the
+# column of trees at x 44-45 beside the south branch.
+SOUTH = ls.rect(0, 27, 43, 34)
+GROVES = ls.rect(0, 18, 47, 26) | ls.rect(2, 13, 12, 20)
+for x, y in ls.cells_of(sk, "Ty", SOUTH | GROVES):   # the old box groves (one straddles both areas)
+    sk.set(x, y, ".")                                   # and the straight forest edge, replanted below
+south =(ls.forest_edge(2, 27, 43, 34, "N", amp=4, seed=203) | ls.rect(0, 29, 1, 34)
+         | ls.rect(30, 27, 31, 28))               # a lone tree standing out from the edge
+ls.plant(sk, south, SOUTH, parity=(0, 1), keep_clear=KEEP)
+# The groves become rounded stands of about the old size: on the wooded bench, in the middle of
+# the valley (with a sheltered notch on its sunny south-west side), and beside the pond.
+bench =ls.blob(7.5, 16.5, 4.4, 3.3, seed=204, wobble=0.35)
+middle = ls.blob(26, 22.5, 6.4, 3.9, seed=205, wobble=0.25) - ls.blob(20.5, 25.5, 2, 1.6, seed=206)
+pond = ls.blob(42, 22.5, 2.4, 3.6, seed=207, wobble=0.2)
+ls.plant(sk, bench | middle | pond, GROVES, keep_clear=KEEP)
+# Tall grass: the meadow below the bench's scarp (its landing rows stay grassy), the reeds
+# west and south of the pond, and the strip along the south branch, each with stray tufts.
+ls.meadow(sk, ls.rect(2, 22, 13, 23) | ls.blob(8, 25, 6.5, 2.6, seed=208, wobble=0.3),
+          seed=209, tufts=3, keep_clear=KEEP - ls.ledge_clearance(sk))
+ls.meadow(sk, ls.blob(34, 23, 3, 4.8, seed=210, wobble=0.3), seed=211, tufts=2, keep_clear=KEEP)
+ls.meadow(sk, ls.blob(45.5, 30, 2.2, 4.6, seed=212, wobble=0.25), seed=213, tufts=2, keep_clear=KEEP)
+# Young trees coming up in the open ground between the pond stand and the south branch.
+ls.sapling_stand(sk, ls.rect(44, 18, 46, 25), seed=214, density=0.6, keep_clear=KEEP)
+# Flowers where the trail opens out and in the grove's sunny notch; boulders tucked into the
+# forest's inner corners.
+for i, ((x, y), n) in enumerate([((20, 26), 4), ((14, 19), 3), ((30, 19), 2), ((38, 27), 3),
+                                 ((4, 28), 1), ((28, 29), 1)]):
+    ls.flower_bed(sk, x, y, n, seed=220 + i, keep_clear=KEEP)
+ls.nestle(sk, FLOOR, 4, seed=230, min_gap=8, keep_clear=KEEP)
+
 out = os.path.join(HERE, "Route203_1.txt")
 sk.save(out)
 print("wrote", out)

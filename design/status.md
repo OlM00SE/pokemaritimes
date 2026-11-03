@@ -1,10 +1,61 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-02. Read this first in a new session. Creative direction lives in
+> Updated 2026-11-03. Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 5 done: natural riverbanks, lake shores and beaches** (branch `milestone5-shorelines`, merged into `develop`).
+**Milestone 6 done: natural forests and open ground** (branch `milestone6-flora`, merged into `develop`).
+
+Tom's review named two problems: "rectangular forest groupings" and "large uniform grassy areas". The first step was studying how vanilla composes these (`mapping_reference.md` §11):
+- **Forest edges:** about 10% of tree joins are offset by one tile, almost all on edges. Edges step every one to three trees, in bays, headlands and diagonal staircases. Lone trees and pairs stand just outside.
+- **Tall grass:** irregular patches, with stray tufts at the fringe (Route 116).
+- **Accents:** sparse. Flowers are mostly singles or small beds. A third of boulders stand against a tree.
+- **Saplings:** Route 116's young grove uses a 1×2 sapling (a walk-behind crown over a trunk).
+- **Ruled out:** `0CE` is a cliff shrub, `14B–14D` is berry soil, and the "decorations" the vocabulary had found are Route 113's ash grass.
+
+What was built:
+- **Flora pieces** (`dev/mapkit/flora.py`): `*` flowers (`004`), `b` boulder (`0E0`), and `y` sapling (a vertical run of 2–3: `00E` / `0C6` / `017`). They are resolved by shape, like ledges and shores. Each stands only on plain grass. The compiler refuses a piece under a canopy overhang, on a bank, or as a bad ledge landing, naming the cells. Flora reads as grass to the learned rules, so it never changes a neighbour. Extract finds flora and keeps any piece a compile wouldn't put back exactly, neighbours included.
+- **Landscape helpers** (`dev/mapkit/landscape.py`). The designer composes and the helpers draw the small-scale shapes, deterministically from a seed:
+  - `plant()` lays forest in 2-row bands. Fringe runs start flush with open ground at any alignment (vanilla's staggered edge trees). Enclosed runs stay on the forest's grid. Leftover tiles become nooks or saplings, never pockets. It refuses to cut a tree in half at its area's edge.
+  - `forest_edge()` gives a stepped profile with diagonal staircases. `blob()`, `meadow()` (with stray tufts), `sapling_stand()` (never a hedge), `flower_bed()` and `nestle()` (boulders in inner corners) cover the rest.
+- **Trees tiled per grove:** each 4-connected grove keeps the old map's trees only if that drops no more cells than tiling it afresh. A redesigned edge isn't knocked out by old trees.
+- **`mapgen build` reports:**
+  - Landscape metrics, before and after, for the whole map and the changed area: the longest straight forest edge and the largest bare-grass square.
+  - `WARN reach`: open land nobody can walk to that was reachable before or that this build changed, i.e. a new pocket.
+- **GroveLab** (`design/maps/grovelab_design.py`): a dev-only 40×32 woodland meadow using every helper and piece.
+- **Route 203's valley floor** (`route203_design.py`, milestone 6 section):
+  - The southern forest's straight wall now comes and goes in bays and headlands.
+  - The bench, middle and pond groves are rounded with staggered fringes; the middle grove has a sunny notch with flowers and boulders.
+  - Tall-grass rectangles became patches with tufts, and saplings come up by the south branch.
+  - 300 cells changed, all within x 2–46, y 14–31. In that area the longest straight forest edge went from 42 to 12 tiles, and the largest bare-grass square from 6 to 4. The trail, pond, ledges, river and seams are untouched.
+
+Before/after: `dev/out/Route203_1_preview_diff.png` and `GroveLab_preview.png` (regenerate with `mapgen build`). In-game shots: `dev/out/flora_*.png`.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Vanilla agreement | On 16 vanilla maps, extract rebuilds 103/190 flowers, 23/52 boulders and 31/56 Route 116 saplings exactly, neighbours included. The rest stay `#`: an odd elevation, or a neighbour vanilla drew for the object. |
+| Shapes | 14/14 sketch shapes build or are refused as expected. |
+| Planting | 300/300 seeded random `plant()` runs tile back exactly: no dropped cells, valid saplings, nothing on keep-clear. |
+| Round trip | GroveLab and Route 203: 100%, from the shape tables alone. Our other maps are unchanged from `develop` (HomeTown 88.1%, Woodstock 95.9%, Route 202 92.6%). |
+| Checker | 19 maps, 0 errors. Vanilla baseline: 0 unexpected. Neither map has a cut-off pocket. |
+| In-game flora | `ingame_flora.py`: GroveLab 168/168, Route 203 128/128. Flowers and crown tops are walked onto (the player passes behind the crown). Boulders, trunks and staggered edge trees block, exactly as the engine model says. |
+| Regression set | Conformance 562/562 (GroveLab added). Playthrough, doors, encounters (with and without a party) and all three autowalks pass, crossing the new Route 203. Ledges PASS, shores 624/624, ledge and shore piece tests PASS. |
+| Code review | `/code-review medium` raised 10 findings; all 10 fixed, see below. My first fix for one of them, verifying flora's neighbours, kept the changed neighbour as `#`. The round trip caught that it split trees on HomeTown, so it now keeps the flora piece instead. |
+
+The review's findings, all fixed:
+- **`plant()`:** an area edge could cut a tree (it now refuses), and an enclosed off-grid run could leave pockets.
+- **The reach warning:** it missed pockets in newly opened ground, and diffed truncated explorations.
+- **Extract:** it didn't verify flora's neighbours.
+- **The in-game test:** its "offset first" sample assumed an even grid.
+- **Cleanups:** per-grove tiling was O(groves·map), piece names were triplicated, and one design script carried a BOM.
+
+Known limits:
+- North and south forest edges step in whole trees (2 rows), because tree bands are 2 rows; west and east edges step a tile at a time. Vanilla mostly does the same; the horizontal offsets do the work.
+- Route 203's north bank tree row (rows 0–1) is still one straight 54-tile line, the map's global straight-edge figure. It's a single tree row against the river bank, so softening it means redesigning the north bank. That's out of this milestone's scope.
+- Only grass-route flora so far. Jungle hedges (Route 119), cut trees, land rocks on dirt or sand (`0E1`/`0E2`) and berry soil aren't vocabulary.
+
+**Milestone 5: natural riverbanks, lake shores and beaches** (branch `milestone5-shorelines`, merged).
 
 Route 203's river used to be a straight four-row band with ruler-straight banks. Now:
 - **Width:** it varies from 3 to 6 tiles.
@@ -125,8 +176,8 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 ```
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 7 known
-dev/check_maps.py                     # 18 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
-dev/tests/conformance.py              # 516/516 (seeded samples; the count moves when a map changes)
+dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
+dev/tests/conformance.py              # 562/562 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
@@ -137,20 +188,25 @@ dev/tests/ingame_ledges.py            # LedgeLab, Route 203 + 4 vanilla routes: 
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
+dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings)
+dev/tests/ingame_flora.py             # GroveLab + Route 203: 296/296 (flora pieces, staggered edge trees)
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 88-100%; only when mapgen/terrain code changes
 ```
 
 ## Next milestone (proposed, not started)
-1. **Breaking up open grass:** land rocks and boulders, flower and tuft accents (vanilla's decoration tiles are already identified in `terrain.Vocabulary.decorations`), and irregular forest edges. Tom's review named "large uniform grassy areas" and "rectangular forest groupings". Route 203's levee meadow and upper strip are the testbed.
-2. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, and terraces taller than one ledge step. Rocky shores (`17A–184`) fit here too.
-3. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers (separate, reviewable diffs); resolve pond shores by shape; a bank-to-beach transition tile (Porytiles) to soften the straight seam.
-4. **NPC/sign scaffolding tool:** close the slice's people and sign gaps without hand-editing JSON. Route 203 now has natural spots for a hiker, a fisher on the beach, or a sign.
-5. Later: Porytiles for Maritime tiles (log piles, covered bridge); a Maritimes Town Map.
+1. **Apply the landscape kit to the first slice (recommended next):** Route 201 and the woods around HomeTown and Woodstock. These are the maps a new player sees first, and the forestry theme suits sapling stands and clearings. Do it as separate, reviewable diffs, Route 203 style: scope each to a box, use `KEEP` sets, and read the reach and metric lines. Tom hand-mapped Fredericton and Woodstock, so propose before touching them. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
+2. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
+3. **Shore follow-ups:** apply shores to Woodstock's and Fredericton's rivers; resolve pond shores by shape; add a bank-to-beach transition tile (Porytiles) to soften the straight seam.
+4. **NPC/sign scaffolding tool:** close the slice's people and sign gaps without hand-editing JSON. Route 203 now has natural spots for a hiker in the middle grove's notch, a fisher on the beach, or a sign.
+5. Later:
+   - Porytiles for Maritime flora: spruce/fir trees for a boreal look, birch, log piles, a covered bridge. Vanilla's broadleaf trees are all the General tileset offers.
+   - A Maritimes Town Map.
 
-Ideas for the ledge design, not done:
+Ideas, not done:
 - A `--tour` start option for maps with NPCs.
-- Flower and rock accents on the terraces, once the vocabulary has them.
+- Flower and boulder accents on the terraces (the vocabulary has them now).
+- A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style).
 
 ## Gotchas learned
 - **Test mode:** `Emu.test_mode()` means movement-only: no wild battles, no trainer sight, and story gates open (it sets `FLAG_SYS_POKEMON_GET`). Call it before the player enters the gated map; HomeTown arms its gate on map load. Tests that play as a real player (the playthrough, encounter tests) don't call it.
@@ -158,7 +214,9 @@ Ideas for the ledge design, not done:
 - **Specials:** append new specials at the end of `data/specials.inc`; their ids are positional.
 - **Map sections:** add them only with `dev/name_area.py` (appends). Gen 3 popups size their theme table automatically; BW-style popups would need entries.
 - **Deprecated globals:** `gPlayerParty`/`gPlayerPartyCount` are deprecated in expansion 1.17.2. Use `gParties[B_TRAINER_PLAYER]` / `gPartiesCount[B_TRAINER_PLAYER]`.
-- **Workflow:** each milestone goes on a branch, gets `/code-review medium <branch>`, has its findings fixed and re-verified, then merges into `develop`. All three reviews so far found real bugs.
+- **Workflow:** each milestone goes on a branch, gets `/code-review medium <branch>`, has its findings fixed and re-verified, then merges into `develop`. Every review so far has found real bugs.
+- **Planting on an existing map:** give `plant()` the grid of the forest you edit; Route 203's southern forest starts on row 29, so it uses `parity=(0, 1)`. Keep areas to whole 2-row bands, and never let two `plant` areas overlap. If an old grove straddles two areas, clear it across both first: `plant` refuses to leave a tree cut in half. Check that the diff box stays inside your scope; a stray tuft or a re-tiled tree column shows up there.
+- **Flora placement:** a flower, boulder or sapling right above a tree sits on the canopy overhang, and the compiler refuses it. `landscape` helpers already avoid that row.
 - **Ledge landings:** the game never checks where a jump lands. Draw ledges in sketches, not by hand; for hand-painted ledges, trust `check_maps.py`'s `ledge` and `trap` results.
 - **Dev maps:** LedgeLab sits in `gMapGroup_DevMaritimes`. It ships in the ROM but nothing links to it. Its only warp is a spawn point (`MAP_DYNAMIC`, arrival-only), which gives the checker an entrance. `new_map.py` adds that spawn to every new map; delete it once the map has real connections.
 - **Editing an existing map with mapgen:** build without `--fresh` so the existing trees stay put. Read the diff report and `_preview_diff.png` before `--apply`. Move groves by an even number of tiles; an odd shift falls off the 2×2 tree grid and drops trees (`dropped_tree_cells`).

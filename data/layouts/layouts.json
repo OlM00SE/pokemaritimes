@@ -9453,6 +9453,16 @@
       "secondary_tileset": "gTileset_Petalburg",
       "border_filepath": "data/layouts/ShoreLab/border.bin",
       "blockdata_filepath": "data/layouts/ShoreLab/map.bin"
+    },
+    {
+      "id": "LAYOUT_GROVE_LAB",
+      "name": "GroveLab_Layout",
+      "width": 40,
+      "height": 32,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/GroveLab/border.bin",
+      "blockdata_filepath": "data/layouts/GroveLab/map.bin"
     }
   ]
 }

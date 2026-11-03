@@ -25,8 +25,9 @@ Every adjacent pair of ledge cells (4-neighbourhood) is linked. A cell linked bo
 and vertically is a corner; which corner follows from its two links, so a corner may be drawn
 with any ledge character.
 """
+from . import flora
 
-ROW = {"left": 0x0D5, "mid": 0x087, "right": 0x0D6}
+ROW ={"left": 0x0D5, "mid": 0x087, "right": 0x0D6}
 COLUMN = {"W": {"top": 0x0FE, "mid": 0x085, "bottom": 0x106},
           "E": {"top": 0x0FF, "mid": 0x086, "bottom": 0x107}}
 # links -> (metatile, side the column jumps to)
@@ -136,7 +137,8 @@ def design_issues(cls, pieces, w, h, kept_walkable=None):
     water), e.g. mountain ground or flowers. Without it, '#' counts as solid."""
     errors, warnings = [], []
     name = {"T": "a tree", "TL": "a tree", "TR": "a tree", "BL": "a tree", "BR": "a tree",
-            "S": "water", "W": "water", "F": "a solid kept '#' tile", "LD": "another ledge"}
+            "S": "water", "W": "water", "F": "a solid kept '#' tile", "LD": "another ledge",
+            "RK": "a rock", **flora.NAMES}
     ok = lambda x, y: cls[y][x] in WALKABLE or (cls[y][x] == "F" and kept_walkable and kept_walkable(x, y))
     for (x, y), mid in sorted(pieces.items()):
         d = PIECE_DIR[mid]

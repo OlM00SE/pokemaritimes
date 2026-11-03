@@ -334,6 +334,8 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
                 E("reach", f"{label}: cannot be triggered from any entrance (position/elevation)")
     check_ledges(world, foot_edges, E)
     truncated = max(len(foot), len(surf)) >= EXPLORE_LIMIT
+    if detail is not None and not truncated:    # map tiles a walker can reach (mapgen diffs this)
+        detail["foot"] = {world.to_map(s[0], s[1]) for s in foot if world.in_map(s[0], s[1])}
     check_traps(world, spawn, foot_starts, foot_edges, surf_edges,
                 [pred for _, pred in warp_needs], E, W, I, detail, truncated)
     # entrances split into separate areas?

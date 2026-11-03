@@ -13,12 +13,13 @@
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mapkit.project import Project
+from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
 from mapkit.render import render_layout, render_diff
 from mapkit.checks import check_map
+from mapkit import landscape
 
 
 def main():
@@ -62,7 +63,10 @@ def main():
     for wmsg in warnings:
         print(f"  ledge warning {wmsg}")
     # errors the map already has (accepted or known) don't block a rebuild; only new ones do
-    before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m) if s == "ERROR"}
+    old_detail = {}
+    before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m, detail=old_detail)
+              if s == "ERROR"}
+    old_metrics = landscape.metrics(m.layout)
     old_blocks = list(m.layout.blocks)
     m.layout.blocks = blocks          # in memory only; nothing is written without --apply
     outdir = p.path("dev", "out")
@@ -89,6 +93,36 @@ def main():
                   detail).save(os.path.join(outdir, f"{sk.map_name}_preview_overlay.png"))
     print(f"previews: dev/out/{sk.map_name}_preview.png, _preview_overlay.png"
           + (", _preview_diff.png" if diff is not None else ""))
+    # landscape: Tom's two visual complaints as numbers (lower is more natural), for the whole
+    # map and for the part this build changes
+    new_metrics = landscape.metrics(m.layout)
+    print("landscape: longest straight forest edge {} -> {} tiles; largest bare grass square {} -> {}"
+          .format(old_metrics["straight_edge"], new_metrics["straight_edge"],
+                  old_metrics["open_square"], new_metrics["open_square"]))
+    if diff is not None:
+        box = (min(xs), min(ys), max(xs), max(ys))
+        after = landscape.metrics(m.layout, box)
+        new_blocks, m.layout.blocks = m.layout.blocks, old_blocks
+        before_box = landscape.metrics(m.layout, box)
+        m.layout.blocks = new_blocks
+        print("  in the changed area x {}-{}, y {}-{}: straight edge {} -> {}; bare square {} -> {}"
+              .format(box[0], box[2], box[1], box[3], before_box["straight_edge"], after["straight_edge"],
+                      before_box["open_square"], after["open_square"]))
+    # accessibility: open land nobody can walk to, where this build is responsible: it was
+    # reachable before, or this build changed it (e.g. a pocket left where forest was cleared)
+    if "foot" in old_detail and "foot" in detail:
+        L = m.layout
+        touched = set(changed or ())
+        land = lambda x, y: L.coll(x, y) == 0 and not \
+            p.tile_flags.get(L.tiles.behavior(L.mid(x, y)), 0) & TILE_FLAG_SURFABLE
+        cut = sorted((x, y) for y in range(L.height) for x in range(L.width)
+                     if land(x, y) and (x, y) not in detail["foot"]
+                     and ((x, y) in old_detail["foot"] or (x, y) in touched))
+        if cut:
+            print(f"  WARN reach: {len(cut)} open tiles can't be reached on foot (newly cut off, or "
+                  f"changed by this build), e.g. {cut[:6]}   <- a pocket? check the overlay")
+    elif diff is not None:
+        print("  (reach not compared: the walk exploration was truncated on this map)")
     new = []
     for s, c, msg in issues:
         is_new = s == "ERROR" and (c, msg) not in before
