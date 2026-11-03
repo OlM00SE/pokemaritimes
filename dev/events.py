@@ -77,6 +77,16 @@ def map_token(m):
     return m.id[len("MAP_"):]
 
 
+def local_id(tok, name):
+    """LOCALID_<MAP>_<NAME>, the constant of a spec person, trainer or item ball."""
+    return f"LOCALID_{tok}_{caps(name)}"
+
+
+def gift_flag(tok, name):
+    """FLAG_<MAP>_<NAME>_GIFT, set once a gift person has given their item."""
+    return f"FLAG_{tok}_{caps(name)}_GIFT"
+
+
 def pory_string(text):
     return '"' + text.replace('"', '\\"') + '"'
 
@@ -158,6 +168,9 @@ def load_spec(path, p, names):
                 elif "range" in e:
                     problems.append(f"{where}: range is only for facing = \"wander\"")
                 if "gift" in e:
+                    if e.get("facing") == "wander":
+                        problems.append(f"{where}: a gift person stands still (facing = \"wander\" with a gift "
+                                        "isn't supported)")
                     if e["gift"] not in names["items"]:
                         problems.append(f"{where}: unknown gift item {e['gift']}")
                     if "after" not in e:
@@ -210,7 +223,7 @@ def generated(p, m, spec_events, spec_path):
             flags.append(flag)
             owns.append(flag)
         elif e["kind"] == "item":
-            lid = f"LOCALID_{tok}_{caps(e['name'])}"
+            lid = local_id(tok, e["name"])
             flag = f"FLAG_ITEM_{tok}_{caps(e['name'])}"
             objs.append({"local_id": lid, "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL", "x": e["x"], "y": e["y"],
                          "elevation": elev, "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
@@ -220,7 +233,7 @@ def generated(p, m, spec_events, spec_path):
             flags.append(flag)
             owns += [lid, flag]
         else:
-            lid = f"LOCALID_{tok}_{caps(e['name'])}"
+            lid = local_id(tok, e["name"])
             trainer = e["kind"] == "trainer"
             rx, ry = e.get("range", [0, 0]) if e.get("facing") == "wander" else (0, 0)
             objs.append({"local_id": lid, "graphics_id": e["gfx"], "x": e["x"], "y": e["y"],
@@ -237,7 +250,7 @@ def generated(p, m, spec_events, spec_path):
                 scripts.append(f"script {label} {{\n    trainerbattle_single({const}, {fmt(e['intro'])}, "
                                f"{fmt(e['defeat'])})\n    msgbox({fmt(e['after'])}, MSGBOX_AUTOCLOSE)\n    end\n}}")
             elif "gift" in e:
-                flag = f"FLAG_{tok}_{caps(e['name'])}_GIFT"
+                flag = gift_flag(tok, e["name"])
                 flags.append(flag)
                 owns.append(flag)
                 scripts.append(gift_script(label, e, flag))
@@ -250,7 +263,8 @@ def generated(p, m, spec_events, spec_path):
 
 def gift_script(label, e, flag):
     """A person who gives an item once. giveitem sets VAR_RESULT to FALSE when the bag is full;
-    then the flag stays clear and they offer it again next time."""
+    then, as in vanilla's gift scripts, goto Common_EventScript_ShowBagIsFull (it says so,
+    releases and ends): the flag stays clear and they offer it again next time."""
     count = e.get("count", 1)
     return (f"script {label} {{\n"
             f"    lock\n    faceplayer\n"
@@ -260,11 +274,10 @@ def gift_script(label, e, flag):
             f"        msgbox({fmt(e['text'])})\n"
             f"        giveitem({e['gift']}{f', {count}' if count != 1 else ''})\n"
             f"        if (var(VAR_RESULT) == FALSE) {{\n"
-            f"            call(Common_EventScript_ShowBagIsFull)\n"
-            f"        }} else {{\n"
-            f"            setflag({flag})\n"
-            f"            msgbox({fmt(e['after'])})\n"
+            f"            goto(Common_EventScript_ShowBagIsFull)\n"
             f"        }}\n"
+            f"        setflag({flag})\n"
+            f"        msgbox({fmt(e['after'])})\n"
             f"    }}\n"
             f"    release\n    end\n}}")
 

@@ -226,10 +226,30 @@ def analyse(p, m, starts, surf_starts=None, reach_free=None):
     return out
 
 
+def wander_reach(m, o, others=()):
+    """Tiles of a wanderer's range it can walk to from home, a step at a time as the engine moves
+    it: open tiles (collision 0) whose elevation is compatible with the one it steps from
+    (water, elevation 1, is never reached from land at 3), not through other people."""
+    L, box = m.layout, wander_box(o)
+    ok = lambda t: L.inb(*t) and L.coll(*t) == 0 and t not in others
+    home = (o["x"], o["y"])
+    seen, todo = {home}, [home]
+    while todo:
+        x, y = todo.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            t = (x + dx, y + dy)
+            if t in box and t not in seen and ok(t):
+                a, b = L.elev(x, y), L.elev(*t)
+                if a == b or 0 in (a, b) or 15 in (a, b):
+                    seen.add(t)
+                    todo.append(t)
+    return seen
+
+
 def wanderer_seals(p, m, starts, exits, a):
     """[(exit label, object index, tile)]: exits a wanderer cuts off while it stands on that tile
     of its range (the other permanent people at home). Exits already cut off by the people at
-    home are the sealing check's; tiles the wanderer can't stand on are skipped."""
+    home are the sealing check's; only tiles it can walk to from home are tried (wander_reach)."""
     out = []
     L = m.layout
     reached = [(lbl, pred) for lbl, pred in exits if any(pred(s) for s in a["reach"])]
@@ -238,9 +258,7 @@ def wanderer_seals(p, m, starts, exits, a):
             continue
         home = (o["x"], o["y"])
         others = {xy: e for xy, e in a["blockers"].items() if xy != home}
-        for t in sorted(wander_box(o) - {home}):
-            if not L.inb(*t) or L.coll(*t) != 0:
-                continue
+        for t in sorted(wander_reach(m, o, others) - {home}):
             w = World(p, m, {**others, t: object_elevation(m, o, t)})
             r = w.explore([s for s in starts if (s[0], s[1]) not in w.obstacles])
             out += [(lbl, i, t) for lbl, pred in reached if not any(pred(s) for s in r)]

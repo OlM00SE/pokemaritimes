@@ -274,13 +274,7 @@ class Emu:
 
     def set_flag(self, flag_id, value=True, timeout_frames=300):
         """Set/clear a game flag via the dev mailbox (needs free overworld control)."""
-        base = self.sym["gDevBridge"]
-        done = self.read32(base + 8)
-        self.cmd(f"write16 {base + 12:x} {flag_id}")
-        self.cmd(f"write16 {base + 14:x} {1 if value else 0}")
-        self.cmd(f"write32 {base:x} {0x464C4147}")       # 'FLAG'
-        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
-            raise RuntimeError("flag request not serviced")
+        self._request("FLAG", flag_id, 1 if value else 0, timeout_frames)
 
     def _request(self, code, arg=0, value=0, timeout_frames=300):
         """One dev-mailbox request (serviced when the player has free control); returns outHp."""
@@ -311,7 +305,7 @@ class Emu:
         out = []
         for i in range(16):                          # OBJECT_EVENTS_COUNT
             base = self.sym["gObjectEvents"] + i * self.OBJECT_EVENT_SIZE
-            if i == me or not self.read8(base) & 1:
+            if i == me or not self.read8(base) & 1:   # active: bit 0 of the first flags byte
                 continue
             raw = self.readrange(base + 0x08, 12)    # localId at 0x08, currentCoords at 0x10
             out.append((raw[0], int.from_bytes(raw[8:10], "little", signed=True) - self.MAP_OFFSET,
@@ -324,13 +318,7 @@ class Emu:
             if species.upper() not in species_ids():
                 raise ValueError(f"unknown species {species}")
             species = species_ids()[species.upper()]
-        base = self.sym["gDevBridge"]
-        done = self.read32(base + 8)
-        self.cmd(f"write16 {base + 12:x} {species}")
-        self.cmd(f"write16 {base + 14:x} {level}")
-        self.cmd(f"write32 {base:x} {0x47495645}")       # 'GIVE'
-        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
-            raise RuntimeError("give request not serviced")
+        self._request("GIVE", species, level, timeout_frames)
 
     def party_count(self):
         return self.read8(self.read32(self.sym["gPlayerPartyCountPtr"]))
@@ -389,17 +377,7 @@ class Emu:
 
     def object_at(self, x, y):
         """True if an active object event (not the player) stands on map tile (x, y)."""
-        me = self.read8(self.sym["gPlayerAvatar"] + 5)
-        for i in range(16):                          # OBJECT_EVENTS_COUNT
-            base = self.sym["gObjectEvents"] + i * self.OBJECT_EVENT_SIZE
-            if i == me or not self.read8(base) & 1:   # active: bit 0 of the first flags byte
-                continue
-            raw = self.readrange(base + 0x10, 4)
-            ox = int.from_bytes(raw[0:2], "little", signed=True) - self.MAP_OFFSET
-            oy = int.from_bytes(raw[2:4], "little", signed=True) - self.MAP_OFFSET
-            if (ox, oy) == (x, y):
-                return True
-        return False
+        return any((ox, oy) == (x, y) for _, ox, oy in self.objects())
 
     def in_battle(self):
         return self.callback2() in (self.sym["BattleMainCB2"], self.sym["CB2_InitBattle"])
@@ -435,25 +413,14 @@ class Emu:
 
     def mon0(self, set_hp=None, timeout_frames=300):
         """(hp, maxHp) of party slot 0 via the dev mailbox; set_hp first sets its HP."""
-        base = self.sym["gDevBridge"]
-        done = self.read32(base + 8)
-        self.cmd(f"write16 {base + 14:x} {0xFFFF if set_hp is None else set_hp}")
-        self.cmd(f"write32 {base:x} {0x4D4F4E30}")       # 'MON0'
-        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
-            raise RuntimeError("MON0 request not serviced")
-        return self.read16(base + 20), self.read16(base + 22)
+        hp = self._request("MON0", 0, 0xFFFF if set_hp is None else set_hp, timeout_frames)
+        return hp, self.read16(self.sym["gDevBridge"] + 22)
 
     def teach_move(self, move, slot=0, timeout_frames=300):
         """Teach party slot 0 a move (dev mailbox 'MOVE'), e.g. teach_move('SURF')."""
         if isinstance(move, str):
             move = move_ids()[move.upper()]
-        base = self.sym["gDevBridge"]
-        done = self.read32(base + 8)
-        self.cmd(f"write16 {base + 12:x} {move}")
-        self.cmd(f"write16 {base + 14:x} {slot}")
-        self.cmd(f"write32 {base:x} {0x4D4F5645}")       # 'MOVE'
-        if not self.wait_until(lambda: self.read32(base + 8) != done, timeout_frames, 2):
-            raise RuntimeError("MOVE request not serviced")
+        self._request("MOVE", move, slot, timeout_frames)
 
     PLAYER_AVATAR_FLAG_SURFING = 1 << 3
 

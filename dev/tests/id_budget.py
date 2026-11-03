@@ -10,7 +10,8 @@ Ids are global and never move (dev/events.py appends them), so their budget is c
     is used by exactly one event on any map (a shared flag makes one pickup hide the other) and
     lies in a saved, non-temporary, non-daily range (hidden items: at or above
     FLAG_HIDDEN_ITEMS_START);
-  - save block: sizeof(SaveBlock1) (from the linker map) fits its four sectors.
+  - save block: the room left in SaveBlock1, for information (approximate: measured between
+    two symbols in pokeemerald.map). The build enforces the limit: STATIC_ASSERT in src/save.c.
 Prints what's left of each budget. Exit code 1 on any failure.
 """
 import glob, json, os, re, sys
@@ -86,9 +87,25 @@ def main():
             if b.get("type") == "hidden_item":
                 uses.setdefault(b["flag"], []).append((name, "hidden item"))
     ours = set(block) | set(re.findall(r"^#define (FLAG_\w+)[^\n]*Maritimes: dev/events\.py", flags_h, re.M))
+    # our flags set by scripts (gifts): setflag(FLAG_X) in Poryscript, setflag FLAG_X in assembly
+    set_by = {}
+    for path in glob.glob(os.path.join(REPO, "data", "maps", "*", "scripts.pory")) + \
+            glob.glob(os.path.join(REPO, "data", "maps", "*", "scripts.inc")):
+        name = os.path.basename(os.path.dirname(path))
+        for f in re.findall(r"\bsetflag\(?\s*(FLAG_\w+)", open(path, encoding="utf-8").read()):
+            if f in ours:
+                set_by.setdefault(f, set()).add(name)
     shared = {f: u for f, u in uses.items() if len(u) > 1}
-    check(not any(f in ours for f in shared), f"each flag dev/events.py allocated is used by one event "
-          f"({len(ours)} allocated; {len(uses)} item flags on all maps)")
+    both = sorted(f for f in ours if f in uses and f in set_by)
+    spread = sorted(f for f, maps in set_by.items() if len(maps) > 1)
+    unused = sorted(f for f in ours if f not in uses and f not in set_by)
+    check(not any(f in ours for f in shared) and not both and not spread,
+          f"each flag dev/events.py allocated belongs to one event ({len(ours)} allocated: "
+          f"{sum(f in uses for f in ours)} item flags, {len(set_by)} set by a map's scripts)"
+          + (f"; shared: {[f for f in shared if f in ours] + both + spread}" if
+             any(f in ours for f in shared) or both or spread else ""))
+    if unused:
+        print(f"  note: allocated but used by no event (ids never move, so they stay reserved): {unused}")
     if shared:   # vanilla flags on a map cloned from vanilla (initial commit): one pickup hides both
         print(f"  note: {len(shared)} vanilla item flags are shared by a cloned map: "
               + ", ".join(f"{f} ({' + '.join(n for n, _ in u)})" for f, u in sorted(shared.items())[:4]))
@@ -105,19 +122,20 @@ def main():
         if any(k == "hidden item" for _, k in u) and val < v("FLAG_HIDDEN_ITEMS_START"):
             bad.append(f"{f} ({u[0][0]}) is below FLAG_HIDDEN_ITEMS_START")
     check(not bad, "item flags are defined, saved and permanent" + (f": {bad[:4]}" if bad else ""))
-    mine = [f for f, u in uses.items() if f in block]
-    check(all(len(uses[f]) == 1 for f in mine), f"{len(mine)} item flags come from the Maritimes block")
 
     # ---- save block ----
     print("save block:")
     mp = read("pokeemerald.map")
     m = re.search(r"^\s+0x([0-9a-f]+)\s+gSaveblock1\n\s+0x([0-9a-f]+)\s+\w+", mp, re.M)
-    if check(m is not None, "gSaveblock1 is in pokeemerald.map (run dev/fastbuild.py first)"):
+    if not m:
+        print("  info: couldn't measure SaveBlock1 from pokeemerald.map (the build's STATIC_ASSERT in "
+              "src/save.c still enforces the limit)")
+    else:
         sb1 = int(m.group(2), 16) - int(m.group(1), 16) - SAVEBLOCK_MOVE_RANGE
         room = SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS - sb1
-        check(room >= 0, f"SaveBlock1 is about {sb1} bytes of {SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS}: "
-                         f"{room} bytes left (8 trainers or 8 flags cost 1 byte)")
-        if 0 <= room < SAVE_ROOM_WARN:
+        print(f"  info: SaveBlock1 is about {sb1} bytes of {SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS}: about "
+              f"{room} bytes left (8 trainers or 8 flags cost 1 byte; enforced by src/save.c)")
+        if room < SAVE_ROOM_WARN:
             print(f"  WARN: under {SAVE_ROOM_WARN} bytes left in SaveBlock1")
     print("PASS" if not fails else f"FAIL ({len(fails)})")
     return 1 if fails else 0

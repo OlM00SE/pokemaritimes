@@ -27,7 +27,7 @@ from playtest import prepare_rom
 from mapkit.project import Project
 from mapkit.engine import World, DIRS, DIR_NAME
 from mapkit import events as ev
-from events import analyse_map, caps
+from events import analyse_map, map_token, local_id, gift_flag
 
 OUT = os.path.join(REPO, "dev", "out")
 PLAYER_MON = "STARLY"
@@ -45,6 +45,10 @@ class Run:
                 self.states.setdefault(w.to_map(s[0], s[1]), []).append(s)
         self.reach = set(self.states)
         self.sight = set().union(*self.a["seen"].values()) if self.a["seen"] else set()
+        # a wanderer may be anywhere in its range: no other test stands, steps or turns there
+        self.ranges = set().union(set(), *(ev.wander_box(o) for o in self.m.events("object_events")
+                                           if ev.moves(o) and not ev.hidden_by_flag(o)))
+        self.avoid = self.sight | self.ranges
         self.passed = self.failed = 0
         self.gifts = spec_gifts(p, name)
 
@@ -59,7 +63,7 @@ class Run:
         Falls back to warping onto the tile and tapping d to turn in place."""
         dx, dy = DIRS[d]
         behind = (x - dx, y - dy)
-        if behind in self.reach and behind not in self.sight:
+        if behind in self.reach and behind not in self.avoid:
             self.e.warp(self.name, *behind)
             self.e.press(DIR_NAME[d], 16, 2)
             self.e.wait(12)
@@ -70,11 +74,12 @@ class Run:
         return (pos[2], pos[3]) == (x, y) and self.e.facing() == d
 
     def spot_for(self, key):
-        """A trigger tile outside every trainer's sight, preferring one with a free tile behind."""
-        spots = [s for s in self.a["spots"].get(key, []) if (s[0], s[1]) not in self.sight]
+        """A trigger tile outside every trainer's sight and every wanderer's range, preferring one
+        with a free tile behind."""
+        spots = [s for s in self.a["spots"].get(key, []) if (s[0], s[1]) not in self.avoid]
         def behind_ok(s):
             dx, dy = DIRS[s[2]]
-            return (s[0] - dx, s[1] - dy) in self.reach and (s[0] - dx, s[1] - dy) not in self.sight
+            return (s[0] - dx, s[1] - dy) in self.reach and (s[0] - dx, s[1] - dy) not in self.avoid
         spots.sort(key=lambda s: (not behind_ok(s), s))
         return spots[0] if spots else None
 
@@ -188,7 +193,8 @@ class Run:
             return False
         pick = next(((t, n, d) for t in far for d, (dx, dy) in DIRS.items()
                      for n in [(t[0] - dx, t[1] - dy)]
-                     if n in self.reach and n not in self.sight and walks_onto(n, d, t)), None)
+                     if n in self.reach and n not in self.avoid and t not in self.ranges
+                     and walks_onto(n, d, t)), None)
         if not self.check(pick is not None, f"{tag}: a tile beside its sight to step in from"):
             return
         t, n, d = pick
@@ -249,11 +255,10 @@ def spec_gifts(p, name):
     out = {}
     for path in glob.glob(p.path("design", "maps", f"{name}.events.toml")):
         spec = tomllib.load(open(path, "rb"))
-        tok = p.load_map(name).id[len("MAP_"):]
+        tok = map_token(p.load_map(name))
         for e in spec.get("person", []):
             if "gift" in e:
-                c = caps(e["name"])
-                out[f"LOCALID_{tok}_{c}"] = (e["gift"], e.get("count", 1), f"FLAG_{tok}_{c}_GIFT")
+                out[local_id(tok, e["name"])] = (e["gift"], e.get("count", 1), gift_flag(tok, e["name"]))
     return out
 
 
