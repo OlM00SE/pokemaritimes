@@ -25,6 +25,7 @@ CASES = [("MARITIMES_VARS_START", "compare_var_to_var"), ("MARITIMES_VARS_END", 
          ("VARS_END", "compare_var_to_var"), ("VAR_RESULT", "compare_var_to_var"),
          ("(MARITIMES_VARS_END + 1)", "compare_var_to_value"), ("5", "compare_var_to_value")]
 COMPARE_SIZE = 5                     # opcode, 2-byte var, 2-byte var or value
+BEGIN, END = "var_macros probe: warnings begin", "var_macros probe: warnings end"
 
 
 def probe_source():
@@ -34,9 +35,24 @@ def probe_source():
     lines = [head[:cut], "", "\t.section .rodata", "gDevVarMacroProbe::"]
     for arg, explicit in CASES:
         lines += [f"\tcompare VAR_TEMP_0, {arg}", f"\t{explicit} VAR_TEMP_0, {arg}"]
-    lines += ["\tcopyvar VAR_TEMP_1, MARITIMES_VARS_START   @ must not warn",
-              "\tsetvar VAR_TEMP_1, MARITIMES_VARS_END     @ must warn (did you mean copyvar?)", ""]
+    # the data rule pipes the source through stdin, so the assembler names no file in its
+    # warnings: markers bracket this probe's own lines in the make log
+    lines += [f'\t.warning "{BEGIN}"',
+              "\tcopyvar VAR_TEMP_1, MARITIMES_VARS_START   @ must not warn",
+              "\tsetvar VAR_TEMP_1, MARITIMES_VARS_END     @ must warn (did you mean copyvar?)",
+              f'\t.warning "{END}"', ""]
     return "\n".join(lines)
+
+
+def between_markers(log):
+    """The log lines between this probe's BEGIN and END warnings, or None if they're missing."""
+    lines = log.splitlines()
+    try:
+        a = next(i for i, l in enumerate(lines) if BEGIN in l)
+        b = next(i for i, l in enumerate(lines) if END in l and i > a)
+    except StopIteration:
+        return None
+    return lines[a + 1:b]
 
 
 def main():
@@ -57,7 +73,10 @@ def main():
         a = raw[2 * i * COMPARE_SIZE:(2 * i + 1) * COMPARE_SIZE]
         b = raw[(2 * i + 1) * COMPARE_SIZE:(2 * i + 2) * COMPARE_SIZE]
         check(a == b, f"compare VAR_TEMP_0, {arg} is {explicit} ({a.hex()} vs {b.hex()})")
-    probe_log = [l for l in log.splitlines() if "zz_dev_var_macro_probe" in l or "Warning" in l]
+    probe_log = between_markers(log)
+    if probe_log is None:
+        print("FAIL: the probe's marker warnings aren't in the make log (~/maritimes-build/.fastbuild.log)")
+        return 1
     check(not any("copyvar with a value that is not" in l for l in probe_log),
           "copyvar from a story var gives no warning")
     check(any("setvar with a value that might be a VAR_" in l for l in probe_log),

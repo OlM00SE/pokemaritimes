@@ -25,9 +25,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import REPO, flag_id
 import save_layout, save_ids
 
-SECTOR_DATA_SIZE, SAVEBLOCK1_SECTORS = 3968, 4   # include/save.h
-SB3_CHUNK, NUM_SECTORS_PER_SLOT = 116, 14        # SAVE_BLOCK_3_CHUNK_SIZE: one chunk per sector's footer
-SB3_ALWAYS_SECTORS = 5                           # sectors 0-4 (SaveBlock2, SaveBlock1): written by every save
+FLASH = save_layout.flash_format()               # include/save.h
+SECTOR_DATA_SIZE = FLASH["SECTOR_DATA_SIZE"]
+SAVEBLOCK1_SECTORS = FLASH["SECTOR_ID_SAVEBLOCK1_END"] - FLASH["SECTOR_ID_SAVEBLOCK1_START"] + 1
+SB3_CHUNK, NUM_SECTORS_PER_SLOT = FLASH["SAVE_BLOCK_3_CHUNK_SIZE"], FLASH["NUM_SECTORS_PER_SLOT"]
+SB3_ALWAYS_WRITTEN = FLASH["SB3_ALWAYS_WRITTEN"]  # SaveBlock3 bytes in sectors 0-4: written by every save
 SAVE_ROOM_WARN = 64                    # bytes; below this, think before spending more
 VARS_WARN = 16                         # story vars left; below this, raise the block or reclaim Hoenn's
 
@@ -130,9 +132,14 @@ def main():
              any(f in ours for f in shared) or both or spread else ""))
     if unused:
         print(f"  note: allocated but used by no event (ids never move, so they stay reserved): {unused}")
-    if shared:   # vanilla flags on a map cloned from vanilla (initial commit): one pickup hides both
-        print(f"  note: {len(shared)} vanilla item flags are shared by a cloned map: "
-              + ", ".join(f"{f} ({' + '.join(n for n, _ in u)})" for f, u in sorted(shared.items())[:4]))
+    # a story flag (dev/save_ids.py) on an item ball or hidden item would tie the pickup to the story
+    misused = sorted(f for f in story_flags if f in uses)
+    check(not misused, "no story flag is used as an item ball's or hidden item's flag"
+                       + (f": {[(f, [n for n, _ in uses[f]]) for f in misused][:4]}" if misused else ""))
+    vanilla_shared = {f: u for f, u in shared.items() if f not in block and f not in ours}
+    if vanilla_shared:   # vanilla flags on a map cloned from vanilla (initial commit): one pickup hides both
+        print(f"  note: {len(vanilla_shared)} vanilla item flags are shared by a cloned map: "
+              + ", ".join(f"{f} ({' + '.join(n for n, _ in u)})" for f, u in sorted(vanilla_shared.items())[:4]))
     bad = []
     for f, u in uses.items():
         try:
@@ -163,6 +170,18 @@ def main():
     check(not hand, "every story var was allocated by dev/save_ids.py" + (f"; by hand: {hand[:5]}" if hand else ""))
     check(lay.get("SAVE_LAYOUT_MARITIMES_VARS_COUNT") == vsize,
           f"include/save_layout.h records the block's {vsize} vars (the build asserts it too)")
+    # the script macros read a number in the block's range as a var (compare_var_to_var), so a
+    # script comparing a var with such a literal would silently compare it with a story var
+    lo, hi = v("MARITIMES_VARS_START"), v("MARITIMES_VARS_END")
+    lit = re.compile(r"(?:\bcompare\s+\w+\s*,|\bvar\(\s*\w+\s*\)\s*(?:==|!=|<=|>=|<|>))\s*(0x[0-9A-Fa-f]+|\d+)\b")
+    literal = []
+    for path in glob.glob(os.path.join(REPO, "data", "**", "*.inc"), recursive=True) + \
+            glob.glob(os.path.join(REPO, "data", "**", "*.pory"), recursive=True):
+        for m in lit.finditer(open(path, encoding="utf-8", errors="replace").read()):
+            if lo <= int(m.group(1), 0) <= hi:
+                literal.append(f"{os.path.relpath(path, REPO)}: {m.group(0).strip()}")
+    check(not literal, f"no script compares a var with a number in {lo:#x}-{hi:#x} (it would read as a story var)"
+                       + (f": {literal[:4]}" if literal else ""))
     free_vars = re.findall(r"^#define (VAR_UNUSED_0x[0-9A-Fa-f]+)\s", vars_h, re.M)
     print(f"  info: {len(free_vars)} of {lay['SAVE_LAYOUT_VARS_COUNT']} vanilla saved vars unused (VAR_UNUSED_*): "
           "a reserve for engine or expansion features that need a SaveBlock1 var; story vars go in the block")
@@ -181,9 +200,9 @@ def main():
     if room < SAVE_ROOM_WARN:
         print(f"  WARN: under {SAVE_ROOM_WARN} bytes left in SaveBlock1")
     sb3, vend = lay["SAVE_LAYOUT_SAVEBLOCK3_SIZE"], lay["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"] + 2 * vsize
-    check(vend <= SB3_CHUNK * SB3_ALWAYS_SECTORS,
+    check(vend <= SB3_ALWAYS_WRITTEN,
           f"the story vars (SaveBlock3+0..{vend - 1:#x}) lie in the part every save writes "
-          f"(sectors 0-4: SaveBlock3+0..{SB3_CHUNK * SB3_ALWAYS_SECTORS - 1:#x})")
+          f"(sectors 0-4: SaveBlock3+0..{SB3_ALWAYS_WRITTEN - 1:#x})")
     print(f"  info: SaveBlock3 is {sb3} of {SB3_CHUNK * NUM_SECTORS_PER_SLOT} bytes: "
           f"{SB3_CHUNK * NUM_SECTORS_PER_SLOT - sb3} left")
     print("PASS" if not fails else f"FAIL ({len(fails)})")

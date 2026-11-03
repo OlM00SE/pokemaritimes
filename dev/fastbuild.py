@@ -141,7 +141,7 @@ def probe(src_rel, text, section=".rodata"):
     stem = os.path.splitext(src_rel)[0]
     obj = f"build/emerald/{stem}.o"
     src = os.path.join(unc, src_rel.replace("/", "\\"))
-    with open(src, "w", newline="\n") as f:
+    with open(src, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     try:
         # main() with a make target: syncs E: -> mirror, then builds just that object

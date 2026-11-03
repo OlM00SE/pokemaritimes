@@ -80,6 +80,26 @@ def recorded(text=None):
     return rec
 
 
+SAVE_H = os.path.join(REPO, "include", "save.h")
+FLASH_NAMES = ("SECTOR_DATA_SIZE", "SAVE_BLOCK_3_CHUNK_SIZE", "SECTOR_FOOTER_SIZE", "NUM_SAVE_SLOTS",
+               "SECTOR_ID_SAVEBLOCK1_START", "SECTOR_ID_SAVEBLOCK1_END", "NUM_SECTORS_PER_SLOT")
+
+
+def flash_format():
+    """The flash format's numbers from include/save.h ({name: int}, the names above), plus
+    SB3_ALWAYS_WRITTEN: the SaveBlock3 bytes in sectors 0-4, which every save writes. The one
+    parser of them for the tests; main() checks it against the compiler's value."""
+    text = open(SAVE_H, encoding="utf-8").read()
+    fmt = {}
+    for n in FLASH_NAMES:
+        m = re.search(rf"^#define {n}\s+(\d+)\s*$", text, re.M)
+        if not m:
+            raise ValueError(f"include/save.h: no plain number for {n}")
+        fmt[n] = int(m.group(1))
+    fmt["SB3_ALWAYS_WRITTEN"] = fmt["SAVE_BLOCK_3_CHUNK_SIZE"] * (fmt["SECTOR_ID_SAVEBLOCK1_END"] + 1)
+    return fmt
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--update", action="store_true", help="rewrite the numbers; bump the version if they changed")
@@ -99,6 +119,10 @@ def main():
     vo, vn, window = got["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"], got["SAVE_LAYOUT_MARITIMES_VARS_COUNT"], vals[-1]
     print(f"  story vars {vn} Maritimes vars (at SaveBlock3+{vo:#x}..{vo + 2 * vn - 1:#x}; every save writes "
           f"SaveBlock3+0..{window - 1:#x})")
+    if flash_format()["SB3_ALWAYS_WRITTEN"] != window:
+        print(f"WARNING: flash_format() reads include/save.h as {flash_format()['SB3_ALWAYS_WRITTEN']} always-written "
+              f"SaveBlock3 bytes, the compiler says {window}: fix flash_format() (the tests use it)")
+        return 1
     diff = {k: (rec.get(k), v) for k, v in got.items() if rec.get(k) != v}
     if not diff:
         print("matches include/save_layout.h: saves of this version load")
@@ -110,8 +134,9 @@ def main():
               "meant, run dev/save_layout.py --update (old saves will be refused).")
         return 1
     # only a number that was recorded and moved is a layout change; a newly recorded one (this
-    # tool learned to measure it) or the placeholder 0s of the first measurement aren't
-    moved = [k for k, (old, new) in diff.items() if old not in (None, 0)]
+    # tool learned to measure it) isn't. 0 is a real value (the story var block's offset), so a
+    # recorded 0 that changes is a move too.
+    moved = [k for k, (old, new) in diff.items() if old is not None]
     first = not moved
     block = BEGIN + "\n" + "".join(f"#define {k:<33} {v}\n" for k, v in got.items()) + END
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
