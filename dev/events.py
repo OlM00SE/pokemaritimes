@@ -29,8 +29,10 @@ dev/tests/id_budget.py checks the trainer ids, the flags and the save block.
 Spec format (see design/maps/Route201_1.events.toml):
   map = "Route201_1"
   replaces = ["LittlerootTown_EventScript_BrendansHouseSign", ...]
-                   hand-placed events (by script or local id) the spec takes over: removed, so a
-                   spec event can stand on their tile (a placeholder cloned from vanilla)
+                   hand-placed events (by script or local id; "<name>@x,y" if several share it)
+                   the spec takes over: removed, so a spec event can stand on their tile (a
+                   placeholder cloned from vanilla). Each must match exactly one event, and a
+                   person can't be removed if hand-placed people follow it (their ids would shift)
   [[sign]]         name, at = [x, y], text            (sign post: draw `s` in the sketch there)
                    optional: facing = "up" (read only from below, like vanilla's Center signs)
   [[inspect]]      name, at, text                     something read on a solid tile: a poster, a
@@ -95,24 +97,29 @@ def gift_flag(tok, name):
     return f"FLAG_{tok}_{caps(name)}_GIFT"
 
 
+def curly(text):
+    """The game's charmap has no straight double quote (vanilla writes “ ”), and Poryscript's
+    format() can't take an escaped one, so a spec's "..." becomes “...”: opening at the start or
+    after a space or bracket, closing otherwise. Applied to each paragraph or sign line before
+    they are joined, so a quote that opens a new box or line opens."""
+    return re.sub(r'(^|(?<=[\s(\[]))"', "“", text).replace('"', "”")
+
+
 def pory_string(text):
-    """A Poryscript string literal. The game's charmap has no straight double quote (vanilla
-    writes “ ”), and Poryscript's format() can't take an escaped one, so a spec's "..." becomes
-    “...”: opening at the start or after a space or bracket, closing otherwise."""
-    text = re.sub(r'(^|(?<=[\s(\[]))"', "“", text)
-    return '"' + text.replace('"', "”") + '"'
+    """A Poryscript string literal (callers have already made the quotes curly)."""
+    return '"' + curly(text) + '"'
 
 
 def fmt(text):
     """Dialogue: Poryscript's format() wraps it to the message box. In the spec, a blank line
     starts a new box (\\p); other line breaks are just spaces."""
-    paras = [" ".join(q.split()) for q in re.split(r"\n\s*\n", text.strip())]
+    paras = [curly(" ".join(q.split())) for q in re.split(r"\n\s*\n", text.strip())]
     return f"format({pory_string(PARAGRAPH.join(paras))})"
 
 
 def sign_text(text):
     """A sign keeps its own lines, as vanilla's route signs do (ROUTE 201 / arrow, place)."""
-    return pory_string("\\n".join(line.strip() for line in text.strip().split("\n")))
+    return pory_string("\\n".join(curly(line.strip()) for line in text.strip().split("\n")))
 
 
 # ---------- reading the game's names ----------
@@ -328,9 +335,40 @@ def is_owned(kind, e, owns):
     return e.get("script") in owns or e.get("flag") in owns
 
 
+def replace_matches(entry, e):
+    """Whether a `replaces` entry names hand-placed event e: "<script or local id>", or
+    "<script or local id>@x,y" when several events share the name."""
+    name, _, at = entry.partition("@")
+    return name in (e.get("script"), e.get("local_id")) and (not at or at == f"{e['x']},{e['y']}")
+
+
 def is_replaced(kind, e, replaces):
-    """A hand-placed event the spec takes over (removes): named by its script or local id."""
-    return bool(replaces) and (e.get("script") in replaces or e.get("local_id") in replaces)
+    """A hand-placed event the spec takes over (removes)."""
+    return any(replace_matches(r, e) for r in replaces)
+
+
+def replace_problems(m, replaces, owns):
+    """Each `replaces` entry must name exactly one hand-placed event (one placeholder, never every
+    event sharing a script), and removing a person must not renumber the hand-placed people after
+    it: their local ids are their position, which hand scripts (applymovement 2) rely on."""
+    problems = []
+    hand = {k: [(i, e) for i, e in enumerate(m.events(k)) if not is_owned(k, e, owns)]
+            for k in ("object_events", "bg_events")}
+    for r in replaces:
+        hits = [(k, i, e) for k, es in hand.items() for i, e in es if replace_matches(r, e)]
+        if len(hits) > 1:
+            problems.append(f"replaces {r}: {len(hits)} hand-placed events use it, at "
+                            + ", ".join(f"({e['x']},{e['y']})" for _, _, e in hits)
+                            + f"; name one as \"{r.partition('@')[0]}@x,y\"")
+        for k, i, e in hits:
+            if k != "object_events":
+                continue
+            after = [f for j, f in hand[k] if j > i and not is_replaced(k, f, replaces)]
+            if after:
+                problems.append(f"replaces {r}: removing the person at ({e['x']},{e['y']}) would renumber the "
+                                f"{len(after)} hand-placed people after it (local ids are positions); "
+                                "move it in Porymap instead, or replace those too")
+    return problems
 
 
 EMPTY_INC = re.compile(r"\A\s*(\w+)_MapScripts::\s*\.byte 0\s*\Z")
@@ -532,9 +570,10 @@ def cmd_build(p, spec_path, apply, force):
         print(f"  replaces the hand-placed {'person' if k == 'object_events' else e.get('type')} at "
               f"({e['x']},{e['y']}): {e.get('local_id') or e.get('script')}")
     for r in replaces:
-        if not any(r in (e.get("script"), e.get("local_id")) for _, e in replaced):
+        if not any(replace_matches(r, e) for _, e in replaced):
             print(f"  note: replaces {r}: no hand-placed event uses it (already replaced?)")
-    problems = placement_problems(p, m, spec_events, owns_before, replaces)
+    problems = replace_problems(m, replaces, owns_before) + placement_problems(p, m, spec_events, owns_before,
+                                                                              replaces)
     if problems:
         print(f"{m.name}: NOT BUILT, {len(problems)} placement problem(s):")
         print("\n".join(f"  {s}" for s in problems))

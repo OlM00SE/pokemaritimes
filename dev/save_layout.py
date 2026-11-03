@@ -29,6 +29,11 @@ FIELDS = [
     ("SAVE_LAYOUT_VARS_OFFSET", "offsetof(struct SaveBlock1, vars)"),
     ("SAVE_LAYOUT_FLAGS_BYTES", "NUM_FLAG_BYTES"),
     ("SAVE_LAYOUT_VARS_COUNT", "VARS_COUNT"),
+    # where each saved flag range starts: moving one inside an unchanged flags[] re-points old flags
+    ("SAVE_LAYOUT_TRAINER_FLAGS_START", "TRAINER_FLAGS_START"),
+    ("SAVE_LAYOUT_SYSTEM_FLAGS", "SYSTEM_FLAGS"),
+    ("SAVE_LAYOUT_DAILY_FLAGS_START", "DAILY_FLAGS_START"),
+    ("SAVE_LAYOUT_MARITIMES_FLAGS_START", "MARITIMES_FLAGS_START"),
 ]
 # capacities, for the report (not recorded: they're the flash format, not the layout)
 CAPACITY = [
@@ -51,8 +56,9 @@ def probe_source():
 def measure():
     """[values] in FIELDS + CAPACITY order, compiled in the mirror (synced from E: first)."""
     unc = fastbuild.mirror_unc()
-    if not os.path.isdir(unc):
-        sys.exit("no WSL build mirror: run dev/fastbuild.py once first")
+    if not os.path.isdir(unc) or not os.path.exists(fastbuild.MANIFEST):
+        # fastbuild would reseed the mirror (rm -rf) and take the probe with it
+        sys.exit("no WSL build mirror (or its manifest): run dev/fastbuild.py once first")
     src = os.path.join(unc, "src", PROBE + ".c")
     obj = f"build/emerald/src/{PROBE}.o"
     with open(src, "w", newline="\n") as f:
@@ -74,12 +80,20 @@ def measure():
             raw += bytes.fromhex(m.group(1).replace(" ", ""))
     n = len(FIELDS) + len(CAPACITY)
     if len(raw) < 4 * n:
-        sys.exit(f"couldn't read the probe's table from objdump:\n{out}")
+        sys.exit("couldn't read the probe's table from objdump (an LTO or -fdata-sections build keeps no "
+                 f"plain .rodata; measure with a normal dev build):\n{out}")
     return list(struct.unpack(f"<{n}I", raw[:4 * n]))
 
 
-def recorded(text):
-    return {k: int(v, 0) for k, v in re.findall(r"^#define (SAVE_LAYOUT_\w+)\s+(0x[0-9A-Fa-f]+|\d+)\s*$", text, re.M)}
+def recorded(text=None):
+    """{SAVE_LAYOUT_*: number} from include/save_layout.h (the one parser of it; tests import it),
+    with SAVE_LAYOUT_STAMP worked out from its formula."""
+    text = open(HEADER, encoding="utf-8").read() if text is None else text
+    rec = {k: int(v, 0) for k, v in re.findall(r"^#define (SAVE_LAYOUT_\w+)\s+(0x[0-9A-Fa-f]+|\d+)\s*$", text, re.M)}
+    base = re.search(r"^#define SAVE_LAYOUT_STAMP\s+\((0x[0-9A-Fa-f]+|\d+) \+ SAVE_LAYOUT_VERSION\)", text, re.M)
+    if base:
+        rec["SAVE_LAYOUT_STAMP"] = int(base.group(1), 0) + rec["SAVE_LAYOUT_VERSION"]
+    return rec
 
 
 def main():
@@ -108,8 +122,11 @@ def main():
         print("DIFFERS from include/save_layout.h: the build will stop (src/save.c). If the change is "
               "meant, run dev/save_layout.py --update (old saves will be refused).")
         return 1
-    first = all(rec.get(k, 0) == 0 for k in got)           # placeholder numbers: the first measurement
-    block = BEGIN + "\n" + "".join(f"#define {k:<29} {v}\n" for k, v in got.items()) + END
+    # only a number that was recorded and moved is a layout change; a newly recorded one (this
+    # tool learned to measure it) or the placeholder 0s of the first measurement aren't
+    moved = [k for k, (old, new) in diff.items() if old not in (None, 0)]
+    first = not moved
+    block = BEGIN + "\n" + "".join(f"#define {k:<33} {v}\n" for k, v in got.items()) + END
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
     if not first:
         version += 1
@@ -117,7 +134,8 @@ def main():
     with open(HEADER, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     print(f"updated include/save_layout.h: version {version}"
-          + ("" if first else " (bumped: saves from the old layout will be refused with a message)")
+          + (" (numbers recorded; no recorded number moved, so the version stays)" if first
+             else " (bumped: saves from the old layout will be refused with a message)")
           + "\nnext: dev/fastbuild.py, then dev/tests/ingame_save.py")
     return 0
 

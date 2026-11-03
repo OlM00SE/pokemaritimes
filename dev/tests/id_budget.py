@@ -19,6 +19,7 @@ Prints what's left of each budget. Exit code 1 on any failure.
 import glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import REPO, flag_id
+import save_layout
 
 SECTOR_DATA_SIZE, SAVEBLOCK1_SECTORS = 3968, 4   # include/save.h
 SAVE_ROOM_WARN = 64                    # bytes; below this, think before spending more
@@ -127,8 +128,7 @@ def main():
     check(not bad, "item flags are defined, saved and permanent" + (f": {bad[:4]}" if bad else ""))
 
     # ---- vars ----
-    lay = {k: int(n) for k, n in re.findall(r"^#define (SAVE_LAYOUT_\w+)\s+(\d+)\s*$",
-                                            read("include/save_layout.h"), re.M)}
+    lay = save_layout.recorded()
     print("vars:")
     vars_h = read("include/constants/vars.h")
     free_vars = re.findall(r"^#define (VAR_UNUSED_0x[0-9A-Fa-f]+)\s", vars_h, re.M)

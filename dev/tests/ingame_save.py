@@ -20,6 +20,7 @@ import os, re, struct, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import Emu, REPO, UNTHROTTLED, flag_id
 from playtest import prepare_rom, OUT
+import save_layout
 
 # the flash format (include/save.h) and the stamp (include/save_layout.h)
 SECTOR_SIZE, NUM_SECTORS_PER_SLOT, NUM_SAVE_SLOTS, SECTOR_SIGNATURE = 0x1000, 14, 2, 0x08012025
@@ -29,9 +30,8 @@ SAVE_STATUS_CORRUPT = 2
 
 
 def layout():
-    txt = open(os.path.join(REPO, "include", "save_layout.h"), encoding="utf-8").read()
-    v = {k: int(n) for k, n in re.findall(r"#define (SAVE_LAYOUT_\w+)\s+(\d+)\s*$", txt, re.M)}
-    return 0x4D00 + v["SAVE_LAYOUT_VERSION"], v["SAVE_LAYOUT_SAVEBLOCK2_SIZE"]
+    rec = save_layout.recorded()
+    return rec["SAVE_LAYOUT_STAMP"], rec["SAVE_LAYOUT_SAVEBLOCK2_SIZE"]
 
 
 def checksum(data):
@@ -129,10 +129,13 @@ def main():
         e.shot(os.path.join(OUT, "save_outdated_menu.png"))
         e.press("A", 3, 40)                          # dismiss the message
         e.press("A", 3, 40)                          # the first item: NEW GAME (CONTINUE would load it)
-        reached = e.wait_until(e.in_overworld, max_frames=600)
+        # NEW GAME's first act is Birch's speech, which plays MUS_ROUTE122 (main_menu.c); the
+        # music player's first field is the song header playing
+        birch = e.wait_until(lambda: e.read32(e.sym["gMPlayInfo_BGM"]) == e.sym["mus_route122"], max_frames=600)
         e.shot(os.path.join(OUT, "save_outdated_first_item.png"))
-        check(not reached, "the menu's first item doesn't continue the old save (no CONTINUE offered); "
-                           "screenshots dev/out/save_outdated_*.png")
+        check(birch and not e.in_overworld(),
+              "the menu's first item starts a new game (Birch's speech), not CONTINUE; "
+              "screenshots dev/out/save_outdated_*.png")
     print("PASS" if not failed else f"FAIL ({failed})")
     return 1 if failed else 0
 

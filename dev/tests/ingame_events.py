@@ -264,8 +264,8 @@ def spec_gifts(p, name):
 
 def main(argv):
     p = Project()
-    names = argv or sorted(os.path.basename(f)[:-len(".events.toml")]
-                           for f in glob.glob(p.path("design", "maps", "*.events.toml")))
+    names = argv or sorted({tomllib.load(open(f, "rb"))["map"]          # each spec says its map
+                            for f in glob.glob(p.path("design", "maps", "*.events.toml"))})
     rom = prepare_rom(fresh=True)
     ok = True
     with Emu(rom, extra_args=UNTHROTTLED) as e:

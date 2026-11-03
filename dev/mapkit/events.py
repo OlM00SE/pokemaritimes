@@ -50,16 +50,17 @@ def wander_box(o, m):
     0 means no limit on that axis (the mover goes as far as the ground lets it), so the box spans
     the map there. Types that only move along one axis (WANDER_LEFT_AND_RIGHT, WALK_UP_AND_DOWN,
     ...) never leave their home row or column, which is why vanilla gives them a 0 on the other
-    axis. Copy-player types (in grass) mirror the player and aren't modelled: home only."""
+    axis. Copy-player types mirror the player's steps (the in-grass ones only onto grass), which
+    isn't modelled: they keep their range box, with a 0 axis taken as home (vanilla's are all
+    0x0 in tall grass; spanning the map would block whole routes for the walker)."""
     if not moves(o):
         return {(o["x"], o["y"])}
     mt = o.get("movement_type") or ""
-    if "COPY_PLAYER" in mt:
-        return {(o["x"], o["y"])}
+    copy = "COPY_PLAYER" in mt
     W, H = m.layout.width, m.layout.height
 
     def span(home, r, size, fixed):
-        if fixed:
+        if fixed or (copy and r == 0):
             return [home]
         return list(range(size)) if r == 0 else list(range(max(0, home - r), min(size, home + r + 1)))
     rx, ry = int(o.get("movement_range_x", 0) or 0), int(o.get("movement_range_y", 0) or 0)
