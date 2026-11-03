@@ -19,6 +19,7 @@ from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, for
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
 from mapkit.render import render_layout, render_diff
 from mapkit.checks import check_map
+from mapkit import landscape
 
 
 def main():
@@ -62,7 +63,10 @@ def main():
     for wmsg in warnings:
         print(f"  ledge warning {wmsg}")
     # errors the map already has (accepted or known) don't block a rebuild; only new ones do
-    before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m) if s == "ERROR"}
+    old_detail = {}
+    before = {(c, msg) for s, c, msg in check_map(p, sk.map_name, None, corpus, mapdata=m, detail=old_detail)
+              if s == "ERROR"}
+    old_metrics = landscape.metrics(m.layout)
     old_blocks = list(m.layout.blocks)
     m.layout.blocks = blocks          # in memory only; nothing is written without --apply
     outdir = p.path("dev", "out")
@@ -89,6 +93,29 @@ def main():
                   detail).save(os.path.join(outdir, f"{sk.map_name}_preview_overlay.png"))
     print(f"previews: dev/out/{sk.map_name}_preview.png, _preview_overlay.png"
           + (", _preview_diff.png" if diff is not None else ""))
+    # landscape: Tom's two visual complaints as numbers (lower is more natural), for the whole
+    # map and for the part this build changes
+    new_metrics = landscape.metrics(m.layout)
+    print("landscape: longest straight forest edge {} -> {} tiles; largest bare grass square {} -> {}"
+          .format(old_metrics["straight_edge"], new_metrics["straight_edge"],
+                  old_metrics["open_square"], new_metrics["open_square"]))
+    if diff is not None:
+        box = (min(xs), min(ys), max(xs), max(ys))
+        after = landscape.metrics(m.layout, box)
+        new_blocks, m.layout.blocks = m.layout.blocks, old_blocks
+        before_box = landscape.metrics(m.layout, box)
+        m.layout.blocks = new_blocks
+        print("  in the changed area x {}-{}, y {}-{}: straight edge {} -> {}; bare square {} -> {}"
+              .format(box[0], box[2], box[1], box[3], before_box["straight_edge"], after["straight_edge"],
+                      before_box["open_square"], after["open_square"]))
+    # accessibility: open ground a walker could reach before, still open, but now cut off
+    if old_detail.get("foot") and "foot" in detail:
+        L = m.layout
+        cut = sorted((x, y) for x, y in old_detail["foot"] - detail["foot"]
+                     if L.inb(x, y) and L.coll(x, y) == 0)
+        if cut:
+            print(f"  WARN reach: {len(cut)} open tiles that were reachable on foot no longer are, "
+                  f"e.g. {cut[:6]}   <- a new pocket? check the overlay")
     new = []
     for s, c, msg in issues:
         is_new = s == "ERROR" and (c, msg) not in before
