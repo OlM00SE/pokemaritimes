@@ -1,2 +1,23 @@
 mapscripts Route201_1_MapScripts {
 }
+
+// ---- dev/events.py: generated from design/maps/Route201_1.events.toml. Edit the spec, not this block. ----
+// owns: Route201_1_EventScript_RouteSign, LOCALID_ROUTE201_1_FORESTER, LOCALID_ROUTE201_1_BUG_CATCHER_ROSS, TRAINER_ROUTE201_1_BUG_CATCHER_ROSS, FLAG_HIDDEN_ITEM_ROUTE201_1_POND_POTION
+
+script Route201_1_EventScript_RouteSign {
+    msgbox("ROUTE 201\n{DOWN_ARROW} WOODSTOCK", MSGBOX_SIGN)
+    end
+}
+
+script Route201_1_EventScript_Forester {
+    msgbox(format("We logged this stand a few summers back. Look at those saplings, already up to my shoulder!\pPokémon like the young woods. The tall grass between the saplings is full of them."), MSGBOX_NPC)
+    end
+}
+
+script Route201_1_EventScript_BugCatcherRoss {
+    trainerbattle_single(TRAINER_ROUTE201_1_BUG_CATCHER_ROSS, format("Hey! You jumped right into my bug-catching spot!"), format("Aww, my bugs got squashed..."))
+    msgbox(format("Bug Pokémon love this meadow under the old road.\pI come here every day after school."), MSGBOX_AUTOCLOSE)
+    end
+}
+
+// ---- end of dev/events.py block ----
