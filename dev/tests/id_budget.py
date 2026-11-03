@@ -10,20 +10,31 @@ Ids are global and never move (dev/events.py appends them), so their budget is c
     is used by exactly one event on any map (a shared flag makes one pickup hide the other) and
     lies in a saved, non-temporary, non-daily range (hidden items: at or above
     FLAG_HIDDEN_ITEMS_START);
-  - vars: how many saved vars are still unused (VAR_UNUSED_*), for information: story state
-    lives in vars, and there are only 256;
+    every block flag was allocated by a tool (dev/events.py: item and gift flags, checked as
+    above; dev/save_ids.py: story flags, which any script may set);
+  - vars: the story var block (MARITIMES_VARS_*, in SaveBlock3) lies between the vanilla and
+    the special vars, its ids are contiguous and allocated by dev/save_ids.py, and
+    include/save_layout.h records its size; the unused vanilla vars are printed as a reserve;
   - save block: the room left in each save block, exact: include/save_layout.h records the
-    sizes (dev/save_layout.py measures them) and src/save.c asserts them at build time.
+    sizes (dev/save_layout.py measures them) and src/save.c asserts them at build time. The
+    story vars must lie in the part of SaveBlock3 that every save writes (sectors 0-4).
 Prints what's left of each budget. Exit code 1 on any failure.
 """
 import glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import REPO, flag_id
-import save_layout
+import save_layout, save_ids
 
 SECTOR_DATA_SIZE, SAVEBLOCK1_SECTORS = 3968, 4   # include/save.h
+SB3_CHUNK, NUM_SECTORS_PER_SLOT = 116, 14        # SAVE_BLOCK_3_CHUNK_SIZE: one chunk per sector's footer
+SB3_ALWAYS_SECTORS = 5                           # sectors 0-4 (SaveBlock2, SaveBlock1): written by every save
 SAVE_ROOM_WARN = 64                    # bytes; below this, think before spending more
-VARS_WARN = 16                         # unused saved vars; below this, plan a var block or reclaim Hoenn's
+VARS_WARN = 16                         # story vars left; below this, raise the block or reclaim Hoenn's
+
+
+def contiguous(offsets):
+    n = len(list(offsets))
+    return f", at offsets 0..{n - 1} with none shared or skipped" if n else ""
 
 
 def read(rel):
@@ -64,11 +75,18 @@ def main():
               + ", ".join(f"{n} {a:#x}-{b:#x}" for n, a, b in ranges))
     check(v("FLAGS_COUNT") <= v("SPECIAL_FLAGS_START"), "saved flags stay below the special flags")
     flags_h = read("include/constants/flags.h")
-    block = {n: int(o, 0) for n, o in re.findall(
-        r"^#define (FLAG_\w+)\s+\(MARITIMES_FLAGS_START \+ (0x[0-9A-Fa-f]+|\d+)\)", flags_h, re.M)}
+    fblock = save_ids.FLAGS.allocated(REPO, flags_h)
+    block = {n: o for n, (o, _) in fblock.items()}
     size = v("MARITIMES_FLAGS_COUNT")
-    check(len(set(block.values())) == len(block) and all(0 <= o < size for o in block.values()),
-          f"Maritimes block: {len(block)} of {size} flags used, each at its own offset: {size - len(block)} left")
+    check(sorted(block.values()) == list(range(len(block))) and len(block) <= size,
+          f"Maritimes block: {len(block)} of {size} flags used" + contiguous(block.values())
+          + f": {size - len(block)} left")
+    story_flags = {n for n, (_, c) in fblock.items() if f"Maritimes: {save_ids.TAG}" in c}
+    untagged = sorted(n for n, (_, c) in fblock.items()
+                      if n not in story_flags and f"Maritimes: {save_ids.EVENTS_TAG}" not in c)
+    check(not untagged, f"every block flag was allocated by a tool ({len(block) - len(story_flags)} by dev/events.py, "
+                        f"{len(story_flags)} story flags by dev/save_ids.py)"
+                        + (f"; by hand: {untagged[:5]}" if untagged else ""))
     unused = [int(x, 16) for x in re.findall(r"^#define FLAG_UNUSED_0x([0-9A-Fa-f]+)\s+0x", flags_h, re.M)]
     print(f"  info: {sum(1 for x in unused if 0x20 <= x < v('TRAINER_FLAGS_START'))} unused vanilla flags "
           "below the trainer flags (the old pool; new flags go in the block)")
@@ -90,7 +108,9 @@ def main():
         for b in j.get("bg_events", []):
             if b.get("type") == "hidden_item":
                 uses.setdefault(b["flag"], []).append((name, "hidden item"))
-    ours = set(block) | set(re.findall(r"^#define (FLAG_\w+)[^\n]*Maritimes: dev/events\.py", flags_h, re.M))
+    # event flags (item balls, hidden items, gifts) each belong to one event; story flags are set
+    # wherever the story needs them, so only the event flags are checked here
+    ours = set(re.findall(rf"^#define (FLAG_\w+)[^\n]*Maritimes: {re.escape(save_ids.EVENTS_TAG)}", flags_h, re.M))
     # our flags set by scripts (gifts): setflag(FLAG_X) in Poryscript, setflag FLAG_X in assembly
     set_by = {}
     for path in glob.glob(os.path.join(REPO, "data", "maps", "*", "scripts.pory")) + \
@@ -131,11 +151,23 @@ def main():
     lay = save_layout.recorded()
     print("vars:")
     vars_h = read("include/constants/vars.h")
+    vblock = save_ids.VARS.allocated(REPO, vars_h)
+    voffs = sorted(o for o, _ in vblock.values())
+    vsize = v("MARITIMES_VARS_COUNT")
+    check(v("MARITIMES_VARS_START") > v("VARS_END") and v("MARITIMES_VARS_END") < v("SPECIAL_VARS_START"),
+          f"the story var block {v('MARITIMES_VARS_START'):#x}-{v('MARITIMES_VARS_END'):#x} lies between the "
+          f"vanilla vars (..{v('VARS_END'):#x}) and the special vars ({v('SPECIAL_VARS_START'):#x}..)")
+    check(voffs == list(range(len(voffs))) and len(voffs) <= vsize,
+          f"story var block: {len(voffs)} of {vsize} vars used" + contiguous(voffs) + f": {vsize - len(voffs)} left")
+    hand = sorted(n for n, (_, c) in vblock.items() if f"Maritimes: {save_ids.TAG}" not in c)
+    check(not hand, "every story var was allocated by dev/save_ids.py" + (f"; by hand: {hand[:5]}" if hand else ""))
+    check(lay.get("SAVE_LAYOUT_MARITIMES_VARS_COUNT") == vsize,
+          f"include/save_layout.h records the block's {vsize} vars (the build asserts it too)")
     free_vars = re.findall(r"^#define (VAR_UNUSED_0x[0-9A-Fa-f]+)\s", vars_h, re.M)
-    print(f"  info: {len(free_vars)} of {lay['SAVE_LAYOUT_VARS_COUNT']} saved vars unused (VAR_UNUSED_*: rename "
-          "one for a map's story state; each extra var costs 2 save bytes)")
-    if len(free_vars) < VARS_WARN:
-        print(f"  WARN: under {VARS_WARN} unused vars left")
+    print(f"  info: {len(free_vars)} of {lay['SAVE_LAYOUT_VARS_COUNT']} vanilla saved vars unused (VAR_UNUSED_*): "
+          "a reserve for engine or expansion features that need a SaveBlock1 var; story vars go in the block")
+    if vsize - len(voffs) < VARS_WARN:
+        print(f"  WARN: under {VARS_WARN} story vars left (raise MARITIMES_VARS_COUNT, or reclaim Hoenn's vars)")
 
     # ---- save block ----
     print("save block:")
@@ -144,10 +176,16 @@ def main():
     check(sb1 > 0 and lay["SAVE_LAYOUT_FLAGS_BYTES"] * 8 >= v("FLAGS_COUNT"),
           f"include/save_layout.h is measured (version {lay['SAVE_LAYOUT_VERSION']}) and holds every saved flag")
     print(f"  info: SaveBlock1 is {sb1} of {SECTOR_DATA_SIZE * SAVEBLOCK1_SECTORS} bytes: {room} left; SaveBlock2 "
-          f"{SECTOR_DATA_SIZE - lay['SAVE_LAYOUT_SAVEBLOCK2_SIZE']} left (8 trainers or 8 flags cost 1 byte, a var 2; "
-          "dev/save_layout.py re-measures)")
+          f"{SECTOR_DATA_SIZE - lay['SAVE_LAYOUT_SAVEBLOCK2_SIZE']} left (8 trainers or 8 flags cost 1 byte; story "
+          "vars are in SaveBlock3, 2 bytes each; dev/save_layout.py re-measures)")
     if room < SAVE_ROOM_WARN:
         print(f"  WARN: under {SAVE_ROOM_WARN} bytes left in SaveBlock1")
+    sb3, vend = lay["SAVE_LAYOUT_SAVEBLOCK3_SIZE"], lay["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"] + 2 * vsize
+    check(vend <= SB3_CHUNK * SB3_ALWAYS_SECTORS,
+          f"the story vars (SaveBlock3+0..{vend - 1:#x}) lie in the part every save writes "
+          f"(sectors 0-4: SaveBlock3+0..{SB3_CHUNK * SB3_ALWAYS_SECTORS - 1:#x})")
+    print(f"  info: SaveBlock3 is {sb3} of {SB3_CHUNK * NUM_SECTORS_PER_SLOT} bytes: "
+          f"{SB3_CHUNK * NUM_SECTORS_PER_SLOT - sb3} left")
     print("PASS" if not fails else f"FAIL ({len(fails)})")
     return 1 if fails else 0
 

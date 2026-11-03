@@ -34,7 +34,12 @@ FIELDS = [
     ("SAVE_LAYOUT_SYSTEM_FLAGS", "SYSTEM_FLAGS"),
     ("SAVE_LAYOUT_DAILY_FLAGS_START", "DAILY_FLAGS_START"),
     ("SAVE_LAYOUT_MARITIMES_FLAGS_START", "MARITIMES_FLAGS_START"),
+    # the story var block in SaveBlock3 (milestone 11)
+    ("SAVE_LAYOUT_MARITIMES_VARS_OFFSET", "offsetof(struct SaveBlock3, maritimesVars)"),
+    ("SAVE_LAYOUT_MARITIMES_VARS_COUNT", "MARITIMES_VARS_COUNT"),
 ]
+# the SaveBlock3 chunks that every save writes (sectors 0-4); src/save.c asserts the var block fits
+SB3_ALWAYS_WRITTEN = "SAVE_BLOCK_3_CHUNK_SIZE * (SECTOR_ID_SAVEBLOCK1_END + 1)"
 # capacities, for the report (not recorded: they're the flash format, not the layout)
 CAPACITY = [
     ("SaveBlock1", "SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1)", 0),
@@ -46,7 +51,7 @@ BEGIN, END = "// ---- measured by dev/save_layout.py; don't edit by hand ----", 
 
 
 def probe_source():
-    exprs = [e for _, e in FIELDS] + [e for _, e, _ in CAPACITY]
+    exprs = [e for _, e in FIELDS] + [e for _, e, _ in CAPACITY] + [SB3_ALWAYS_WRITTEN]
     body = ",\n    ".join(f"(u32)({e})" for e in exprs)
     return ('// dev/save_layout.py probe: deleted after use, never part of the game\n'
             '#include "global.h"\n#include "save.h"\n#include "pokemon_storage_system.h"\n'
@@ -54,7 +59,8 @@ def probe_source():
 
 
 def measure():
-    """[values] in FIELDS + CAPACITY order, compiled in the mirror (synced from E: first)."""
+    """[values] in FIELDS + CAPACITY order, then SB3_ALWAYS_WRITTEN; compiled in the mirror
+    (synced from E: first)."""
     unc = fastbuild.mirror_unc()
     if not os.path.isdir(unc) or not os.path.exists(fastbuild.MANIFEST):
         # fastbuild would reseed the mirror (rm -rf) and take the probe with it
@@ -78,7 +84,7 @@ def measure():
         m = re.match(r"^\s*[0-9a-f]+ ((?:[0-9a-f]{2,8} ?){1,4})", line)
         if m:
             raw += bytes.fromhex(m.group(1).replace(" ", ""))
-    n = len(FIELDS) + len(CAPACITY)
+    n = len(FIELDS) + len(CAPACITY) + 1
     if len(raw) < 4 * n:
         sys.exit("couldn't read the probe's table from objdump (an LTO or -fdata-sections build keeps no "
                  f"plain .rodata; measure with a normal dev build):\n{out}")
@@ -112,6 +118,9 @@ def main():
     print(f"  flags      {got['SAVE_LAYOUT_FLAGS_BYTES'] * 8} saved flags ({got['SAVE_LAYOUT_FLAGS_BYTES']} bytes at "
           f"SaveBlock1+{got['SAVE_LAYOUT_FLAGS_OFFSET']:#x})")
     print(f"  vars       {got['SAVE_LAYOUT_VARS_COUNT']} saved vars (at SaveBlock1+{got['SAVE_LAYOUT_VARS_OFFSET']:#x})")
+    vo, vn, window = got["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"], got["SAVE_LAYOUT_MARITIMES_VARS_COUNT"], vals[-1]
+    print(f"  story vars {vn} Maritimes vars (at SaveBlock3+{vo:#x}..{vo + 2 * vn - 1:#x}; every save writes "
+          f"SaveBlock3+0..{window - 1:#x})")
     diff = {k: (rec.get(k), v) for k, v in got.items() if rec.get(k) != v}
     if not diff:
         print("matches include/save_layout.h: saves of this version load")
