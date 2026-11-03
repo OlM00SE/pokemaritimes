@@ -145,13 +145,15 @@ for x, y in ls.cells_of(sk, ",", FLOOR):          # the old tall-grass rectangle
 # replanted on that grid, in whole bands (rows 27-34, x 0-43); rows 35-39 stay, and so does the
 # column of trees at x 44-45 beside the south branch.
 SOUTH = ls.rect(0, 27, 43, 34)
-south = (ls.forest_edge(2, 27, 43, 34, "N", amp=4, seed=203) | ls.rect(0, 29, 1, 34)
+GROVES = ls.rect(0, 18, 47, 26) | ls.rect(2, 13, 12, 20)
+for x, y in ls.cells_of(sk, "Ty", SOUTH | GROVES):   # the old box groves (one straddles both areas)
+    sk.set(x, y, ".")                                   # and the straight forest edge, replanted below
+south =(ls.forest_edge(2, 27, 43, 34, "N", amp=4, seed=203) | ls.rect(0, 29, 1, 34)
          | ls.rect(30, 27, 31, 28))               # a lone tree standing out from the edge
 ls.plant(sk, south, SOUTH, parity=(0, 1), keep_clear=KEEP)
 # The groves become rounded stands of about the old size: on the wooded bench, in the middle of
 # the valley (with a sheltered notch on its sunny south-west side), and beside the pond.
-GROVES = ls.rect(0, 18, 47, 26) | ls.rect(2, 13, 12, 20)
-bench = ls.blob(7.5, 16.5, 4.4, 3.3, seed=204, wobble=0.35)
+bench =ls.blob(7.5, 16.5, 4.4, 3.3, seed=204, wobble=0.35)
 middle = ls.blob(26, 22.5, 6.4, 3.9, seed=205, wobble=0.25) - ls.blob(20.5, 25.5, 2, 1.6, seed=206)
 pond = ls.blob(42, 22.5, 2.4, 3.6, seed=207, wobble=0.2)
 ls.plant(sk, bench | middle | pond, GROVES, keep_clear=KEEP)

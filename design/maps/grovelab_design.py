@@ -1,4 +1,4 @@
-﻿"""GroveLab: dev test map for natural forests and open ground. Writes design/maps/GroveLab.txt.
+"""GroveLab: dev test map for natural forests and open ground. Writes design/maps/GroveLab.txt.
 
 Run:  python design/maps/grovelab_design.py
       python dev/mapgen.py build design/maps/GroveLab.txt --fresh [--apply]

@@ -3,7 +3,7 @@
 1. Vanilla agreement: on the vanilla routes that use them most, extract finds every flower bed,
    boulder and Route 116-style sapling (00E [0C6] 017), and keeps as '#' only the ones a compile
    wouldn't put back exactly. Reported per piece; then extract -> compile must leave every flora
-   block unchanged, attributes included.
+   block, and every block beside one, unchanged, attributes included.
 2. Shapes: small sketches that must build (flowers, boulders, saplings 2 and 3 tall, a ledge
    landing on flowers) or be refused with the expected reason (a 1- or 4-tall sapling, a trunk
    on the bottom edge, flowers under a canopy overhang, a boulder on a bank, a ledge landing on
@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mapkit.project import Project
 from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, vanilla_maps, load_blocks, learn, class_adjacency, forbidden_pairs
-from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, assign_tree_quarters, CHAR_TO_CLASS
+from mapkit.sketch import (Sketch, SketchError, extract, compile_sketch, assign_tree_quarters, CHAR_TO_CLASS,
+                           verify_owned)
 from mapkit import flora, landscape as ls
 
 VANILLA = ["ROUTE116", "ROUTE102", "ROUTE103", "ROUTE104", "ROUTE110", "ROUTE111", "ROUTE117",
@@ -54,16 +55,19 @@ def vanilla(p, c, v, rules, forbidden, verbose):
             found[KIND[ch]] += 1
             kept[KIND[ch]] += sk.rows[y][x] == "#"
         blocks, _ = compile_sketch(p, c, rules, sk, L, v, forbidden)
+        cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
         changed += sum(1 for y in range(L.height) for x in range(L.width)
-                       if (x, y) in modeled and blocks[y * L.width + x] != L.get(x, y))
+                       if ((x, y) in modeled or verify_owned(cls, x, y, L.width, L.height))
+                       and blocks[y * L.width + x] != L.get(x, y))
         if verbose:
             n = Counter(KIND[ch] for ch in heads.values())
             print(f"    {name}: {dict(n)}, kept {sum(sk.rows[y][x] == '#' for x, y in heads)}")
     for kind in ("flowers", "boulders", "saplings"):
         print(f"  {kind:8}: {found[kind] - kept[kind]}/{found[kind]} extracted as flora "
-              f"({kept[kind]} kept as '#': odd elevation or a non-grass context)")
+              f"({kept[kind]} kept as '#': an odd elevation, a non-grass spot, or a neighbour "
+              "vanilla drew for an object there)")
     print(f"  out of scope: {other} trunks in other sapling forms (jungle hedges, under a canopy) stay '#'")
-    print(f"  extract -> compile changes {changed} flora blocks")
+    print(f"  extract -> compile changes {changed} flora blocks or blocks beside flora")
     return changed == 0 and all(found[k] - kept[k] > 0 for k in ("flowers", "boulders", "saplings"))
 
 
@@ -86,7 +90,7 @@ SHAPES = [
     ("ledge landing on a sapling's crown", [(x, 10, "v") for x in range(8, 13)] + [(10, 11, "y"), (10, 12, "y")],
      None),                                   # the crown top is walkable (00E)
     ("ledge landing on a sapling's trunk", [(10, y, "<") for y in range(8, 13)] + [(9, 9, "y"), (9, 10, "y")],
-     "a sapling's trunk"),
+     "lands on a sapling"),
 ]
 
 

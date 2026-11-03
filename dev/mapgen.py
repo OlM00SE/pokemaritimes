@@ -13,7 +13,7 @@
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mapkit.project import Project
+from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
@@ -108,14 +108,21 @@ def main():
         print("  in the changed area x {}-{}, y {}-{}: straight edge {} -> {}; bare square {} -> {}"
               .format(box[0], box[2], box[1], box[3], before_box["straight_edge"], after["straight_edge"],
                       before_box["open_square"], after["open_square"]))
-    # accessibility: open ground a walker could reach before, still open, but now cut off
-    if old_detail.get("foot") and "foot" in detail:
+    # accessibility: open land nobody can walk to, where this build is responsible: it was
+    # reachable before, or this build changed it (e.g. a pocket left where forest was cleared)
+    if "foot" in old_detail and "foot" in detail:
         L = m.layout
-        cut = sorted((x, y) for x, y in old_detail["foot"] - detail["foot"]
-                     if L.inb(x, y) and L.coll(x, y) == 0)
+        touched = set(changed or ())
+        land = lambda x, y: L.coll(x, y) == 0 and not \
+            p.tile_flags.get(L.tiles.behavior(L.mid(x, y)), 0) & TILE_FLAG_SURFABLE
+        cut = sorted((x, y) for y in range(L.height) for x in range(L.width)
+                     if land(x, y) and (x, y) not in detail["foot"]
+                     and ((x, y) in old_detail["foot"] or (x, y) in touched))
         if cut:
-            print(f"  WARN reach: {len(cut)} open tiles that were reachable on foot no longer are, "
-                  f"e.g. {cut[:6]}   <- a new pocket? check the overlay")
+            print(f"  WARN reach: {len(cut)} open tiles can't be reached on foot (newly cut off, or "
+                  f"changed by this build), e.g. {cut[:6]}   <- a pocket? check the overlay")
+    elif diff is not None:
+        print("  (reach not compared: the walk exploration was truncated on this map)")
     new = []
     for s, c, msg in issues:
         is_new = s == "ERROR" and (c, msg) not in before

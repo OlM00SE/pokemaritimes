@@ -135,17 +135,26 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
 
 
 def shore_owned(cls, x, y, w, h):
-    """The cells the shore and flora resolvers decide: water, rocks, sand or grass beside
-    water, and flora pieces."""
+    """The cells the shore resolver decides: water, rocks, and sand or grass beside water."""
     c = cls[y][x]
-    return c in (shores.WATER_CLS, shores.ROCK_CLS) or c in flora.CLASSES or (
+    return c in (shores.WATER_CLS, shores.ROCK_CLS) or (
         c in (shores.SAND_CLS, "G") and shores.touches_water(cls, x, y, w, h))
+
+
+def verify_owned(cls, x, y, w, h):
+    """Cells extract's compile check compares: shore cells, flora pieces, and the cells around
+    flora (flora reads as grass in a compile, where vanilla's rules saw a kept tile, so a
+    neighbour's learned tile could change)."""
+    return shore_owned(cls, x, y, w, h) or any(
+        0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] in flora.CLASSES
+        for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
 
 def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None):
     """Compile the extracted sketch and keep ('#') every shore or flora cell whose block wouldn't
     come back exactly: e.g. vanilla beach sand that meets grass without a rim, sand at
-    elevation 0, or flowers under a canopy overhang.
+    elevation 0, or flowers under a canopy overhang. If a cell beside flora wouldn't come back,
+    the flora next to it is kept instead (verify_owned).
     Cells a compile refuses are kept too. Every round keeps at least one more cell, so the loop
     ends; it stops when a compile reproduces every shore and flora block, which is what makes
     extract -> compile never change one."""
@@ -159,7 +168,14 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
             blocks, _ = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
             cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
             bad = [(x, y) for y in range(h) for x in range(w)
-                   if shore_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+                   if verify_owned(cls, x, y, w, h) and blocks[y * w + x] != layout.get(x, y)]
+            # a changed neighbour of flora (e.g. a tree quarter, or grass picking another variant)
+            # changed because the flora now reads as grass: keep the flora instead, which puts
+            # back the context vanilla's rules saw (keeping the neighbour could split a tree)
+            bad = [c for x, y in bad for c in (
+                [(x, y)] if shore_owned(cls, x, y, w, h) or cls[y][x] in flora.CLASSES else
+                [(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                 if 0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] in flora.CLASSES])]
         except SketchError as ex:
             refused = ex
             bad = [(x, y) for x, y, _ in ex.problems]
@@ -208,6 +224,7 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
     if not hint:
         return _tile_trees(cls_grid, w, h, None)
     seen, dropped = set(), 0
+    scratch = [["X"] * w for _ in range(h)]
     for y0 in range(h):
         for x0 in range(w):
             if cls_grid[y0][x0] != "T" or (x0, y0) in seen:
@@ -221,20 +238,27 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
                     if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in seen and cls_grid[ny][nx] == "T":
                         seen.add((nx, ny))
                         stack.append((nx, ny))
+            # tile the grove alone, on one shared scratch grid, within its bounding box
+            box = (min(x for x, _ in comp), min(y for _, y in comp),
+                   max(x for x, _ in comp), max(y for _, y in comp))
             trials = []
             for hh in (hint, None):
-                g = [["X"] * w for _ in range(h)]
                 for x, y in comp:
-                    g[y][x] = "T"
-                trials.append((_tile_trees(g, w, h, hh), g))
-            n, g = min(trials, key=lambda t: t[0])     # ties keep the old placement (first)
+                    scratch[y][x] = "T"
+                n = _tile_trees(scratch, w, h, hh, box)
+                trials.append((n, {(x, y): scratch[y][x] for x, y in comp}))
+                for x, y in comp:
+                    scratch[y][x] = "X"
+            n, result = min(trials, key=lambda t: t[0])     # ties keep the old placement (first)
             dropped += n
-            for x, y in comp:
-                cls_grid[y][x] = g[y][x]
+            for (x, y), q in result.items():
+                cls_grid[y][x] = q
     return dropped
 
 
-def _tile_trees(cls_grid, w, h, hint):
+def _tile_trees(cls_grid, w, h, hint, box=None):
+    """box (x0, y0, x1, y1): only cells in it can be forest; loops stay inside it."""
+    x0, y0, x1, y1 = box or (0, 0, w - 1, h - 1)
     inside = lambda x, y: 0 <= x < w and 0 <= y < h
 
     def place(x, y, allow_offmap):
@@ -247,12 +271,12 @@ def _tile_trees(cls_grid, w, h, hint):
                     cls_grid[qy][qx] = q
 
     if hint:                        # pass 0: keep the existing map's tree placement where unchanged
-        for y in range(h):
-            for x in range(w):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
                 if cls_grid[y][x] == "T" and hint[y][x] in ("TL", "TR", "BL", "BR"):
                     cls_grid[y][x] = "t" + hint[y][x]       # provisional
-        for y in range(h):
-            for x in range(w):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
                 c = cls_grid[y][x]
                 if not c.startswith("t"):
                     continue
@@ -263,15 +287,15 @@ def _tile_trees(cls_grid, w, h, hint):
                          cls_grid[oy + dy][ox + dx] in ("t" + qq, qq)
                          for dx, dy, qq in ((0, 0, "TL"), (1, 0, "TR"), (0, 1, "BL"), (1, 1, "BR")))
                 cls_grid[y][x] = q if ok else "T"
-    for y in range(h):              # pass 1: whole trees inside the map
-        for x in range(w):
+    for y in range(y0, y1 + 1):     # pass 1: whole trees inside the map
+        for x in range(x0, x1 + 1):
             place(x, y, False)
-    for y in range(-1, h):          # pass 2: leftovers at the edges become trees cut by the border
-        for x in range(-1, w):
+    for y in range(y0 - 1, y1 + 1):  # pass 2: leftovers at the edges become trees cut by the border
+        for x in range(x0 - 1, x1 + 1):
             place(x, y, True)
     dropped = 0
-    for y in range(h):
-        for x in range(w):
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
             if cls_grid[y][x] == "T":
                 cls_grid[y][x] = "G"
                 dropped += 1

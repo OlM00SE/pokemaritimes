@@ -112,7 +112,10 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
         offset edge trees). A tile an odd run leaves over goes to an open end (a nook), never
         to a closed one, where it would be an unreachable pocket;
       * a run enclosed by forest, the map edge or the area's edge stays on the grid
-        (x % 2 == parity[0]), so a replanted canopy meets the trees around it seamlessly.
+        (x % 2 == parity[0]), so a replanted canopy meets the trees around it seamlessly. An
+        even run off the grid fits flush; an odd one must leave a tile against forest, which
+        mapgen's reach check reports if it ends up cut off.
+    It refuses (ValueError) to leave a tree or sapling cut in half by the area's edge.
     A tile a run can't fill becomes a sapling ('y': crown over trunk) where there's open ground
     below to stand on and no tree right above (if `saplings`), else grass.
     Mask cells in a band only one row deep stay grass: the outline steps in whole trees, as
@@ -174,8 +177,8 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
                 start = a if not odd or b == sk.w - 1 else a + 1
             elif ro:            # closed on the left: flush with it
                 start = a
-            else:
-                start = a if a % 2 == px else a + 1
+            else:               # enclosed: on the grid; an even run off the grid fits flush
+                start = a if a % 2 == px or not odd else a + 1
             covered = set()
             tx = start
             while tx + 1 <= b or (tx == b and b == sk.w - 1 and lo):     # (runs off the right edge)
@@ -200,6 +203,7 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
             saps.append((x, y))
             taken |= {(x, y), (x, y + 1), (x, y + 2)}    # the sapling, and the open tile below it
     # write: clear the area's old forest, then plant
+    before = _forest_damage(sk)
     for (x, y) in area:
         if inmap(x, y) and sk.rows[y][x] in "Ty" and (x, y) not in keep_clear:
             sk.rows[y][x] = "."
@@ -209,7 +213,24 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
                 sk.rows[qy][qx] = "T"
     for x, y in saps:
         sk.rows[y][x] = sk.rows[y + 1][x] = "y"
+    after = _forest_damage(sk)
+    if after[0] > before[0] or after[1] - before[1]:
+        raise ValueError(
+            f"plant: the area's edge cuts through a tree or sapling that stays outside it "
+            f"({after[0] - before[0]} tree cells left without a whole tree; broken saplings at "
+            f"{sorted(after[1] - before[1])[:4]}). Make the area cover whole trees: whole 2-row "
+            "bands on the forest's grid, and both tiles of every sapling.")
     return len(trees), offset, len(saps)
+
+
+def _forest_damage(sk):
+    """(forest cells that can't form a whole tree, cells of invalid saplings) in the sketch."""
+    from .sketch import CHAR_TO_CLASS, assign_tree_quarters
+    from . import flora
+    cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
+    dropped = assign_tree_quarters(cls, sk.w, sk.h)
+    _, errors = flora.resolve(cls, sk.w, sk.h)
+    return dropped, {(x, y) for x, y, _ in errors}
 
 
 def sapling_stand(sk, mask, seed=0, density=0.45, keep_clear=frozenset()):

@@ -4,8 +4,9 @@ For each map (default: GroveLab and Route 203), from every walkable tile next to
   piece   a flora piece (flowers, a boulder, any tile of a sapling): press toward it. Flowers and
           a sapling's crown top are walked onto (you pass behind the crown); boulders, trunks and
           crown middles block;
-  edge    a tree tile on the forest's edge (a sample, --edges N, default 60 per map, offset trees
-          first): press toward it; the player must not move.
+  edge    a tree tile on the forest's edge (a sample, --edges N, default 60 per map, staggered
+          trees first: those joined to a neighbour offset by one tile): press toward it; the
+          player must not move.
 The expected result comes from mapkit.engine (World.step), so the test also checks the engine
 model on the new tiles. Screenshots: dev/out/flora_<Map>_crown.png (the player behind a crown) and
 dev/out/flora_<Map>_<n>.png (views of the planted areas).
@@ -39,6 +40,12 @@ def cases_for(p, name, n_edges, rng):
     walk = lambda x, y: inb(x, y) and L.coll(x, y) == 0 and not \
         w.flags(*w.to_grid(x, y)) & TILE_FLAG_SURFABLE and L.mid(x, y) not in TREES
     pieces, edges = [], []
+    tls = {(x, y) for y in range(L.height) for x in range(L.width) if L.mid(x, y) in TREE["TL"]}
+    # a staggered tree: a neighbouring tree beside or below it is offset by one tile (whatever
+    # grid the forest is on; Route 203's southern forest is on odd rows)
+    staggered = {(x, y) for x, y in tls if any((x + dx, y + dy) in tls for dx, dy in
+                                               ((2, 1), (2, -1), (-2, 1), (-2, -1),
+                                                (1, 2), (-1, 2), (1, -2), (-1, -2)))}
     for y in range(L.height):
         for x in range(L.width):
             if not walk(x, y) or near(x, y):
@@ -53,10 +60,10 @@ def cases_for(p, name, n_edges, rng):
                 if L.mid(nx, ny) in flora.PIECES:
                     pieces.append(case)
                 elif L.mid(nx, ny) in TREES:
-                    # offset trees first: a tree top-left on the off-grid column or row
+                    # staggered trees first
                     tl_x = nx - (L.mid(nx, ny) in TREE["TR"] | TREE["BR"])
                     tl_y = ny - (L.mid(nx, ny) in TREE["BL"] | TREE["BR"])
-                    edges.append((tl_x % 2 == 1 or tl_y % 2 == 1, case))
+                    edges.append(((tl_x, tl_y) in staggered, case))
     rng.shuffle(edges)
     edges.sort(key=lambda t: not t[0])
     return pieces, [c for _, c in edges[:n_edges]]

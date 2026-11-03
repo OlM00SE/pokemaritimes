@@ -86,7 +86,7 @@ def placement_errors(pieces, learned):
     errors = []
     for (x, y), mid in sorted(pieces.items()):
         if learned[y][x] != PLAIN_GRASS:
-            what = "flowers" if mid == FLOWER else "a boulder" if mid == BOULDER else "a sapling"
+            what = NAMES["FL" if mid == FLOWER else "BO" if mid == BOULDER else "SP"]
             errors.append((x, y, f"{what} must stand on plain grass, but this spot gets edge tile "
                                  f"{learned[y][x]:03X} (a tree's canopy, a bank, a path rim...); "
                                  "move it a tile away"))
