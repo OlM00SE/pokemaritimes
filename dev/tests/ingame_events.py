@@ -1,6 +1,6 @@
 """In-game: every person, trainer, sign and hidden item on a map works the way the model says.
 
-  python dev/tests/ingame_events.py [Map ...]          (default: Route201_1 Woodstock_2)
+  python dev/tests/ingame_events.py [Map ...]          (default: every map with an events spec)
 
 From a new game (no wild battles; trainers can see; a level-50 party Pokémon via the dev bridge),
 for each event the engine model (mapkit/events.py) can trigger:
@@ -263,8 +263,9 @@ def spec_gifts(p, name):
 
 
 def main(argv):
-    names = argv or ["Route201_1", "Woodstock_2"]
     p = Project()
+    names = argv or sorted(os.path.basename(f)[:-len(".events.toml")]
+                           for f in glob.glob(p.path("design", "maps", "*.events.toml")))
     rom = prepare_rom(fresh=True)
     ok = True
     with Emu(rom, extra_args=UNTHROTTLED) as e:
