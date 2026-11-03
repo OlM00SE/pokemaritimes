@@ -12,6 +12,7 @@
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
+#include "save_layout.h"
 
 static u16 CalculateChecksum(void *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
@@ -82,6 +83,25 @@ STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
 
+// Maritimes: the save layout is the one include/save_layout.h records for SAVE_LAYOUT_VERSION.
+// If one of these fails, the layout changed and saves stamped with the old version would load as
+// garbage: run `python dev/save_layout.py --update` (it bumps the version), rebuild, and run
+// dev/tests/ingame_save.py. The stamp itself sits among vanilla fields, so its offset never moves.
+STATIC_ASSERT(offsetof(struct SaveBlock2, saveLayoutVersion) == 0x16, SaveLayoutStampMoved);
+STATIC_ASSERT(offsetof(struct SaveBlock2, pokedex) == 0x18, SaveLayoutStampResizedSaveBlock2);
+STATIC_ASSERT(sizeof(struct SaveBlock1) == SAVE_LAYOUT_SAVEBLOCK1_SIZE, SaveLayoutChanged_SaveBlock1Size_RunDevSaveLayoutPy);
+STATIC_ASSERT(sizeof(struct SaveBlock2) == SAVE_LAYOUT_SAVEBLOCK2_SIZE, SaveLayoutChanged_SaveBlock2Size_RunDevSaveLayoutPy);
+STATIC_ASSERT(sizeof(struct SaveBlock3) == SAVE_LAYOUT_SAVEBLOCK3_SIZE, SaveLayoutChanged_SaveBlock3Size_RunDevSaveLayoutPy);
+STATIC_ASSERT(sizeof(struct PokemonStorage) == SAVE_LAYOUT_STORAGE_SIZE, SaveLayoutChanged_StorageSize_RunDevSaveLayoutPy);
+STATIC_ASSERT(offsetof(struct SaveBlock1, flags) == SAVE_LAYOUT_FLAGS_OFFSET, SaveLayoutChanged_FlagsOffset_RunDevSaveLayoutPy);
+STATIC_ASSERT(offsetof(struct SaveBlock1, vars) == SAVE_LAYOUT_VARS_OFFSET, SaveLayoutChanged_VarsOffset_RunDevSaveLayoutPy);
+STATIC_ASSERT(NUM_FLAG_BYTES == SAVE_LAYOUT_FLAGS_BYTES, SaveLayoutChanged_FlagCount_RunDevSaveLayoutPy);
+STATIC_ASSERT(VARS_COUNT == SAVE_LAYOUT_VARS_COUNT, SaveLayoutChanged_VarCount_RunDevSaveLayoutPy);
+STATIC_ASSERT(TRAINER_FLAGS_START == SAVE_LAYOUT_TRAINER_FLAGS_START, SaveLayoutChanged_TrainerFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(SYSTEM_FLAGS == SAVE_LAYOUT_SYSTEM_FLAGS, SaveLayoutChanged_SystemFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(DAILY_FLAGS_START == SAVE_LAYOUT_DAILY_FLAGS_START, SaveLayoutChanged_DailyFlags_RunDevSaveLayoutPy);
+STATIC_ASSERT(MARITIMES_FLAGS_START == SAVE_LAYOUT_MARITIMES_FLAGS_START, SaveLayoutChanged_MaritimesFlags_RunDevSaveLayoutPy);
+
 COMMON_DATA u16 gLastWrittenSector = 0;
 COMMON_DATA u32 gLastSaveCounter = 0;
 COMMON_DATA u16 gLastKnownGoodSector = 0;
@@ -93,6 +113,7 @@ COMMON_DATA u16 gSaveFileStatus = 0;
 COMMON_DATA MainCallback gGameContinueCallback = NULL;
 COMMON_DATA struct SaveSectorLocation gRamSaveSectorLocations[NUM_SECTORS_PER_SLOT] = {0};
 COMMON_DATA u16 gSaveAttemptStatus = 0;
+COMMON_DATA bool8 gSaveFileOutdated = FALSE; // Maritimes: the last load refused a save from another layout
 
 EWRAM_DATA struct SaveSector gSaveDataBuffer = {0}; // Buffer used for reading/writing sectors
 
@@ -710,6 +731,12 @@ static void UpdateSaveAddresses(void)
     }
 }
 
+// Maritimes: every save records the layout it was written with (include/save_layout.h).
+static void StampSaveLayout(void)
+{
+    gSaveBlock2Ptr->saveLayoutVersion = SAVE_LAYOUT_STAMP;
+}
+
 u8 HandleSavingData(u8 saveType)
 {
     u8 i;
@@ -717,6 +744,7 @@ u8 HandleSavingData(u8 saveType)
 
     gTrainerHillVBlankCounter = NULL;
     UpdateSaveAddresses();
+    StampSaveLayout();
     switch (saveType)
     {
     case SAVE_HALL_OF_FAME_ERASE_BEFORE:
@@ -797,6 +825,7 @@ bool8 LinkFullSave_Init(void)
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
     UpdateSaveAddresses();
+    StampSaveLayout();
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVarsAndIncrement(gRamSaveSectorLocations);
     return FALSE;
@@ -839,6 +868,7 @@ bool8 WriteSaveBlock2(void)
         return TRUE;
 
     UpdateSaveAddresses();
+    StampSaveLayout();
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVars(gRamSaveSectorLocations);
 
@@ -892,6 +922,19 @@ u8 LoadGameSave(u8 saveType)
     case SAVE_NORMAL:
     default:
         status = TryLoadSaveSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
+        // Maritimes: a save stamped with another layout version would load as garbage (shifted
+        // flags and vars). Treat it as unusable, like an erased save; the main menu says why.
+        // Unlike vanilla's CORRUPT, gSaveCounter keeps the old slot's counter on purpose: the
+        // new game's first save then gets a higher counter than both stale slots and loads next
+        // time. (Zeroed, a stale slot would still win and the save would be refused again.) The
+        // stale party copied below is wiped by NewGameInitData, as for any NEW GAME.
+        gSaveFileOutdated = FALSE;
+        if ((status == SAVE_STATUS_OK || status == SAVE_STATUS_ERROR)
+         && gSaveBlock2Ptr->saveLayoutVersion != SAVE_LAYOUT_STAMP)
+        {
+            gSaveFileOutdated = TRUE;
+            status = SAVE_STATUS_CORRUPT;
+        }
         CopyPartyAndObjectsFromSave();
         gSaveFileStatus = status;
         gGameContinueCallback = NULL;

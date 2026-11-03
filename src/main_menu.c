@@ -258,6 +258,8 @@ static const u16 sBirchSpeechBgGradientPal[] = INCGFX_U16("graphics/birch_speech
 
 static const u8 gText_SaveFileCorrupted[] = _("The save file is corrupted. The\nprevious save file will be loaded.");
 static const u8 gText_SaveFileErased[] = _("The save file has been erased\ndue to corruption or damage.");
+// Maritimes: a save from another save layout version (include/save_layout.h)
+static const u8 gText_SaveFileOutdated[] = _("This save is from an older version\nof the game. Please start a new game.");
 static const u8 gJPText_No1MSubCircuit[] = _("1Mサブきばんが ささっていません！");
 static const u8 gText_BatteryRunDry[] = _("The internal battery has run dry.\nThe game can be played.\pHowever, clock-based events will\nno longer occur.");
 
@@ -667,7 +669,7 @@ static void Task_MainMenuCheckSaveFile(u8 taskId)
             gTasks[taskId].func = Task_MainMenuCheckBattery;
             break;
         case SAVE_STATUS_CORRUPT:
-            CreateMainMenuErrorWindow(gText_SaveFileErased);
+            CreateMainMenuErrorWindow(gSaveFileOutdated ? gText_SaveFileOutdated : gText_SaveFileErased);
             tMenuType = HAS_NO_SAVED_GAME;
             gTasks[taskId].func = Task_WaitForSaveFileErrorWindow;
             break;

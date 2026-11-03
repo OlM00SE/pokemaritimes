@@ -1,0 +1,14 @@
+# Woodstock's second house, by the station: a teenager's room (provisional text).
+#   dev/events.py build design/maps/Woodstock_House2.events.toml [--apply]
+map = "Woodstock_House2"
+
+[[person]]
+name = "Girl"
+at = [5, 3]
+gfx = "GIRL_3"
+facing = "right"
+text = """
+I'm saving up for a fishing rod. The man by the pond says the big ones are all out in the river.
+
+Someday I'll catch one bigger than his!
+"""

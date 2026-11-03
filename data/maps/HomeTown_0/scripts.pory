@@ -50,3 +50,33 @@ script HomeTown_EventScript_ExitWithoutPokemon {
 movement HomeTown_Movement_StepBack {
     walk_up
 }
+
+// ---- dev/events.py: generated from design/maps/HomeTown_0.events.toml. Edit the spec, not this block. ----
+// owns: HomeTown_0_EventScript_PlayersMailbox, HomeTown_0_EventScript_NeighboursMailbox, LOCALID_HOME_TOWN_0_NEIGHBOUR, LOCALID_HOME_TOWN_0_MILL_HAND, LOCALID_HOME_TOWN_0_BOY
+
+script HomeTown_0_EventScript_PlayersMailbox {
+    msgbox("{PLAYER}'s HOUSE", MSGBOX_SIGN)
+    end
+}
+
+script HomeTown_0_EventScript_NeighboursMailbox {
+    msgbox("LEBLANC", MSGBOX_SIGN)
+    end
+}
+
+script HomeTown_0_EventScript_Neighbour {
+    msgbox(format("Good morning, dear! The beans are coming along nicely this year.\pIn the spring we pick fiddleheads down by the brook. Nothing tastes better with a bit of butter."), MSGBOX_NPC)
+    end
+}
+
+script HomeTown_0_EventScript_MillHand {
+    msgbox(format("Most folks in the village work in the woods or down at the sawmill.\pSpruce and fir, mostly. The trees around here grow straight and tall."), MSGBOX_NPC)
+    end
+}
+
+script HomeTown_0_EventScript_Boy {
+    msgbox(format("That researcher from Woodstock comes up every week to check on the Pokémon in the woods.\pWhen I'm big, I'm going to walk all the way to Woodstock by myself!"), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

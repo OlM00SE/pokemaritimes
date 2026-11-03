@@ -140,7 +140,7 @@ def draw_overlays(project, img, layout, s, overlays, mapdata, detail=None):
         for e in mapdata.events("object_events"):
             trainer = is_trainer(e)
             if moves(e):              # where a wanderer may be: its range, dashed
-                box = wander_box(e)
+                box = wander_box(e, mapdata)
                 xs, ys = [x for x, _ in box], [y for _, y in box]
                 x0, y0, x1, y1 = min(xs) * s, min(ys) * s, (max(xs) + 1) * s - 1, (max(ys) + 1) * s - 1
                 for a in range(int(x0), int(x1), 6):

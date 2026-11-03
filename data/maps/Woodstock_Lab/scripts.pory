@@ -1,0 +1,29 @@
+// Woodstock_Lab: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_Lab_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/Woodstock_Lab.events.toml. Edit the spec, not this block. ----
+// owns: Woodstock_Lab_EventScript_FieldNotes, Woodstock_Lab_EventScript_Scanner, LOCALID_WOODSTOCK_LAB_CHIEF, LOCALID_WOODSTOCK_LAB_FIELD_RESEARCHER
+
+script Woodstock_Lab_EventScript_FieldNotes {
+    msgbox(format("Field notes, in three different hands. “Route 201: a beaver lodge in the pond. Tracks by the old logging road.”"), MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_Lab_EventScript_Scanner {
+    msgbox(format("A scanner for checking on Pokémon brought in from the field. It hums quietly."), MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_Lab_EventScript_Chief {
+    msgbox(format("Welcome to the wildlife station! We keep track of the Pokémon that live along the river and in the woods.\pWhen the seasons turn, some Pokémon move up and down the valley. We're trying to learn where they go."), MSGBOX_NPC)
+    end
+}
+
+script Woodstock_Lab_EventScript_FieldResearcher {
+    msgbox(format("I just got back from the cutblock on Route 201. Young forest is full of life!\pBug Pokémon move in first, and the bird Pokémon follow them."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

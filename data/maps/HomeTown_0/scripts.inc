@@ -79,6 +79,36 @@ HomeTown_Movement_StepBack:
 	walk_up
 	step_end
 
+HomeTown_0_EventScript_PlayersMailbox::
+# 58 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_0_EventScript_PlayersMailbox_Text_0, MSGBOX_SIGN
+	end
+
+
+HomeTown_0_EventScript_NeighboursMailbox::
+# 63 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_0_EventScript_NeighboursMailbox_Text_0, MSGBOX_SIGN
+	end
+
+
+HomeTown_0_EventScript_Neighbour::
+# 68 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_0_EventScript_Neighbour_Text_0, MSGBOX_NPC
+	end
+
+
+HomeTown_0_EventScript_MillHand::
+# 73 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_0_EventScript_MillHand_Text_0, MSGBOX_NPC
+	end
+
+
+HomeTown_0_EventScript_Boy::
+# 78 "data/maps/HomeTown_0/scripts.pory"
+	msgbox HomeTown_0_EventScript_Boy_Text_0, MSGBOX_NPC
+	end
+
+
 HomeTown_EventScript_Researcher_Text_0:
 # 19 "data/maps/HomeTown_0/scripts.pory"
 	.string "Let me check on your Pokémon... There,\n"
@@ -113,3 +143,34 @@ HomeTown_EventScript_ExitWithoutPokemon_Text_0:
 	.string "on Route 201.\p"
 	.string "It isn't safe without a Pokémon of your\n"
 	.string "own. Come talk to me first!$"
+
+HomeTown_0_EventScript_PlayersMailbox_Text_0:
+# 58 "data/maps/HomeTown_0/scripts.pory"
+	.string "{PLAYER}'s HOUSE$"
+
+HomeTown_0_EventScript_NeighboursMailbox_Text_0:
+# 63 "data/maps/HomeTown_0/scripts.pory"
+	.string "LEBLANC$"
+
+HomeTown_0_EventScript_Neighbour_Text_0:
+# 68 "data/maps/HomeTown_0/scripts.pory"
+	.string "Good morning, dear! The beans are\n"
+	.string "coming along nicely this year.\p"
+	.string "In the spring we pick fiddleheads down\n"
+	.string "by the brook. Nothing tastes better\l"
+	.string "with a bit of butter.$"
+
+HomeTown_0_EventScript_MillHand_Text_0:
+# 73 "data/maps/HomeTown_0/scripts.pory"
+	.string "Most folks in the village work in the\n"
+	.string "woods or down at the sawmill.\p"
+	.string "Spruce and fir, mostly. The trees around\n"
+	.string "here grow straight and tall.$"
+
+HomeTown_0_EventScript_Boy_Text_0:
+# 78 "data/maps/HomeTown_0/scripts.pory"
+	.string "That researcher from Woodstock comes\n"
+	.string "up every week to check on the Pokémon\l"
+	.string "in the woods.\p"
+	.string "When I'm big, I'm going to walk all the\n"
+	.string "way to Woodstock by myself!$"

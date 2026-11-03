@@ -44,12 +44,31 @@ def moves(o):
         and "IN_PLACE" not in mt
 
 
-def wander_box(o):
-    """Tiles an object may stand on: its home, or its movement range for movers."""
+def wander_box(o, m):
+    """Tiles an object on map m may stand on: its home, or its movement range for movers.
+    IsCoordOutsideObjectEventMovementRange checks an axis only when its range isn't 0: a range of
+    0 means no limit on that axis (the mover goes as far as the ground lets it), so the box spans
+    the map there. Types that only move along one axis (WANDER_LEFT_AND_RIGHT, WALK_UP_AND_DOWN,
+    ...) never leave their home row or column, which is why vanilla gives them a 0 on the other
+    axis. Copy-player types mirror the player's steps (the in-grass ones only onto grass), which
+    isn't modelled: they keep their range box, with a 0 axis taken as home (vanilla's are all
+    0x0 in tall grass; spanning the map would block whole routes for the walker)."""
     if not moves(o):
         return {(o["x"], o["y"])}
+    mt = o.get("movement_type") or ""
+    copy = "COPY_PLAYER" in mt
+    W, H = m.layout.width, m.layout.height
+
+    def span(home, r, size, fixed):
+        if fixed or (copy and r == 0):
+            return [home]
+        return list(range(size)) if r == 0 else list(range(max(0, home - r), min(size, home + r + 1)))
     rx, ry = int(o.get("movement_range_x", 0) or 0), int(o.get("movement_range_y", 0) or 0)
-    return {(o["x"] + dx, o["y"] + dy) for dx in range(-rx, rx + 1) for dy in range(-ry, ry + 1)}
+    horizontal_only = re.search(r"LEFT_AND_RIGHT|RIGHT_AND_LEFT", mt) is not None
+    vertical_only = re.search(r"UP_AND_DOWN|DOWN_AND_UP", mt) is not None
+    xs = span(o["x"], rx, W, vertical_only)
+    ys = span(o["y"], ry, H, horizontal_only)
+    return {(x, y) for x in xs for y in ys}
 
 
 def object_elevation(m, o, xy=None):
@@ -100,7 +119,7 @@ def obstacle_tiles(m, boxes=True, permanent_only=False):
             continue
         if o.get("trainer_type") == "TRAINER_TYPE_BURIED":
             continue                # Lavaridge Gym's trainers hidden in ash: not modelled as blockers
-        for xy in (wander_box(o) if boxes else {(o["x"], o["y"])}):
+        for xy in (wander_box(o, m) if boxes else {(o["x"], o["y"])}):
             out[xy] = object_elevation(m, o, xy)
     return out
 
@@ -230,7 +249,7 @@ def wander_reach(m, o, others=()):
     """Tiles of a wanderer's range it can walk to from home, a step at a time as the engine moves
     it: open tiles (collision 0) whose elevation is compatible with the one it steps from
     (water, elevation 1, is never reached from land at 3), not through other people."""
-    L, box = m.layout, wander_box(o)
+    L, box = m.layout, wander_box(o, m)
     ok = lambda t: L.inb(*t) and L.coll(*t) == 0 and t not in others
     home = (o["x"], o["y"])
     seen, todo = {home}, [home]

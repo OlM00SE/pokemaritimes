@@ -33,6 +33,48 @@
       "trainer_sight_or_berry_tree_id": "0",
       "script": "HomeTown_EventScript_Researcher",
       "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_HOME_TOWN_0_NEIGHBOUR",
+      "graphics_id": "OBJ_EVENT_GFX_OLD_WOMAN",
+      "x": 24,
+      "y": 8,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "HomeTown_0_EventScript_Neighbour",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_HOME_TOWN_0_MILL_HAND",
+      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "x": 21,
+      "y": 19,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "HomeTown_0_EventScript_MillHand",
+      "flag": "0"
+    },
+    {
+      "local_id": "LOCALID_HOME_TOWN_0_BOY",
+      "graphics_id": "OBJ_EVENT_GFX_LITTLE_BOY",
+      "x": 5,
+      "y": 11,
+      "elevation": 3,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 2,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "HomeTown_0_EventScript_Boy",
+      "flag": "0"
     }
   ],
   "warp_events": [
@@ -78,7 +120,15 @@
       "y": 9,
       "elevation": 0,
       "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
-      "script": "LittlerootTown_EventScript_BrendansHouseSign"
+      "script": "HomeTown_0_EventScript_PlayersMailbox"
+    },
+    {
+      "type": "sign",
+      "x": 25,
+      "y": 9,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "HomeTown_0_EventScript_NeighboursMailbox"
     }
   ]
 }

@@ -16,7 +16,9 @@ the map (events placed by hand in Porymap) is left alone. A build is a dry run u
 --apply writes:
   - data/maps/<Map>/map.json: the owned events (removed and re-added; hand-placed ones keep
     their order and local ids, owned ones come after them);
-  - data/maps/<Map>/scripts.pory: a marked block with the owned scripts (rebuilt each time);
+  - data/maps/<Map>/scripts.pory: a marked block with the owned scripts (rebuilt each time). A map
+    whose scripts.inc is still the empty stub that add_interior/new_map/Porymap make (no scripts
+    at all) gets a scripts.pory started for it; any other map must be Poryscript already;
   - trainers: a TRAINER_ constant appended to include/constants/opponents.h (ids never move;
     the build prints how many are left) and the party in src/data/trainers.party;
   - item balls, hidden items and gifts: a flag appended to the Maritimes block in
@@ -26,10 +28,18 @@ dev/tests/id_budget.py checks the trainer ids, the flags and the save block.
 
 Spec format (see design/maps/Route201_1.events.toml):
   map = "Route201_1"
+  replaces = ["LittlerootTown_EventScript_BrendansHouseSign", ...]
+                   hand-placed events (by script or local id; "<name>@x,y" if several share it)
+                   the spec takes over: removed, so a spec event can stand on their tile (a
+                   placeholder cloned from vanilla). Each must match exactly one event, and a
+                   person can't be removed if hand-placed people follow it (their ids would shift)
   [[sign]]         name, at = [x, y], text            (sign post: draw `s` in the sketch there)
                    optional: facing = "up" (read only from below, like vanilla's Center signs)
+  [[inspect]]      name, at, text                     something read on a solid tile: a poster, a
+                   notice board, a shelf, a mailbox. Text is wrapped like dialogue (any length).
+                   optional: facing (as a sign; wall things are read from below: "up")
   [[person]]       name, at, gfx, facing, text        (facing: down/up/left/right/around/wander)
-                   optional: range = [rx, ry] for a wanderer (default [1, 1]);
+                   optional: range = [rx, ry] for a wanderer, each 1-4 (default [1, 1]);
                    gift = "ITEM_...", count, after: gives the item once (text before, after
                    once given; a full bag gives nothing and asks again next time)
   [[trainer]]      name, at, gfx, facing, sight, class, trainer_name, party = ["Caterpie 3", ...],
@@ -56,7 +66,7 @@ FACING = {"down": "MOVEMENT_TYPE_FACE_DOWN", "up": "MOVEMENT_TYPE_FACE_UP",
 SIGN_FACING = {"any": "BG_EVENT_PLAYER_FACING_ANY", "up": "BG_EVENT_PLAYER_FACING_NORTH",
                "down": "BG_EVENT_PLAYER_FACING_SOUTH", "left": "BG_EVENT_PLAYER_FACING_WEST",
                "right": "BG_EVENT_PLAYER_FACING_EAST"}
-KINDS = ("sign", "person", "trainer", "item", "hidden_item")
+KINDS = ("sign", "inspect", "person", "trainer", "item", "hidden_item")
 FLAG_BLOCK = "MARITIMES_FLAGS_START"  # new flags: (MARITIMES_FLAGS_START + n), include/constants/flags.h
 FLAG_BLOCK_END = "// ---- end of Maritimes flags ----"
 WANDER_MAX = 4                        # a wander range beyond this leaves the camera view
@@ -87,20 +97,29 @@ def gift_flag(tok, name):
     return f"FLAG_{tok}_{caps(name)}_GIFT"
 
 
+def curly(text):
+    """The game's charmap has no straight double quote (vanilla writes “ ”), and Poryscript's
+    format() can't take an escaped one, so a spec's "..." becomes “...”: opening at the start or
+    after a space or bracket, closing otherwise. Applied to each paragraph or sign line before
+    they are joined, so a quote that opens a new box or line opens."""
+    return re.sub(r'(^|(?<=[\s(\[]))"', "“", text).replace('"', "”")
+
+
 def pory_string(text):
-    return '"' + text.replace('"', '\\"') + '"'
+    """A Poryscript string literal (callers have already made the quotes curly)."""
+    return '"' + curly(text) + '"'
 
 
 def fmt(text):
     """Dialogue: Poryscript's format() wraps it to the message box. In the spec, a blank line
     starts a new box (\\p); other line breaks are just spaces."""
-    paras = [" ".join(q.split()) for q in re.split(r"\n\s*\n", text.strip())]
+    paras = [curly(" ".join(q.split())) for q in re.split(r"\n\s*\n", text.strip())]
     return f"format({pory_string(PARAGRAPH.join(paras))})"
 
 
 def sign_text(text):
     """A sign keeps its own lines, as vanilla's route signs do (ROUTE 201 / arrow, place)."""
-    return pory_string("\\n".join(line.strip() for line in text.strip().split("\n")))
+    return pory_string("\\n".join(curly(line.strip()) for line in text.strip().split("\n")))
 
 
 # ---------- reading the game's names ----------
@@ -129,6 +148,9 @@ def load_spec(path, p, names):
         raise SpecError(f"{path}: needs map = \"<Map>\"")
     m = p.load_map(spec["map"])
     out, problems, seen = [], [], set()
+    rp = spec.get("replaces", [])
+    if not (isinstance(rp, list) and all(isinstance(r, str) for r in rp)):
+        problems.append("replaces must be a list of script names or local ids")
     for kind in KINDS:
         for e in spec.get(kind, []):
             e = dict(e, kind=kind)
@@ -144,7 +166,8 @@ def load_spec(path, p, names):
                 problems.append(f"{where}: at = [x, y] is required")
                 continue
             e["x"], e["y"] = at
-            need = {"sign": ["text"], "person": ["gfx", "text"], "hidden_item": ["item"], "item": ["item"],
+            need = {"sign": ["text"], "inspect": ["text"], "person": ["gfx", "text"], "hidden_item": ["item"],
+                    "item": ["item"],
                     "trainer": ["gfx", "sight", "class", "trainer_name", "party", "intro", "defeat", "after"]}[kind]
             for k in need:
                 if k not in e:
@@ -157,14 +180,16 @@ def load_spec(path, p, names):
                 problems.append(f"{where}: facing must be one of {', '.join(FACING)}")
             if kind in ("hidden_item", "item") and e.get("item") not in names["items"]:
                 problems.append(f"{where}: unknown item {e.get('item')}")
-            if kind == "sign" and e.get("facing", "any") not in SIGN_FACING:
+            if kind in ("sign", "inspect") and e.get("facing", "any") not in SIGN_FACING:
                 problems.append(f"{where}: facing must be one of {', '.join(SIGN_FACING)}")
             if kind == "person":
                 if e.get("facing") == "wander":
                     r = e.setdefault("range", [1, 1])
-                    if not (isinstance(r, list) and len(r) == 2 and all(isinstance(v, int) and 0 <= v <= WANDER_MAX for v in r)
-                            and any(r)):
-                        problems.append(f"{where}: range = [rx, ry], each 0-{WANDER_MAX}, not both 0")
+                    # the engine checks an axis only when its range isn't 0: a 0 lets them walk off
+                    # along it as far as the ground goes (IsCoordOutsideObjectEventMovementRange)
+                    if not (isinstance(r, list) and len(r) == 2 and all(isinstance(v, int) and 1 <= v <= WANDER_MAX for v in r)):
+                        problems.append(f"{where}: range = [rx, ry], each 1-{WANDER_MAX} (the game reads 0 as no "
+                                        "limit on that axis)")
                 elif "range" in e:
                     problems.append(f"{where}: range is only for facing = \"wander\"")
                 if "gift" in e:
@@ -197,7 +222,7 @@ def load_spec(path, p, names):
             out.append(e)
     if problems:
         raise SpecError("\n".join(f"  {s}" for s in problems))
-    return m, out
+    return m, out, list(rp)
 
 
 # ---------- what the spec makes ----------
@@ -211,10 +236,11 @@ def generated(p, m, spec_events, spec_path):
     for e in spec_events:
         label = f"{m.name}_EventScript_{e['name']}"
         elev = L.elev(e["x"], e["y"]) if L.inb(e["x"], e["y"]) else 0
-        if e["kind"] == "sign":
+        if e["kind"] in ("sign", "inspect"):
             bgs.append({"type": "sign", "x": e["x"], "y": e["y"], "elevation": 0,
                         "player_facing_dir": SIGN_FACING[e.get("facing", "any")], "script": label})
-            scripts.append(f"script {label} {{\n    msgbox({sign_text(e['text'])}, MSGBOX_SIGN)\n    end\n}}")
+            text = sign_text(e["text"]) if e["kind"] == "sign" else fmt(e["text"])
+            scripts.append(f"script {label} {{\n    msgbox({text}, MSGBOX_SIGN)\n    end\n}}")
             owns.append(label)
         elif e["kind"] == "hidden_item":
             flag = f"FLAG_HIDDEN_ITEM_{tok}_{caps(e['name'])}"
@@ -309,6 +335,58 @@ def is_owned(kind, e, owns):
     return e.get("script") in owns or e.get("flag") in owns
 
 
+def replace_matches(entry, e):
+    """Whether a `replaces` entry names hand-placed event e: "<script or local id>", or
+    "<script or local id>@x,y" when several events share the name."""
+    name, _, at = entry.partition("@")
+    return name in (e.get("script"), e.get("local_id")) and (not at or at == f"{e['x']},{e['y']}")
+
+
+def is_replaced(kind, e, replaces):
+    """A hand-placed event the spec takes over (removes)."""
+    return any(replace_matches(r, e) for r in replaces)
+
+
+def replace_problems(m, replaces, owns):
+    """Each `replaces` entry must name exactly one hand-placed event (one placeholder, never every
+    event sharing a script), and removing a person must not renumber the hand-placed people after
+    it: their local ids are their position, which hand scripts (applymovement 2) rely on."""
+    problems = []
+    hand = {k: [(i, e) for i, e in enumerate(m.events(k)) if not is_owned(k, e, owns)]
+            for k in ("object_events", "bg_events")}
+    for r in replaces:
+        hits = [(k, i, e) for k, es in hand.items() for i, e in es if replace_matches(r, e)]
+        if len(hits) > 1:
+            problems.append(f"replaces {r}: {len(hits)} hand-placed events use it, at "
+                            + ", ".join(f"({e['x']},{e['y']})" for _, _, e in hits)
+                            + f"; name one as \"{r.partition('@')[0]}@x,y\"")
+        for k, i, e in hits:
+            if k != "object_events":
+                continue
+            after = [f for j, f in hand[k] if j > i and not is_replaced(k, f, replaces)]
+            if after:
+                problems.append(f"replaces {r}: removing the person at ({e['x']},{e['y']}) would renumber the "
+                                f"{len(after)} hand-placed people after it (local ids are positions); "
+                                "move it in Porymap instead, or replace those too")
+    return problems
+
+
+EMPTY_INC = re.compile(r"\A\s*(\w+)_MapScripts::\s*\.byte 0\s*\Z")
+
+
+def pory_start(p, name):
+    """The scripts.pory to start for a map whose scripts.inc is the empty stub (no scripts at
+    all: a fresh add_interior/new_map room), else None. Poryscript then generates the same
+    `<Map>_MapScripts:: .byte 0` plus the spec's block, so nothing else on the map changes."""
+    inc = p.path("data/maps", name, "scripts.inc")
+    mm = EMPTY_INC.match(open(inc, encoding="utf-8").read()) if os.path.exists(inc) else None
+    if not mm or mm.group(1) != name:
+        return None
+    return (f"// {name}: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;\n"
+            f"// fastbuild generates scripts.inc from this file (never edit the .inc).\n\n"
+            f"mapscripts {name}_MapScripts {{}}\n")
+
+
 def with_block(pory_text, block):
     pat = re.compile(r"// ---- dev/events\.py: generated.*?" + re.escape(END), re.S)
     if pat.search(pory_text):
@@ -318,13 +396,14 @@ def with_block(pory_text, block):
 
 # ---------- placement checks (beyond the map checker) ----------
 
-def placement_problems(p, m, spec_events, owns):
+def placement_problems(p, m, spec_events, owns, replaces=()):
     L, tp = m.layout, m.layout.tiles
     problems = []
     taken = {}
     for kind in ("object_events", "bg_events", "warp_events", "coord_events"):
         for e in m.events(kind):
-            if not is_owned(kind, e, owns):
+            if not is_owned(kind, e, owns) and not (kind in ("object_events", "bg_events")
+                                                    and is_replaced(kind, e, replaces)):
                 taken[(e["x"], e["y"])] = f"a hand-placed {kind[:-7].replace('_', ' ')}"
     mine = {}
     for e in spec_events:
@@ -343,6 +422,9 @@ def placement_problems(p, m, spec_events, owns):
         if e["kind"] == "sign" and not solid:
             problems.append(f"{where}: a sign needs a solid tile to stand on: draw `s` (sign post) "
                             "in the map's sketch here and rebuild the map first")
+        if e["kind"] == "inspect" and not solid:
+            problems.append(f"{where}: something to inspect stands on a solid tile (furniture, a wall, "
+                            "a mailbox); this tile is walkable")
         if e["kind"] == "sign" and len(e["text"].strip().split("\n")) > 2:
             problems.append(f"{where}: a sign's message box shows two lines; vanilla's signs never "
                             "use more (a third would scroll)")
@@ -467,17 +549,31 @@ def cmd_list(p, name):
 def cmd_build(p, spec_path, apply, force):
     names = known_names(p)
     try:
-        m, spec_events = load_spec(spec_path, p, names)
+        m, spec_events, replaces = load_spec(spec_path, p, names)
     except SpecError as ex:
         print(f"{spec_path}: NOT BUILT, the spec has problems:\n{ex}")
         return 1
     pory_path = p.path("data/maps", m.name, "scripts.pory")
+    started = None
     if not os.path.exists(pory_path):
-        print(f"{m.name} has no scripts.pory (Poryscript); this tool only writes Poryscript")
-        return 1
-    pory = open(pory_path, encoding="utf-8").read()
+        started = pory_start(p, m.name)
+        if started is None:
+            print(f"{m.name} has no scripts.pory (Poryscript) and its scripts.inc has scripts; this tool only "
+                  "writes Poryscript, so convert the map's scripts to scripts.pory first")
+            return 1
+        print(f"  {m.name} has no scripts yet: --apply starts data/maps/{m.name}/scripts.pory")
+    pory = started if started is not None else open(pory_path, encoding="utf-8").read()
     owns_before = owned_names(pory)
-    problems = placement_problems(p, m, spec_events, owns_before)
+    replaced = [(k, e) for k in ("object_events", "bg_events") for e in m.events(k)
+                if not is_owned(k, e, owns_before) and is_replaced(k, e, replaces)]
+    for k, e in replaced:
+        print(f"  replaces the hand-placed {'person' if k == 'object_events' else e.get('type')} at "
+              f"({e['x']},{e['y']}): {e.get('local_id') or e.get('script')}")
+    for r in replaces:
+        if not any(replace_matches(r, e) for _, e in replaced):
+            print(f"  note: replaces {r}: no hand-placed event uses it (already replaced?)")
+    problems = replace_problems(m, replaces, owns_before) + placement_problems(p, m, spec_events, owns_before,
+                                                                              replaces)
     if problems:
         print(f"{m.name}: NOT BUILT, {len(problems)} placement problem(s):")
         print("\n".join(f"  {s}" for s in problems))
@@ -488,7 +584,8 @@ def cmd_build(p, spec_path, apply, force):
     new = MapData(p, m.name)
     new.j = copy.deepcopy(m.j)
     for kind, mine in (("object_events", objs), ("bg_events", bgs)):
-        new.j[kind] = [e for e in m.events(kind) if not is_owned(kind, e, owns_before)] + mine
+        new.j[kind] = [e for e in m.events(kind) if not is_owned(kind, e, owns_before)
+                       and not is_replaced(kind, e, replaces)] + mine
     labels = {e["script"] for e in objs + bgs if "script" in e}
     p.script_labels.update(labels)            # the scripts exist once the block is written
 

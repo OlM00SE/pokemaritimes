@@ -1,0 +1,46 @@
+# The Woodstock Wildlife Station (the lab room add_interior cloned from Birch's lab): its staff and
+# a couple of things to look at (provisional text).
+#   dev/events.py build design/maps/Woodstock_Lab.events.toml [--apply]
+# The bookshelves keep vanilla's own bookshelf text (a tile behaviour, no event needed).
+map = "Woodstock_Lab"
+
+# In the middle of the room, meeting visitors from the door.
+[[person]]
+name = "Chief"
+at = [7, 5]
+gfx = "SCIENTIST_1"
+facing = "down"
+text = """
+Welcome to the wildlife station! We keep track of the Pokémon that live along the river and in the woods.
+
+When the seasons turn, some Pokémon move up and down the valley. We're trying to learn where they go.
+"""
+
+# Back from the field, sorting her notes at the corner desk.
+[[person]]
+name = "FieldResearcher"
+at = [3, 9]
+gfx = "WOMAN_5"
+facing = "left"
+text = """
+I just got back from the cutblock on Route 201. Young forest is full of life!
+
+Bug Pokémon move in first, and the bird Pokémon follow them.
+"""
+
+# Field notes spread across the desk under the wall charts.
+[[inspect]]
+name = "FieldNotes"
+at = [7, 1]
+facing = "up"
+text = """
+Field notes, in three different hands. "Route 201: a beaver lodge in the pond. Tracks by the old logging road."
+"""
+
+# The big machine by the east wall.
+[[inspect]]
+name = "Scanner"
+at = [10, 6]
+text = """
+A scanner for checking on Pokémon brought in from the field. It hums quietly.
+"""

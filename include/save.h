@@ -89,6 +89,7 @@ extern u32 gSaveCounter;
 extern struct SaveSector *gFastSaveSector;
 extern u16 gIncrementalSectorId;
 extern u16 gSaveFileStatus;
+extern bool8 gSaveFileOutdated;
 extern MainCallback gGameContinueCallback;
 extern struct SaveSectorLocation gRamSaveSectorLocations[];
 

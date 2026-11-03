@@ -1,0 +1,58 @@
+# HomeTown, the forestry village: its mailboxes and a few villagers (provisional text).
+#   dev/events.py build design/maps/HomeTown_0.events.toml [--apply]
+# HomeTown is Tom's hand-painted map; this spec adds no terrain. The researcher who gives the
+# starter, and the exit trigger, are hand-placed in scripts.pory and stay as they are.
+# Keep the walk from the player's house down the lane to Route 201 clear.
+map = "HomeTown_0"
+
+# The player's mailbox still ran Littleroot's house-sign script, which tells a girl player that
+# this is PROF. BIRCH'S HOUSE. The spec takes it over.
+replaces = ["LittlerootTown_EventScript_BrendansHouseSign"]
+
+[[sign]]
+name = "PlayersMailbox"
+at = [11, 9]
+text = "{PLAYER}'s HOUSE"
+
+# The neighbours' mailbox, beside their door.
+[[sign]]
+name = "NeighboursMailbox"
+at = [25, 9]
+text = "LEBLANC"
+
+# The neighbour, out by her vegetable beds.
+[[person]]
+name = "Neighbour"
+at = [24, 8]
+gfx = "OLD_WOMAN"
+facing = "left"
+text = """
+Good morning, dear! The beans are coming along nicely this year.
+
+In the spring we pick fiddleheads down by the brook. Nothing tastes better with a bit of butter.
+"""
+
+# A sawmill hand on his way home, on the worn patch by the small pond.
+[[person]]
+name = "MillHand"
+at = [21, 19]
+gfx = "HIKER"
+facing = "left"
+text = """
+Most folks in the village work in the woods or down at the sawmill.
+
+Spruce and fir, mostly. The trees around here grow straight and tall.
+"""
+
+# Playing on the grass beside the player's house, away from the lane.
+[[person]]
+name = "Boy"
+at = [5, 11]
+gfx = "LITTLE_BOY"
+facing = "wander"
+range = [2, 1]
+text = """
+That researcher from Woodstock comes up every week to check on the Pokémon in the woods.
+
+When I'm big, I'm going to walk all the way to Woodstock by myself!
+"""
