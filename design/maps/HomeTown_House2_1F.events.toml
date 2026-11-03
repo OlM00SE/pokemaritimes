@@ -1,0 +1,15 @@
+# The neighbours' house in HomeTown (the LEBLANC mailbox): its kitchen (provisional text).
+#   dev/events.py build design/maps/HomeTown_House2_1F.events.toml [--apply]
+map = "HomeTown_House2_1F"
+
+# Beside the table; his wife is the neighbour out in the garden (HomeTown_0.events.toml).
+[[person]]
+name = "Husband"
+at = [4, 6]
+gfx = "MAN_1"
+facing = "right"
+text = """
+My wife's out in her garden again. She's there from sunup to sundown.
+
+If you stop to say hello, she'll talk your ear off about fiddleheads!
+"""

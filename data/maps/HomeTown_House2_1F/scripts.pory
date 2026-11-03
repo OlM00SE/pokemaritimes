@@ -1,0 +1,14 @@
+// HomeTown_House2_1F: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts HomeTown_House2_1F_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/HomeTown_House2_1F.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_HOME_TOWN_HOUSE2_1F_HUSBAND
+
+script HomeTown_House2_1F_EventScript_Husband {
+    msgbox(format("My wife's out in her garden again. She's there from sunup to sundown.\pIf you stop to say hello, she'll talk your ear off about fiddleheads!"), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----
