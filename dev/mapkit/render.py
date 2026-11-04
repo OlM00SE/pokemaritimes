@@ -279,8 +279,9 @@ def render_context(project, name, margin=8, scale=1, layout=None, dim=0.45):
     return render_contexts(project, name, [layout or project.load_map(name).layout], margin, scale, dim)[0]
 
 
-def render_world(project, start, shrink=2):
-    """Stitch every map reachable through connections from `start`."""
+def world_positions(project, start):
+    """Top-left world tile and (width, height) of every map reachable through edge
+    connections from `start`, which sits at (0, 0). Returns (pos, size)."""
     pos, size, queue = {start: (0, 0)}, {}, [start]
     while queue:
         name = queue.pop(0)
@@ -296,6 +297,12 @@ def render_world(project, start, shrink=2):
                 continue
             pos[other] = (pos[name][0] + origin[0], pos[name][1] + origin[1])
             queue.append(other)
+    return pos, size
+
+
+def render_world(project, start, shrink=2):
+    """Stitch every map reachable through connections from `start`."""
+    pos, size = world_positions(project, start)
     minx = min(p[0] for p in pos.values()); miny = min(p[1] for p in pos.values())
     maxx = max(pos[n][0] + size[n][0] for n in pos); maxy = max(pos[n][1] + size[n][1] for n in pos)
     world = Image.new("RGB", ((maxx - minx) * 16 // shrink, (maxy - miny) * 16 // shrink), (24, 24, 32))

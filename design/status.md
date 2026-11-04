@@ -1,9 +1,44 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-04 (milestone 12). Read this first in a new session. Creative direction lives in
-> `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
+> Updated 2026-11-04 (milestone 13). Read this first in a new session. The world's geography and
+> the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
+> in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 13 done: the corridor plan of record** (branch `milestone13-corridor-plan`, which includes the earlier `region-blueprint` branch).
+
+Tom's direction (2026-11-04):
+- Follow the real geography of the Maritimes as closely as practical.
+- The existing maps are prototypes: redesign or replace them freely, keeping everything recoverable through git.
+- Claude owns the world-building.
+- Small, tested milestones on the corridor: a rural start west of Woodstock → Woodstock → down the Saint John to Fredericton.
+
+What was done (tooling and design data only; no map, script or engine change; the ROM is unchanged):
+- **The plan** (`design/region/corridor.toml`, rationale in `region_blueprint.md`): seven maps in one real-world projection (0.5 km per tile, Woodstock at the origin), with the joins derived from their rectangles.
+  - The start valley is an inset (HomeTown and Route 201 follow the Meduxnekeag), and Woodstock is a confluence town.
+  - Route 202 is the river road to the Meductic bend; Nackawic is a bridge town on the north bank; Route 203 is the headpond with Kings Landing and the dam; Fredericton has its downtown on the south bank.
+  - Five map folders are reused (rebuilt in place) and two maps are new.
+- **The Saint John comes from real data** (Natural Earth, smoothed, widths per place: 6 at Woodstock, 10–11 on the headpond). The Meduxnekeag and the road are drawn by hand.
+- **`dev/corridor.py`:**
+  - `check`: overlaps, reachability, the size limit; at every seam the river and the road cross on both sides, at least 2 wide; the road keeps a verge from the water; the connection changes the plan asks for.
+  - `render`: `dev/out/corridor_plan.png`.
+  - `underlay "<Map>"`: a starter sketch with the real river and the road, seams matching.
+  - `compile`: every underlay builds with mapgen's compiler.
+- **`dev/mapkit/geo.py`:** the projection, the plan and the water raster. Cleanup widens one-tile water. It's cut with a margin, so neighbours agree at seams.
+- **`dev/blueprint.py`:** the region view now shows the corridor plan. The game-vs-reality fit stays (the game's current maps: 38 km off).
+- **`dev/tests/corridor_plan.py`** (no emulator).
+- Earlier the same day (branch `region-blueprint`): the Natural Earth extract, `anchors.toml`, `blueprint.py`, and `render.world_positions` split out of `render_world`.
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Plan check | `corridor.py check`: 7 maps, 0 errors, 0 warnings. Six joins, each carrying the river and the road across. |
+| Underlays | `corridor.py compile`: all 7 build with mapgen's compiler at the planned size. The first run failed Route 203 on a one-tile water tip at the Kings Landing bend; that led to the cleanup, and the road was pulled back where it touched the water. The five reused folders all differ in size from the plan (`check` lists them), so each rebuild starts with a resize (M15). |
+| Code review | `/code-review medium` raised 10 findings, all fixed.<br>**The cleanup:** it erased a one-tile diagonal river (4-neighbours only), changed water while scanning it (so a change could cross the margin and neighbours could disagree; rounds are now synchronous, `MARGIN = 2 × rounds + 1`, and all 7 maps match cuts from two other windows), and could turn road into water.<br>**`check`:** the seam rule took any overlap as "continues" (runs must now pair one to one with ends within a tile). That stricter rule caught a real plan flaw: the Route 203/Fredericton seam cut the dam's bend, so the bank jumped 3 tiles; the seam moved 4 tiles east. `check` also judged the raw road rather than the road the underlay draws.<br>**Tools:** an underlay named a folder of the wrong size as buildable; dive/emerge connections showed as removals; a bad name crashed `compile`.<br>**Cleanup:** repeated raster work (now memoized) and dead code. |
+| Tests | `tests/corridor_plan.py` PASS. The connection math reproduces all 16 of the game's real connections from the maps' positions. A map cut alone matches a larger cut. The checker catches an overlap, an unreachable map, an oversized map and a river that stops at a seam. Its first run caught a real bug: the tip cleanup could erode a one-tile river from its end, cell by cell. Cleanup now widens instead. |
+| Refactors | `render_world`'s output is pixel-identical after `world_positions` was split out. `blueprint.py`'s fit numbers are unchanged after it moved to `geo.py`. |
+| Regression | The ROM is unchanged, so the map and event regression set wasn't re-run. |
+
 **Milestone 12 done: mobile playtesting** (branch `milestone12-mobile-playtest`, merged into `develop`). Tooling only: the ROM is unchanged.
 
 **Tom's workflow:** double-click `RomHackDev/Send PokeMaritimes to phone.bat` (or `dev/mobile.py`). On the phone, open the Google Drive app → **PokeMaritimes playtest** → `README.txt` says what to download and whether saves carry over. **Part of every milestone now:** after merging into `develop`, run `dev/mobile.py` and say in the handoff whether it was a save break.
@@ -554,6 +589,8 @@ dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
 dev/tests/mobile_publish.py           # 53/53 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
+dev/tests/corridor_plan.py            # no emulator; PASS (plan check, seams, cleanup, connection math vs the game, every underlay compiles)
+dev/corridor.py check                 # after a plan edit: 7 maps, 0 errors, 0 warnings
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
@@ -563,12 +600,23 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-1. **Tom plays the slice by hand (recommended next, needs Tom; on the phone now works too, see milestone 12):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
+The build order is in `region_blueprint.md`, "Build order": M14 building stamps, M15 Woodstock, M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
+
+**Milestone 14 (proposed): building stamps.** Every corridor town is to be rebuilt, and `mapgen` can't place a building yet; buildings are only kept (`#`) from hand-painted maps.
+- **Stamps:** named building pieces cut from vanilla maps on the same tileset pair (a small house, a two-storey house, the Pokémon Center, the Mart, a lab or large building), each with its door cell. A stamp is placed in a design script at (x, y), compiles as fixed blocks, and its neighbours are tiled as grass/path around it.
+- **Doors:** each placed door gets its warp and interior through `add_interior.py`'s machinery (the facade already identifies the vanilla interior). A stamp moved in a redesign keeps its interior and warp ids.
+- **Checks:** a stamp is refused on water, on a tree or over the map edge, and its door must face a walkable tile; the checker's dead-door check covers the rest.
+- **Proof:** a TownLab dev map with every stamp (in-game: each door enters its interior and comes back out to the same tile), and a round trip on vanilla towns (cut stamps rebuild Littleroot and Oldale's buildings block for block).
+- **Done when:** the above, plus the regression set, `/code-review medium`, and the phone build if the ROM changed (TownLab ships, like LedgeLab).
+
+Still open from before:
+1. **Tom plays by hand:** the current slice's text is all provisional. Since the corridor will be rebuilt, reading it matters less now; the rebuilt maps carry their events specs over and are reread then.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
-3. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
-4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
-5. **Shore follow-ups:** shores for Woodstock's and Fredericton's rivers (Woodstock only with Tom's okay: hand-mapped); pond shores by shape; a bank-to-beach transition tile.
-6. Later:
+3. ~~The woods around HomeTown and Woodstock~~: superseded; both are rebuilt from the plan (M15, M16).
+4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too. Wanted for the valley terraces (Route 201, Route 202).
+5. **Shore follow-ups:** pond shores by shape; a bank-to-beach transition tile. (River shores in the rebuilt towns come from the kit.)
+6. **Bridges:** Woodstock's creek, Nackawic's long bridge and Fredericton's walking bridge all need bridge vocabulary (research which vanilla pieces and elevations work), probably inside M15.
+7. Later:
    - The player's own house as a Maritimes room (Mom's script is vanilla's), HomeTown's upstairs room, Route 203's people (a hiker in the notch, a fisher on the beach), a rematch-free double battle in the spec.
    - Porytiles for Maritime flora: spruce/fir for a boreal look, birch, log piles, a covered bridge.
    - A Maritimes Town Map.

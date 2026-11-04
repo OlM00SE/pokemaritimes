@@ -1,0 +1,229 @@
+# Real places that anchor the PokéMaritimes blueprint (read by dev/blueprint.py).
+#
+# lat/lon: decimal degrees, approximate (good to about 2 km); enough for a blueprint.
+# map:     the game map that stands for this place, if one exists. dev/blueprint.py fits the
+#          corridor's maps to these anchors and reports how far each one is off.
+# stage:   "built" (a map exists), "corridor" (the next development area),
+#          "later" (region blueprint only; nothing is decided).
+# Names are real places used as references. In-game names stay provisional (region_plan.md).
+
+# --- The western NB corridor: HomeTown -> Woodstock -> Fredericton ---------------------------
+
+[[anchor]]
+name = "HomeTown"
+lat = 46.16
+lon = -67.73
+map = "HomeTown_0"
+stage = "built"
+fit = false          # not a real place, and a start area is drawn zoomed in
+label = "left"       # drawn left of its dot (Woodstock's label is to the right)
+note = "Provisional spot: the Meduxnekeag hills between Woodstock and the Maine border (about 10 km). Not a real town."
+
+[[anchor]]
+name = "Woodstock"
+lat = 46.152
+lon = -67.598
+map = "Woodstock_2"
+stage = "built"
+note = "West bank of the Saint John, at the mouth of the Meduxnekeag."
+
+[[anchor]]
+name = "Hartland"
+lat = 46.298
+lon = -67.525
+stage = "later"
+note = "Upriver (north) of Woodstock: the world's longest covered bridge. Potato country beyond."
+
+[[anchor]]
+name = "Meductic"
+lat = 45.995
+lon = -67.485
+stage = "corridor"
+note = "Where the river ends its run south from Woodstock and swings east."
+
+[[anchor]]
+name = "Nackawic"
+lat = 45.997
+lon = -67.244
+stage = "corridor"
+note = "Mill town on the headpond's north bank; the giant axe. The Hawkshaw Bridge links it to Route 2 on the south bank."
+
+[[anchor]]
+name = "Kings Landing"
+lat = 45.874
+lon = -66.990
+stage = "corridor"
+note = "1800s heritage village on the headpond's south shore."
+
+[[anchor]]
+name = "Mactaquac Dam"
+lat = 45.952
+lon = -66.870
+stage = "corridor"
+note = "The dam that makes the headpond; the gateway to Fredericton from upriver."
+
+[[anchor]]
+name = "Fredericton"
+lat = 45.964
+lon = -66.643
+map = "Fredericton_0"
+stage = "built"
+note = "Downtown (Legislature, Officers' Square) on the south bank; the Nashwaak joins from the north."
+
+[[anchor]]
+name = "Oromocto"
+lat = 45.849
+lon = -66.479
+stage = "later"
+note = "Downriver of Fredericton; the way toward Grand Lake and Saint John."
+
+# --- The wider region (blueprint only) --------------------------------------------------------
+
+[[anchor]]
+name = "Edmundston"
+lat = 47.373
+lon = -68.325
+stage = "later"
+
+[[anchor]]
+name = "Mount Carleton"
+lat = 47.385
+lon = -66.875
+stage = "later"
+note = "Highest peak in the Maritimes."
+
+[[anchor]]
+name = "Miramichi"
+lat = 47.03
+lon = -65.50
+stage = "later"
+
+[[anchor]]
+name = "Bathurst"
+lat = 47.62
+lon = -65.65
+stage = "later"
+
+[[anchor]]
+name = "Campbellton"
+lat = 48.005
+lon = -66.67
+stage = "later"
+
+[[anchor]]
+name = "Gaspé"
+lat = 48.83
+lon = -64.48
+stage = "later"
+
+[[anchor]]
+name = "Percé Rock"
+lat = 48.52
+lon = -64.18
+stage = "later"
+
+[[anchor]]
+name = "Chic-Chocs"
+lat = 48.95
+lon = -66.00
+stage = "later"
+note = "Mountains of the Gaspé interior."
+
+[[anchor]]
+name = "Anticosti"
+lat = 49.45
+lon = -63.10
+stage = "later"
+
+[[anchor]]
+name = "Moncton"
+lat = 46.088
+lon = -64.778
+stage = "later"
+
+[[anchor]]
+name = "Saint John"
+lat = 45.273
+lon = -66.063
+stage = "later"
+note = "Port; Reversing Falls."
+
+[[anchor]]
+name = "Hopewell Rocks"
+lat = 45.82
+lon = -64.57
+stage = "later"
+
+[[anchor]]
+name = "Grand Manan"
+lat = 44.70
+lon = -66.80
+stage = "later"
+
+[[anchor]]
+name = "Charlottetown"
+lat = 46.238
+lon = -63.131
+stage = "later"
+
+[[anchor]]
+name = "Confederation Bridge"
+lat = 46.22
+lon = -63.75
+stage = "later"
+
+[[anchor]]
+name = "Magdalen Islands"
+lat = 47.40
+lon = -61.85
+stage = "later"
+
+[[anchor]]
+name = "Truro"
+lat = 45.365
+lon = -63.28
+stage = "later"
+
+[[anchor]]
+name = "Annapolis Valley"
+lat = 45.09
+lon = -64.36
+stage = "later"
+
+[[anchor]]
+name = "Halifax"
+lat = 44.649
+lon = -63.575
+stage = "later"
+
+[[anchor]]
+name = "Peggy's Cove"
+lat = 44.49
+lon = -63.92
+stage = "later"
+
+[[anchor]]
+name = "Yarmouth"
+lat = 43.837
+lon = -66.117
+stage = "later"
+
+[[anchor]]
+name = "Cape Breton Highlands"
+lat = 46.75
+lon = -60.65
+stage = "later"
+
+[[anchor]]
+name = "Sydney"
+lat = 46.136
+lon = -60.194
+stage = "later"
+
+[[anchor]]
+name = "Sable Island"
+lat = 43.93
+lon = -59.91
+stage = "later"
+
+# The corridor's maps are planned in design/region/corridor.toml (dev/corridor.py).
