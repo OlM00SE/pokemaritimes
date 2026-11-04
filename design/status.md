@@ -490,7 +490,7 @@ dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Ro
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route201_1 HomeTown_0
 dev/tests/ingame_ledges.py            # LedgeLab, Route 203, Route 201 + 4 vanilla routes: 490/490 approaches, tours 10/10 groups
 dev/tests/ingame_events.py            # every spec'd map: 114/114 on seven maps (signs, inspect, people, gift, wanderers, item ball, trainer)
-dev/tests/ingame_save.py              # 42/42: flags and story vars survive save/reset/CONTINUE and a link save; a stale-stamped save is refused
+dev/tests/ingame_save.py              # 45/45: flags and story vars survive save/reset/CONTINUE and a link save; a stale-stamped save is refused; dev/savefile.py agrees with the game
 dev/tests/var_macros.py               # no emulator (WSL mirror); 8/8: the script macros treat story vars as vars (after macro or var-range changes)
 dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases (bump, land, rock, Surf prompt)
 dev/tests/ledge_pieces.py             # no emulator; PASS
@@ -524,6 +524,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Playing by hand:** use `RomHackDev/Play PokeMaritimes.bat` (`dev/play.py`), not `pokeemerald.gba` directly. On 2026-11-03 Tom got "The save file has been erased due to corruption or damage." from a March save sitting beside `pokeemerald.gba`. It had no layout stamp, and SaveBlock1 has grown since, so its last SaveBlock1 sector fails the checksum in both slots. The game calls that erased **before** the stamp check can say "older version": the outdated-save message only appears when a stale save's block sizes happen to match. The launcher reads the save first (`dev/savefile.py`, which agrees with the game in `ingame_save.py`) and sets stale saves aside in `playtest/old_saves/`. That save is kept there.
 - **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Story state: vars and flags come from `dev/save_ids.py` (256 story vars in SaveBlock3, 766 block flags); keep the 23 unused vanilla vars for engine features. The story block must stay SaveBlock3's first field (a link save writes only sectors 0–4; `save.c` asserts it). `design/save_format.md` has the version history: add a row on every bump. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
 - **Hand-painted maps:** add a sign post or a flower with `dev/mapgen.py patch <Map> s@x,y`, not a rebuild from an extract (Woodstock rebuilds at 95.8%).
 - **Wander ranges:** a 0 in `movement_range_x/y` means *no limit* on that axis, not "stay in the row". Use 1–4 (the spec refuses 0), or a one-axis type like `WANDER_LEFT_AND_RIGHT`.
