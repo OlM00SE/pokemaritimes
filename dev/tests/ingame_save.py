@@ -24,48 +24,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mgba_bridge import Emu, REPO, UNTHROTTLED, flag_id
 from playtest import prepare_rom, OUT
 import save_layout
+# the flash format (include/save.h) and the stamp (save_layout.h), read by dev/savefile.py
+from savefile import (SECTOR_DATA_SIZE, SB3_CHUNK, CHECKSUM_OFF, STAMP_OFF, sector_checksum,
+                      sector_size, sectors_with_id, current_slot)
+import savefile
 
-# the flash format (include/save.h, read by save_layout.flash_format) and the stamp (save_layout.h)
-FLASH = save_layout.flash_format()
-SECTOR_DATA_SIZE, SB3_CHUNK = FLASH["SECTOR_DATA_SIZE"], FLASH["SAVE_BLOCK_3_CHUNK_SIZE"]
-NUM_SECTORS_PER_SLOT, NUM_SAVE_SLOTS = FLASH["NUM_SECTORS_PER_SLOT"], FLASH["NUM_SAVE_SLOTS"]
-SECTOR_SIZE = SECTOR_DATA_SIZE + SB3_CHUNK + FLASH["SECTOR_FOOTER_SIZE"]
-# struct SaveSector: data, the SaveBlock3 chunk, then id (u16), checksum (u16), signature, counter
-ID_OFF = SECTOR_DATA_SIZE + SB3_CHUNK
-CHECKSUM_OFF, SIGNATURE_OFF, COUNTER_OFF = ID_OFF + 2, ID_OFF + 4, ID_OFF + 8
-SECTOR_SIGNATURE = 0x08012025
-STAMP_OFF = 0x16                                     # offsetof(struct SaveBlock2, saveLayoutVersion)
 SAVE_STATUS_CORRUPT = 2
 
 
 def layout():
     rec = save_layout.recorded()
     return rec["SAVE_LAYOUT_STAMP"], rec["SAVE_LAYOUT_SAVEBLOCK2_SIZE"]
-
-
-def words(data):
-    return sum(struct.unpack(f"<{len(data) // 4}I", data[:len(data) // 4 * 4]))
-
-
-def sector_checksum(buf, o, size):
-    """src/save.c CalculateSectorChecksum: the 32-bit sum of the data's words and the SaveBlock3
-    chunk's, folded to 16 bits."""
-    total = (words(buf[o:o + size]) + words(buf[o + SECTOR_DATA_SIZE:o + SECTOR_DATA_SIZE + SB3_CHUNK])) & 0xFFFFFFFF
-    return ((total >> 16) + total) & 0xFFFF
-
-
-def sectors_with_id(buf, sector_id):
-    """[(counter, offset)] of the sectors with this id and a valid signature, one per save slot."""
-    return [(struct.unpack_from("<I", buf, i * SECTOR_SIZE + COUNTER_OFF)[0], i * SECTOR_SIZE)
-            for i in range(NUM_SECTORS_PER_SLOT * NUM_SAVE_SLOTS)
-            if struct.unpack_from("<I", buf, i * SECTOR_SIZE + SIGNATURE_OFF)[0] == SECTOR_SIGNATURE
-            and struct.unpack_from("<H", buf, i * SECTOR_SIZE + ID_OFF)[0] == sector_id]
-
-
-def current_slot(buf, sector_id):
-    """[offset] of the sector with this id in the save slot that loads (the higher counter)."""
-    found = sectors_with_id(buf, sector_id)
-    return [max(found)[1]] if found else []
 
 
 def sav_io(path, data=None):
@@ -173,6 +142,8 @@ def main():
     stamp, sb2_size = layout()
     sav = os.path.join(OUT, "test.sav")
     buf = sav_io(sav)
+    verdict = savefile.check(sav)
+    check(verdict[0] == "ok", f"dev/savefile.py reads the game's own save as loadable: {verdict}")
     secs = [o for _, o in sectors_with_id(buf, 0)]  # SaveBlock2's sector in each slot
     stamps = [struct.unpack_from("<H", buf, o + STAMP_OFF)[0] for o in secs]
     check(bool(secs) and all(x == stamp for x in stamps),
@@ -191,14 +162,15 @@ def main():
     b = rec["SAVE_LAYOUT_MARITIMES_VARS_OFFSET"] + 2 * (flag_id("MARITIMES_VARS_END") - flag_id("MARITIMES_VARS_START"))
     sid = b // SB3_CHUNK                             # a SaveBlock1 sector (1-4)
     (o,) = current_slot(buf, sid)
-    size = min(rec["SAVE_LAYOUT_SAVEBLOCK1_SIZE"] - (sid - FLASH["SECTOR_ID_SAVEBLOCK1_START"]) * SECTOR_DATA_SIZE,
-               SECTOR_DATA_SIZE)
+    size = sector_size(sid, rec)
     stored = struct.unpack_from("<H", buf, o + CHECKSUM_OFF)[0]
     check(stored == sector_checksum(buf, o, size),
           f"sector {sid}'s stored checksum {stored:#06x} covers its data and its SaveBlock3 chunk "
           f"({sector_checksum(buf, o, size):#06x})")
     buf[o + SECTOR_DATA_SIZE + b % SB3_CHUNK] ^= 0x01
     sav_io(sav, bytes(buf))
+    verdict = savefile.check(sav)
+    check(verdict[0] == "stale", f"dev/savefile.py agrees the game can't load it (checked below): {verdict}")
     rom = prepare_rom(fresh=False)
     with Emu(rom, extra_args=UNTHROTTLED) as e:
         e.wait_until(lambda: e.read16(e.sym["gSaveFileStatus"]) != 0, max_frames=600)   # set while booting
@@ -211,6 +183,9 @@ def main():
         struct.pack_into("<H", buf, o + STAMP_OFF, 0)
         struct.pack_into("<H", buf, o + CHECKSUM_OFF, sector_checksum(buf, o, sb2_size))
     sav_io(sav, bytes(buf))
+    verdict = savefile.check(sav)
+    check(verdict[0] == "stale" and "outdated" in verdict[1],
+          f"dev/savefile.py reads the old stamp as outdated: {verdict}")
     rom = prepare_rom(fresh=False)
     with Emu(rom, extra_args=UNTHROTTLED) as e:
         e.wait_until(lambda: e.read8(e.sym["gSaveFileOutdated"]), max_frames=600)   # set while booting
