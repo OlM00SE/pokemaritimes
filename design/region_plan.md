@@ -6,7 +6,7 @@
 
 ## Creative direction (from Tom)
 - A region inspired by **the Maritimes as a whole** (NB, NS, PEI), not just one corner of New Brunswick.
-- Real geography is a **strong influence, not a 1:1 copy.** Exaggerate, compress, or rearrange whenever it makes a better Pokémon world.
+- **Updated 2026-11-04:** follow the **real geography as closely as practical**: recognizable landmasses, coastlines, rivers and relative locations, across NB, NS, PEI, Cape Breton, the Gaspé, Anticosti and the Gulf. Terrain is exaggerated and every classic biome is covered. *Geography guides the world; gameplay guides the details.* The rules and the corridor's assessment are in **`region_blueprint.md`** (tool: `dev/blueprint.py`). This replaces "a strong influence, not a 1:1 copy".
 - Maritime landscapes are the base, but the region must still offer the full range of classic Pokémon biomes.
 - Early game: start in a **rural western/central NB forestry area**, pass through forests and small communities, and head for a **Fredericton-style river-valley city**. From there, branch toward **Saint John / the Bay of Fundy** and **Moncton / eastern NB**.
 - Later: Halifax, PEI, offshore islands, and more. **Not locked down yet.**
@@ -47,6 +47,7 @@ The existing maps already fit this arc:
 | **Route201_1** | First forest route | Logging road through spruce; the first tall grass |
 | **Woodstock_2** | First community on the river | Upper Saint John River town; covered-bridge country, potato fields |
 | **Route202_1** | River route south | River on one side, forest on the other |
+| *Headpond route (proposed)* | The river's east leg to Fredericton | Mactaquac headpond, Kings Landing-style hamlet, the dam (`region_blueprint.md`) |
 | **Fredericton_0** | River-valley city (1st gym?) | Legislature, river, walking bridge |
 | Route203_1 / Route203_1_2 | East out of the city: the future branch point | Rough blockouts |
 | Route101_2 / Route102_2 | Copies of Hoenn routes | *Replace or remove later* |

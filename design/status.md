@@ -4,6 +4,8 @@
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Regional blueprint (branch `region-blueprint`, not merged; awaiting Tom's read).** Tom's new direction (2026-11-04): follow the real geography of the Maritimes as closely as practical, with development focused on the western NB corridor (HomeTown → Woodstock → Fredericton). `design/region_blueprint.md` has the rules for putting real geography into Emerald's map system, the region's sections, and an assessment of our maps against the real Saint John valley. `dev/blueprint.py` overlays our connected maps on real geography (Natural Earth, clipped into `design/region/geo/`) and measures the fit against the anchor places in `design/region/anchors.toml`. Finding: the existing maps follow the river's shape well (Woodstock on the west bank, Route 202 leaving south and turning east, Fredericton's river running west to east), but the river's 75 km east leg along the Mactaquac headpond is missing, so Fredericton sits SE of Woodstock instead of ESE (38 km fit error). One inserted ~60×34 route brings that to 12 km. No map, script or engine change; the ROM is unchanged.
+
 **Milestone 12 done: mobile playtesting** (branch `milestone12-mobile-playtest`, merged into `develop`). Tooling only: the ROM is unchanged.
 
 **Tom's workflow:** double-click `RomHackDev/Send PokeMaritimes to phone.bat` (or `dev/mobile.py`). On the phone, open the Google Drive app → **PokeMaritimes playtest** → `README.txt` says what to download and whether saves carry over. **Part of every milestone now:** after merging into `develop`, run `dev/mobile.py` and say in the handoff whether it was a save break.
@@ -563,6 +565,15 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
+**Milestone 13 (proposed): the headpond route, a terrain-only skeleton.** One new map between Route 202 and Fredericton, built only from the existing kit. See `region_blueprint.md`, "The corridor blueprint".
+- **Map:** `dev/new_map.py` (about 60×34, General + Petalburg, appended so no map id moves; expected to keep saves). A design script draws the headpond as wide water with natural shores, carried on from Route 202's river rows to Fredericton's. A road runs along the south shore so the crossing needs no Surf, with woods, a meadow, tall grass, a ledge terrace and flora.
+- **Connections:** Route 202's right connection → the new map, the new map → Fredericton, and Fredericton's left connection → the new map. Everything east of Fredericton shifts as a block.
+- **Identity:** its own map section, and Route 202 gets its own in place of Route 103's.
+- **Deferred:** the Kings Landing-style hamlet (houses and doors), the dam (no vanilla tiles; Porytiles later) and people.
+- **Done when:** checker clean; renders reviewed; route numbers; `ingame_shores`/`ingame_ledges` on the new map; autowalk Woodstock → Fredericton through it (the regression autowalks gain the new map); conformance; `dev/blueprint.py` with the `[[plan]]` swapped for the real map: fit error ≤ 15 km and the Woodstock → Fredericton bearing within 15°; the full regression set; `/code-review medium`; phone build.
+- **Tom decides first:** whether inserting a map between his Route 202 and Fredericton is okay, and Fredericton's bank question (the Legislature-style building is on the north bank; the real downtown is on the south bank).
+
+Still open from before:
 1. **Tom plays the slice by hand (recommended next, needs Tom; on the phone now works too, see milestone 12):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
 3. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
