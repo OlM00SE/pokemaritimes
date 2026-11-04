@@ -10,9 +10,13 @@ Uses the ROM already built (run dev/fastbuild.py first) and the real mGBA verifi
      the index names but no archive holds is kept; the phone save in saves/ (the game's own, from
      step 1) is reported as loading and CONTINUEd in mGBA; the same save restamped for the older
      line is reported as that line's; a broken one is reported as WON'T LOAD; neither is booted;
-  3. publishing the same ROM again uploads nothing.
+     My Boy!'s Google Drive sync folder (MyBoy/, beside the publish folder) is read, never
+     written: its PokeMaritimes saves are backed up into saves/myboy/, the newest is the one
+     booted, another game's save is ignored, and a file no layout reads is "can't check";
+  3. publishing the same ROM again uploads no ROM, refreshes a README whose text changed, and
+     backs up no save twice.
 """
-import argparse, glob, hashlib, json, os, shutil, sys, tempfile, zipfile
+import argparse, glob, hashlib, json, os, shutil, sys, tempfile, time, zipfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fastbuild, mobile, save_layout, savefile
 
@@ -93,17 +97,38 @@ def main():
             buf[o + savefile.CHECKSUM_OFF:o + savefile.CHECKSUM_OFF + 2] = chk.to_bytes(2, "little")
         open(os.path.join(folder, "saves", "older.srm"), "wb").write(buf)
         os.utime(os.path.join(folder, "saves", "older.srm"), (0, 0))
+        # My Boy!'s sync folder: the game's save (newest of all), junk, and another game's save
+        myboy = os.path.join(tmp, "MyBoy", "save")
+        os.makedirs(myboy)
+        synced = os.path.join(myboy, f"PokeMaritimes_save{n}.sav")
+        shutil.copyfile(game_save, synced)
+        os.utime(synced, (time.time() + 60, time.time() + 60))
+        open(os.path.join(myboy, "PokeMaritimes_junk.sav"), "wb").write(b"\x55" * 2000)
+        os.utime(os.path.join(myboy, "PokeMaritimes_junk.sav"), (0, 0))
+        open(os.path.join(myboy, "OtherGame.sav"), "wb").write(b"\x66" * 2000)
+
+        def tree(d):
+            return {os.path.relpath(os.path.join(r, f), d): (os.path.getmtime(os.path.join(r, f)),
+                                                             sha(open(os.path.join(r, f), "rb").read()))
+                    for r, _, fs in os.walk(d) for f in fs}
+        myboy_before = tree(os.path.join(tmp, "MyBoy"))
         seen.clear()
         check(mobile.publish(args) == 0, "publish succeeds")
         text = open(os.path.join(folder, "README.txt"), encoding="utf-8").read()
         check(f"*** SAVE BREAK: this build can't read saves from save line {n - 1}" in text, "README announces the save break")
         check(not os.path.exists(os.path.join(folder, old_play)), f"the archived {old_play} left the top level")
         check(os.path.exists(os.path.join(folder, stray)), "a ROM whose archive is gone is kept")
-        check(seen == [os.path.join(folder, "saves", "phone.sav")], "the loadable phone save was booted")
+        check(seen == [synced], "the newest loadable phone save (My Boy!'s synced one) was booted")
+        check(tree(os.path.join(tmp, "MyBoy")) == myboy_before, "My Boy!'s sync folder is untouched")
+        backups = {sha(open(q, "rb").read()) for q in glob.glob(os.path.join(folder, "saves", "myboy", "*"))}
+        check(backups == {sha(open(synced, "rb").read()), sha(b"\x55" * 2000)},
+              "saves/myboy/ backs up both PokeMaritimes files, not the other game's")
+        check(f"MyBoy/save/PokeMaritimes_save{n}.sav" in text, "README: the synced save is listed by its Drive path")
+        check("PokeMaritimes_junk.sav" in text and "can't check" in text, "README: an unreadable synced file is 'can't check'")
+        check("OtherGame" not in text, "README: another game's save isn't listed")
         check("phone.sav" in text and "loads" in text, "README: the phone save loads")
         check("broken.sav" in text and "WON'T LOAD" in text, "README: the broken save won't load")
-        check(f"older.srm (1970" not in text and "older.srm" in text
-              and f"older save line (a save line {n - 1} save: it plays in {old_play}" in text,
+        check(f"older save line (a save line {n - 1} save: it plays in {old_play}" in text,
               "README: the restamped save (.srm) belongs to the older save line")
         check(len(json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))) == 3,
               "index.json gained the new build")
@@ -111,8 +136,14 @@ def main():
         print("3. the same ROM again")
         mobile.verify = lambda rom_bytes, phone_save=None, full=False: (True, [])
         before = sorted(os.listdir(os.path.join(folder, "builds")))
+        saved = sorted(os.listdir(os.path.join(folder, "saves", "myboy")))
+        open(os.path.join(folder, "README.txt"), "w").write("old instructions")
         check(mobile.publish(args) == 0, "publish succeeds")
+        text = open(os.path.join(folder, "README.txt"), encoding="utf-8").read()
+        check("On the phone: My Boy!" in text and "*** SAVE BREAK" in text,
+              "a changed README is refreshed for the same build (still announcing its save break)")
         check(sorted(os.listdir(os.path.join(folder, "builds"))) == before, "nothing new was written")
+        check(sorted(os.listdir(os.path.join(folder, "saves", "myboy"))) == saved, "no save backed up twice")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("PASS" if not failed else f"FAIL: {failed} check(s)")

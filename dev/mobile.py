@@ -19,11 +19,17 @@ unless someone shares it by hand. MARITIMES_DRIVE_DIR overrides the folder's pat
   README.txt                  this build, what changed, save compatibility, phone instructions
   builds/                     every build published, zipped: PokeMaritimes_<date>_<commit>_save<N>.zip
                               (the ROM, named for its save line, and build.txt); index.json lists them
-  saves/                      phone save backups, uploaded from the phone; each publish checks them
+  saves/                      phone saves uploaded by hand (.sav, .srm); each publish checks them
+  saves/myboy/                dated copies of My Boy!'s synced saves, made by each publish
+
+My Boy! (Tom's emulator) keeps saves in a private app folder; its "Sync with Google Drive" setting
+mirrors them into <My Drive>/MyBoy, which Drive for Desktop shows on this PC. Each publish reads
+the files there whose names contain "PokeMaritimes" (never writing there: that would sync back to
+the phone), backs up any new content into saves/myboy/, and tests the build against the newest.
 
 "Verified": the exact bytes published boot in mGBA (the dev build the tests use), start a new game,
 save, and CONTINUE to the same spot; the newest phone save in saves/ that this build can read
-CONTINUEs to the overworld; with --full, the slice playthrough passes too. Nothing is published
+CONTINUEs to the overworld (My Boy!'s synced saves included); with --full, the slice playthrough passes too. Nothing is published
 from a tree with uncommitted changes unless --allow-dirty says so: a build is named by its commit.
 """
 import argparse, ctypes, datetime, glob, hashlib, io, json, os, shutil, sqlite3, string, subprocess
@@ -37,6 +43,7 @@ GAME = "PokeMaritimes"
 OUT = os.path.join(REPO, "dev", "out", "mobile")
 ROM_SRC = os.path.join(REPO, "pokeemerald.gba")
 HISTORY_IN_README = 8
+SYNC_FOLDERS = ("MyBoy", "MyOldBoy")    # My Boy!'s "Sync with Google Drive" folders, in My Drive
 
 
 # ---------------------------------------------------------------- the build
@@ -263,18 +270,55 @@ def load_index(folder):
     return []
 
 
+def synced_saves(folder):
+    """My Boy!'s synced saves for this game: files under <My Drive>/MyBoy (or MyOldBoy) whose names
+    contain the game's name, at most 1 MB. Only read, never written: a change there would sync
+    back to the phone and replace the save My Boy! plays from."""
+    root, out = os.path.dirname(folder), []
+    for sync in SYNC_FOLDERS:
+        for dirpath, _, names in os.walk(os.path.join(root, sync)):
+            for name in names:
+                p = os.path.join(dirpath, name)
+                if GAME.lower() in name.lower() and os.path.getsize(p) <= 1 << 20:
+                    out.append(p)
+    return out
+
+
+def back_up_synced(folder):
+    """Copy each synced save whose content isn't backed up yet into saves/myboy/ as
+    <its time>_<its name>. Returns the backups written."""
+    dest = os.path.join(folder, "saves", "myboy")
+    have = {sha256(open(p, "rb").read()) for p in glob.glob(os.path.join(dest, "*")) if os.path.isfile(p)}
+    written = []
+    for p in synced_saves(folder):
+        data = open(p, "rb").read()
+        if sha256(data) in have:
+            continue
+        os.makedirs(dest, exist_ok=True)
+        when = datetime.datetime.fromtimestamp(os.path.getmtime(p))
+        out = os.path.join(dest, f"{when:%Y-%m-%d_%H%M%S}_{os.path.basename(p)}")
+        write_verified(out, data)
+        have.add(sha256(data))
+        written.append(out)
+    return written
+
+
 def phone_saves(folder, index):
-    """[(path, verdict, why)] for saves/*.sav and *.srm (RetroArch, Lemuroid), newest first, judged
-    for this build's layout. Both are the 128 KB flash image, maybe with a clock block after it.
+    """[(path, verdict, why)] for My Boy!'s synced saves and for saves/*.sav and *.srm (uploaded by
+    hand; .srm is RetroArch's and Lemuroid's), newest first, judged for this build's layout. All
+    are the 128 KB flash image, maybe with a clock block after it.
     A save this build can't read is tried against the older save lines published (their layouts
-    are in the index): verdict 'older', with the play file that reads it."""
+    are in the index): verdict 'older', with the play file that reads it. A synced file that
+    no layout reads is 'unknown': My Boy!'s sync format isn't documented, so it may not be the
+    raw image."""
     rec = save_layout.recorded()
     older = {}
     for e in index:
         if e.get("layout") and e["layout"]["SAVE_LAYOUT_STAMP"] != rec["SAVE_LAYOUT_STAMP"]:
             older[e["layout"]["SAVE_LAYOUT_STAMP"]] = e
+    synced = synced_saves(folder)
+    found = synced + [p for ext in ("*.sav", "*.srm") for p in glob.glob(os.path.join(folder, "saves", ext))]
     out = []
-    found = [p for ext in ("*.sav", "*.srm") for p in glob.glob(os.path.join(folder, "saves", ext))]
     for p in sorted(found, key=os.path.getmtime, reverse=True):
         verdict, why = savefile.check(p, rec)
         if verdict == "stale":
@@ -283,20 +327,41 @@ def phone_saves(folder, index):
                     verdict, why = "older", (f"a save line {e['save_layout_version']} save: it plays in "
                                              f"{e['play']}, not in this build")
                     break
+            else:
+                if p in synced:
+                    verdict, why = "unknown", f"not a save image this tool can read ({why})"
         out.append((p, verdict, why))
     return out
 
 
+def shown(p, folder):
+    """A save's path as Tom sees it in Drive: relative to My Drive."""
+    return os.path.relpath(p, os.path.dirname(folder)).replace("\\", "/")
+
+
 # ---------------------------------------------------------------- the README on Drive
-def changes_since(prev_commit):
+def changes_since(prev_commit, upto="HEAD"):
     if prev_commit and subprocess.run(["git", "-C", REPO, "merge-base", "--is-ancestor", prev_commit,
-                                       "HEAD"], capture_output=True).returncode == 0:
-        log = git("log", "--first-parent", "--format=%s", f"{prev_commit}..HEAD")
+                                       upto], capture_output=True).returncode == 0:
+        log = git("log", "--first-parent", "--format=%s", f"{prev_commit}..{upto}")
         return log.splitlines()[:30], False
-    return git("log", "--first-parent", "--format=%s", "-6").splitlines(), True
+    return git("log", "--first-parent", "--format=%s", "-6", upto).splitlines(), True
 
 
-def readme(entry, index, saves, changes, first):
+def refresh_readme(folder, index, saves):
+    """Rewrite README.txt for the latest build if its text changed (new instructions or save
+    checks); the ROM and the archive stay as they are. True if it was rewritten."""
+    entry = index[-1]
+    prev = index[-2]["commit"] if len(index) > 1 else None
+    text = readme(entry, index, saves, *changes_since(prev, entry["commit"]), folder).encode("utf-8")
+    path = os.path.join(folder, "README.txt")
+    if os.path.exists(path) and open(path, "rb").read() == text:
+        return False
+    write_verified(path, text)
+    return True
+
+
+def readme(entry, index, saves, changes, first, folder):
     play, n = entry["play"], entry["save_layout_version"]
     prev = index[-2] if len(index) > 1 else None
     L = ["PokeMaritimes: private playtest builds",
@@ -318,50 +383,66 @@ def readme(entry, index, saves, changes, first):
               f"    {play} starts with no save: choose NEW GAME.",
               ""]
     elif prev:
-        L += [f"Saves carry over from the previous build ({prev['version']}): same save line.", ""]
+        L += [f"SAVES CARRY OVER from the previous build ({prev['version']}): same save line, same file name.", ""]
     L += ["Recent changes:" if first else "What's new since the last phone build:"]
     L += [f"  - {c}" for c in changes] or ["  - (no new commits: a rebuild of the same code)"]
     L += [""]
     if saves:
-        L += ["Phone saves in saves/, checked against this build:"]
-        for p, verdict, why in saves[:5]:
+        L += ["Phone saves found, checked against this build:"]
+        for p, verdict, why in saves[:6]:
             when = datetime.datetime.fromtimestamp(os.path.getmtime(p))
             label = {"ok": "loads", "warn": "loads (one slot damaged)", "none": "empty",
-                     "older": "older save line"}.get(verdict, "WON'T LOAD")
-            L += [f"  - {os.path.basename(p)} ({when:%Y-%m-%d %H:%M}): {label} ({why})"]
+                     "older": "older save line", "unknown": "can't check"}.get(verdict, "WON'T LOAD")
+            L += [f"  - {shown(p, folder)} ({when:%Y-%m-%d %H:%M}): {label} ({why})"]
         L += [""]
-    L += ["On the phone",
-          "------------",
-          "First time:",
-          f"  1. In the Google Drive app, open '{FOLDER_NAME}', tap the three dots next to",
-          f"     {play}, and choose Download.",
-          "  2. In the Files app, move it from Download to the folder your emulator reads ROMs from.",
-          "  3. Open it in the emulator and start a new game.",
+    L += ["On the phone: My Boy!",
+          "---------------------",
+          "Setup, once:",
+          "  a. My Boy! > Settings > Misc: turn OFF 'Quick load on start'. It reloads a save state",
+          "     when a game opens; after an update that state is the old build's memory, and saving",
+          "     in-game on top of it can write the old build's data into your save. Use the game's",
+          "     own save (START > SAVE); don't rely on save states for this game.",
+          "  b. In My Boy!'s settings, turn ON 'Sync with Google Drive' (this Google account). My Boy!",
+          "     keeps saves in a private folder you can't reach; sync copies them into the MyBoy folder",
+          "     of this Drive, and from there every phone build backs them up (saves/myboy/ here,",
+          "     dated) and is tested against your newest save before it's published.",
+          "  c. Files app: make a folder for the game, Download/PokeMaritimes. In My Boy! choose",
+          "     'Add game folder' and pick it.",
           "",
-          "Updating to a newer build (same save line):",
-          "  1. Save in-game (START > SAVE), then close the emulator. Don't carry save states",
-          "     across builds: a state is a snapshot of the old build's memory and can glitch or",
-          "     crash the new one. The in-game save is the one that carries over.",
-          f"  2. Download the new {play} and move it over the old one (choose Replace).",
-          "     If Android saved it as '... (1).gba', remove the ' (1)' when you rename or move it:",
-          "     the emulator finds your save by the ROM's file name.",
-          "  3. Open it and choose CONTINUE.",
+          "Installing a build (the first time, and every update):",
+          "  1. If you're playing: save in-game (START > SAVE), then My Boy! MENU > Close.",
+          f"  2. Google Drive app > {FOLDER_NAME} > the three dots next to {play} > Download.",
+          f"  3. Files app > Downloads: move {play} into Download/PokeMaritimes. On an update, if",
+          "     it asks, choose Replace.",
+          f"     The name must stay exactly {play}: My Boy! finds your save by the ROM's file",
+          "     name, so a copy named '... (1).gba' would open with no save. If you see '(1)', delete",
+          "     the old file and rename the new one.",
+          "  4. Open it from My Boy!'s game list (refresh the list if it isn't there).",
+          "     The first time: NEW GAME. An update on the same save line: CONTINUE.",
+          "     If CONTINUE is missing after an update, don't save: MENU > Close and tell Claude.",
+          "     Your save is still there; the new file just isn't being matched to it.",
+          "  5. The first time only: save in the game, MENU > Close, open it again and check that",
+          "     CONTINUE is there. That proves saving works on your phone.",
           "",
-          "When the save line changes (a SAVE BREAK, e.g. ..._save2.gba becomes ..._save3.gba):",
-          "  the new build can't read the older saves, so it has a new file name and a fresh save.",
-          "  Nothing to delete: the old ROM and its save stay as they were.",
+          "When the save line changes (a SAVE BREAK: ..._save2.gba becomes ..._save3.gba):",
+          "  The new build can't read the older saves, so it has a new file name and its own fresh",
+          "  save in My Boy!. Nothing is overwritten: the old ROM and its save stay in your game list.",
+          "  Keep the old one to finish that game, or delete just the old ROM when you're done with it.",
           "",
-          "Backing up your save (worth doing before each update):",
-          "  Upload the emulator's save file (the ROM's name with .sav; .srm in RetroArch and",
-          "  Lemuroid) into saves/ here",
-          "  (Drive app: + > Upload). The next phone build is tested against the newest one, and",
-          "  this file says whether each loads.",
+          "If something goes wrong with a save, stop playing that build (don't save again) and tell",
+          "Claude: saves/myboy/ keeps a dated copy of each version of your save that sync uploaded.",
+          "If the game ever says the internal battery has run dry, that's the clock, not your save;",
+          "report it.",
+          "",
+          "Fallback: Pizza Boy GBA Pro",
+          "  The same file and the same rule: keep the name exactly as published. Its saves are its",
+          "  own, separate from My Boy!'s: a game saved in one doesn't appear in the other. Turn off",
+          "  any automatic loading of save states there too. To back up a Pizza Boy save, export it",
+          "  from Pizza Boy and upload the .sav into saves/ here (Drive app: + > Upload).",
           "",
           "Older builds: builds/ keeps every phone build, zipped, with its build.txt. Unzip one to",
           "play it; the ROM inside is named for its save line, so a save with the same number loads.",
           "",
-          "Emulator settings, only if it asks: save type Flash 128K (1 Mbit), real-time clock on.",
-          "Most emulators set both from the game code (BPEE).",
           "This is a development build: holding R and pressing START in the overworld opens the",
           "debug menu. Leave it alone for normal play.",
           "",
@@ -386,8 +467,10 @@ def status():
               f"{'uploaded' if (uploaded(files, 0) or set()) >= set(files) else 'not confirmed uploaded'}")
     rec = save_layout.recorded()
     print(f"this checkout's save line: {rec['SAVE_LAYOUT_VERSION']}")
+    synced = synced_saves(folder)
+    print(f"My Boy! synced saves (My Drive/MyBoy): {len(synced) or 'none (is Sync with Google Drive on?)'}")
     for p, verdict, why in phone_saves(folder, index) if os.path.isdir(folder) else []:
-        print(f"  phone save {os.path.basename(p)}: {verdict}: {why}")
+        print(f"  {shown(p, folder)}: {verdict}: {why}")
     return 0
 
 
@@ -410,14 +493,22 @@ def publish(a):
     digest = sha256(rom)
     print(f"ROM {ident['version']}: {len(rom) / 2**20:.0f} MiB, save line {n}, sha256 {digest[:16]}...")
 
-    folder = None if a.check else drive_folder()
+    if a.check:     # read the phone saves if Drive is there; write nothing
+        try:
+            folder = drive_folder()
+        except SystemExit:
+            folder = None
+    else:
+        folder = drive_folder()
+        for p in back_up_synced(folder):
+            print(f"backed up My Boy!'s save: {shown(p, folder)}")
     index = load_index(folder) if folder and os.path.isdir(folder) else []
     saves = phone_saves(folder, index) if folder and os.path.isdir(folder) else []
     # only a clean save is booted: one with a damaged slot shows a message first (the game then
     # loads the other slot), and booting through that would prove little
     loadable = next((p for p, verdict, _ in saves if verdict == "ok"), None)
     for p, verdict, why in saves:
-        print(f"phone save {os.path.basename(p)}: {verdict}: {why}")
+        print(f"phone save {shown(p, folder)}: {verdict}: {why}")
     print("Verifying in mGBA:")
     ok, lines = verify(rom, loadable, a.full)
     if not ok:
@@ -432,6 +523,8 @@ def publish(a):
     if index and index[-1]["sha256"] == digest and os.path.exists(play_path) \
             and sha256(open(play_path, "rb").read()) == digest:
         print(f"This ROM is already the phone build ({index[-1]['version']}): nothing to upload.")
+        if refresh_readme(folder, index, saves):
+            print("README.txt refreshed (instructions or save checks changed)")
         if a.wait and drivefs_running():
             print(f"Google Drive: {wait_uploaded({play: (os.path.basename(folder), len(rom))}, 0, a.wait)}")
         return 0
@@ -443,7 +536,7 @@ def publish(a):
     since = time.time()
     verified = "boots, starts a new game, saves and CONTINUEs in mGBA"
     if loadable:
-        verified += f"; phone save {os.path.basename(loadable)} CONTINUEs"
+        verified += f"; your phone save {shown(loadable, folder)} CONTINUEs"
     if a.full:
         verified += "; the slice playthrough passes"
     entry = {**{k: ident[k] for k in ("version", "commit", "short", "date", "subject", "branch", "dirty")},
@@ -475,7 +568,7 @@ def publish(a):
                    (json.dumps(index, indent=1) + "\n").encode("utf-8"))
     changes, first = changes_since(prev["commit"] if prev else None)
     write_verified(os.path.join(folder, "README.txt"),
-                   readme(entry, index, saves, changes, first).encode("utf-8"))
+                   readme(entry, index, saves, changes, first, folder).encode("utf-8"))
     # 4. a play file from an older save line leaves the top level once its archive holds it
     for old in glob.glob(os.path.join(folder, f"{GAME}_save*.gba")):
         if os.path.basename(old) == play:
@@ -489,6 +582,10 @@ def publish(a):
     if prev and prev["save_layout_version"] != n:
         print(f"SAVE BREAK: save line {prev['save_layout_version']} -> {n}: the phone build has a new name, "
               f"{play}, and starts with a fresh save")
+    elif prev:
+        print(f"Saves carry over: same save line ({n}) and file name as the previous build ({prev['version']})")
+    else:
+        print(f"The first phone build on save line {n}")
     files = {play: (os.path.basename(folder), len(rom)), entry["archive"]: ("builds", len(buf.getvalue()))}
     if not drivefs_running():
         state = "waiting for Google Drive for Desktop to start"
