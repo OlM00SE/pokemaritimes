@@ -16,7 +16,7 @@
   - every planned map's underlay compiles with mapgen's compiler.
 Exit code 1 on any failure.
 """
-import math, os, sys
+import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mapkit import geo, render
 from mapkit.project import Project
@@ -36,10 +36,28 @@ def spec(maps, water=(), road=()):
             "map": maps, "water": list(water), "road": list(road)}
 
 
-def edge_runs(rows, side):
-    col = {"left": [r[0] for r in rows], "right": [r[-1] for r in rows],
-           "up": list(rows[0]), "down": list(rows[-1])}[side]
-    return col
+def thin_cells(cells):
+    """Water cells one tile wide across (land both sides, either axis)."""
+    return [c for c in cells if ((c[0] - 1, c[1]) not in cells and (c[0] + 1, c[1]) not in cells)
+            or ((c[0], c[1] - 1) not in cells and (c[0], c[1] + 1) not in cells)]
+
+
+def connected4(cells):
+    cells = set(cells)
+    if not cells:
+        return True
+    start = next(iter(cells))
+    seen, stack = {start}, [start]
+    while stack:
+        x, y = stack.pop()
+        for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if n in cells and n not in seen:
+                seen.add(n); stack.append(n)
+    return seen == cells
+
+
+def line_plan(water=(), road=(), rect=(0, 0, 24, 16)):
+    return geo.Plan(spec=spec([{"name": "A", "rect": list(rect)}], water, road), geo={"rivers": []})
 
 
 def main():
@@ -84,38 +102,55 @@ def main():
         for ch, kind in (("~", "water"), ("=", "road")):
             ra = corridor.runs([at(under[a], ax, ay, ca) == ch for _, ca, _ in seam])
             rb = corridor.runs([at(under[b], bx, by, cb) == ch for _, _, cb in seam])
-            ok = all(any(r[0] <= o[1] and o[0] <= r[1] for o in rb) for r in ra) and \
-                all(any(r[0] <= o[1] and o[0] <= r[1] for o in ra) for r in rb) and \
-                all(r[1] - r[0] >= 1 for r in ra + rb)
-            check(ok, f"{a}/{b}: {kind} crosses the seam on both sides, 2+ wide ({ra} / {rb})")
-    # a map cut alone agrees with a bigger cut around it
-    for name in ("Route 202", "Nackawic"):
-        x0, y0, w, h = plan.rect(plan.by_name[name])
+            bad = corridor.seam_mismatches(ra, rb)
+            ok = not bad and all(r[1] - r[0] >= 1 for r in ra + rb)
+            check(ok, f"{a}/{b}: {kind} pairs up across the seam within a tile, 2+ wide "
+                      f"({ra} / {rb}){' ' + str(bad) if bad else ''}")
+    # every map cut alone agrees with cuts from larger windows, shifted differently
+    for m in plan.maps:
+        x0, y0, w, h = plan.rect(m)
         alone = plan.clean_water(x0, y0, w, h)
-        big = {c for c in plan.clean_water(x0 - 20, y0 - 20, w + 40, h + 40)
-               if x0 <= c[0] < x0 + w and y0 <= c[1] < y0 + h}
-        check(alone == big, f"{name}: cut alone = cut from a larger area ({len(alone)} water cells)")
+        same = True
+        for dx0, dy0, dx1, dy1 in ((20, 20, 20, 20), (3, 11, 17, 5)):
+            big = plan.clean_water(x0 - dx0, y0 - dy0, w + dx0 + dx1, h + dy0 + dy1)
+            same &= alone == {c for c in big if x0 <= c[0] < x0 + w and y0 <= c[1] < y0 + h}
+        check(same, f"{m['name']}: cut alone = cut from two larger windows ({len(alone)} water cells)")
 
     print("cleanup:")
-    tip = geo.Plan(spec=spec([{"name": "A", "rect": [0, 0, 20, 12]}],
-                             water=[{"name": "w", "world": [[0, 5], [20, 5]], "width": 2}]),
-                   geo={"rivers": []})
-    base = tip.clean_water(0, 0, 20, 12)
-    check(all(sum((x, y) in base for y in range(12)) == 2 for x in range(20)),
+    straight = line_plan([{"name": "w", "world": [[0, 5], [24, 5]], "width": 2}])
+    base = straight.clean_water(0, 0, 24, 16)
+    check(all(sum((x, y) in base for y in range(16)) == 2 for x in range(24)),
           "a straight 2-wide river is left as it is")
-    # a one-tile tip below the river, and a one-tile neck in a second river
-    tip.water[0]["segs"].append((10.5, 6.5, 10.5, 7.5))
-    raw = tip.water_cells(0, 0, 20, 12)
-    cleaned = tip.clean_water(0, 0, 20, 12)
-    thin = [c for c in cleaned if ((c[0] - 1, c[1]) not in cleaned and (c[0] + 1, c[1]) not in cleaned)
-            or ((c[0], c[1] - 1) not in cleaned and (c[0], c[1] + 1) not in cleaned)]
-    check((10, 7) in raw and not thin, f"a one-tile tip is cleaned up (thin cells left: {thin[:4]})")
-    neck = geo.Plan(spec=spec([{"name": "A", "rect": [0, 0, 20, 12]}],
-                              water=[{"name": "w", "world": [[0, 5.5], [20, 5.5]], "width": 1}]),
-                    geo={"rivers": []})
-    nc = neck.clean_water(0, 0, 20, 12)
-    check(all(sum((x, y) in nc for y in range(12)) >= 2 for x in range(20)),
+    tip = line_plan([{"name": "w", "world": [[0, 5], [24, 5]], "width": 2},
+                     {"name": "t", "world": [[10.5, 6.5], [10.5, 7.5]], "width": 1}])
+    raw = tip.water_cells(0, 0, 24, 16)
+    cleaned = tip.clean_water(0, 0, 24, 16)
+    check((10, 7) in raw and not thin_cells(cleaned),
+          f"a one-tile spur is made buildable (thin cells left: {thin_cells(cleaned)[:4]})")
+    neck = line_plan([{"name": "w", "world": [[0, 5.5], [24, 5.5]], "width": 1}])
+    nc = neck.clean_water(0, 0, 24, 16)
+    check(all(sum((x, y) in nc for y in range(16)) >= 2 for x in range(24)) and not thin_cells(nc),
           "a one-tile-wide river is widened to two, all along")
+    # passing through the map, as rivers do (its own ends are well outside)
+    diag = line_plan([{"name": "w", "world": [[-20, -20], [36, 36]], "width": 0.8}], rect=(0, 0, 16, 16))
+    draw = diag.water_cells(0, 0, 16, 16)
+    dc = diag.clean_water(0, 0, 16, 16)
+    around = diag.clean_water(-4, -4, 24, 24)          # judge thinness with the neighbours outside
+    thin = [c for c in thin_cells(around) if 0 <= c[0] < 16 and 0 <= c[1] < 16]
+    check(len(draw) >= 14 and not connected4(draw) and len(dc) >= len(draw) and connected4(dc)
+          and not thin, f"a one-tile diagonal river is kept and joined edge to edge "
+                        f"({len(draw)} cells drawn, {len(dc)} after, thin {thin[:3]})")
+    guarded = line_plan([{"name": "w", "world": [[0, 5.5], [24, 5.5]], "width": 1}],
+                        [{"name": "r", "world": [[0, 4.5], [24, 4.5]], "width": 1},
+                         {"name": "r2", "world": [[0, 6.5], [24, 6.5]], "width": 1}])
+    gr = guarded.clean_water(0, 0, 24, 16)
+    road = set(guarded.road_cells(0, 0, 24, 16))
+    check(not (gr & road), "cleanup never turns road into water (a thin river between two roads)")
+
+    print("seam matching:")
+    check(bool(corridor.seam_mismatches([(0, 5)], [(5, 10)])), "a river jumping sideways at a seam")
+    check(bool(corridor.seam_mismatches([(0, 9)], [(0, 3), (6, 9)])), "a river splitting at a seam")
+    check(not corridor.seam_mismatches([(3, 8)], [(4, 9)]), "a diagonal river's 1-tile shift is fine")
 
     print("the checker catches:")
     def errs(maps, water=()):
@@ -130,6 +165,13 @@ def main():
     stop = errs([{"name": "A", "rect": [0, 0, 10, 10]}, {"name": "B", "rect": [10, 0, 10, 10]}],
                 [{"name": "w", "world": [[0, 5], [9, 5]], "width": 2}])     # ends inside A
     check(any("doesn't continue" in e for e in stop), "a river that stops at a seam")
+    plan2 = geo.Plan(spec=spec([{"name": "A", "rect": [0, 0, 10, 12]}, {"name": "B", "rect": [10, 0, 10, 12]}],
+                               [{"name": "w", "world": [[5, 0], [5, 12]], "width": 4}],
+                               [{"name": "r", "world": [[0, 6], [20, 6]], "width": 2}]),
+                     geo={"rivers": []})
+    errs2, warns2, _ = corridor.check(plan2)
+    check(any("crosses water" in w for w in warns2) and not errs2,
+          f"the road crossing water is flagged as a bridge to design ({warns2[:1]}, errors {errs2[:1]})")
 
     print("underlays compile:")
     kit = corridor.build_kit(p)

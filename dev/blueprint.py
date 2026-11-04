@@ -180,8 +180,8 @@ class Canvas:
         self.text((x + kmlen * self.ppk + 6, y - 6), f"{kmlen} km", f)
 
 
-def draw_maps(cv, project, pos, size, s, t, planned, f, render_tiles=True):
-    """Our maps placed by the fit; rendered maps translucent, planned ones as dashed boxes."""
+def draw_maps(cv, project, pos, size, s, t, f):
+    """The game's maps placed by the fit, rendered translucent."""
     from PIL import Image
     from mapkit import render
     for name, (x, y) in pos.items():
@@ -189,12 +189,7 @@ def draw_maps(cv, project, pos, size, s, t, planned, f, render_tiles=True):
         p0 = cv.p(s * x + t[0], s * y + t[1])
         p1 = cv.p(s * (x + w) + t[0], s * (y + h) + t[1])
         box = tuple(int(round(v)) for v in (*p0, *p1))
-        if name in planned:
-            cv.d.rectangle(box, fill=(255, 255, 255, 70))
-            cv.rect_dashed(box, (230, 140, 0, 255), 3)
-            cv.text((box[0] + 4, box[1] + 3), name, f, (180, 90, 0))
-            continue
-        if render_tiles and box[2] > box[0] and box[3] > box[1]:
+        if box[2] > box[0] and box[3] > box[1]:
             tile = render.render_map(project, name).resize((box[2] - box[0], box[3] - box[1]),
                                                           Image.LANCZOS).convert("RGBA")
             tile.putalpha(150)
@@ -257,7 +252,7 @@ def main():
     cv = Canvas(CORRIDOR, 7.0, 34)
     cv.geography(geo, 5)
     cv.grid(10)
-    draw_maps(cv, project, pos, size, s0, t0, [], f)
+    draw_maps(cv, project, pos, size, s0, t0, f)
     link_lines(cv, rows0)
     for an in anchors:
         if CORRIDOR[0] <= an["lon"] <= CORRIDOR[2] and CORRIDOR[1] <= an["lat"] <= CORRIDOR[3]:

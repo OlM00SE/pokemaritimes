@@ -81,6 +81,7 @@ class Plan:
         """spec: the parsed plan (a dict), instead of reading `path` (tests use it)."""
         spec = spec if spec is not None else load_toml(path)
         self.path = path
+        self._memo = {}                 # rasters by (kind, rect); the plan doesn't change after load
         self.anchors = anchors if anchors is not None else anchors_by_name()
         proj = spec["projection"]
         self.kpt = float(proj["km_per_tile"])
@@ -144,11 +145,17 @@ class Plan:
     def water_cells(self, x0, y0, w, h):
         """{(x, y) world tile: water name} for the rectangle; a cell is water when its centre is
         within half the local width of the line."""
-        return self._cells(self.water, x0, y0, w, h)
+        return self._memo_cells("water", self.water, x0, y0, w, h)
 
     def road_cells(self, x0, y0, w, h):
         """{(x, y) world tile: road name}, the same way (a 2-wide road covers 2 cells across)."""
-        return self._cells(self.roads, x0, y0, w, h)
+        return self._memo_cells("road", self.roads, x0, y0, w, h)
+
+    def _memo_cells(self, kind, features, x0, y0, w, h):
+        key = (kind, x0, y0, w, h)
+        if key not in self._memo:
+            self._memo[key] = self._cells(features, x0, y0, w, h)
+        return self._memo[key]
 
     def _cells(self, features, x0, y0, w, h):
         out = {}
@@ -211,36 +218,61 @@ class Plan:
                     out.append((a["name"], d, b["name"], off, shared))
         return out
 
-    MARGIN = 8              # cleanup looks this far past a map's edge, so neighbours agree
-    CLEAN_ROUNDS = 4        # < MARGIN: a change can't travel from outside the margin to the map
+    # Cleanup rounds are synchronous: every decision reads the previous round's water, and a
+    # decision at a cell reads its 8 neighbours and changes at most a 4-neighbour. So a change
+    # (including the false ones at the window's edge, where the outside is cut off) travels at
+    # most 2 tiles per round: after CLEAN_ROUNDS it is within 2 * CLEAN_ROUNDS - 1 of where it
+    # started, and MARGIN keeps that outside the map. Two maps cut with different windows
+    # therefore agree on every cell they show.
+    CLEAN_ROUNDS = 6
+    MARGIN = 2 * CLEAN_ROUNDS + 1
 
     def clean_water(self, x0, y0, w, h):
-        """Water cells of the rectangle, made buildable: a cell one tile wide across (land on both
-        sides, left/right or up/down) is widened (toward the right or down, or the other way if
-        that's road); a cell with no water neighbour at all goes. Never erode a thin cell with a
-        neighbour: on a one-tile river that would eat the river from its end, cell by cell.
-        Computed on the rectangle plus MARGIN and cut, so two maps agree along a shared edge."""
+        """Water cells of the rectangle, made buildable (the shore pieces need water at least two
+        wide). A cell one tile wide across (land on both sides, left/right or up/down) is widened:
+        toward the right or down, else the other way. A cell joined to the water only diagonally
+        gets the cell that joins it edge to edge. A cell with no water among its 8 neighbours goes.
+        Water never takes a road cell; if both choices are road, the thin cell goes (the road
+        crosses there: a bridge is the map's design). A thin cell with a neighbour is never
+        eroded: on a one-tile river that would eat the river from its end."""
+        key = ("clean", x0, y0, w, h)
+        if key in self._memo:
+            return self._memo[key]
         X0, Y0, W, H = x0 - self.MARGIN, y0 - self.MARGIN, w + 2 * self.MARGIN, h + 2 * self.MARGIN
         water = set(self.water_cells(X0, Y0, W, H))
         road = set(self.road_cells(X0, Y0, W, H))
         for _ in range(self.CLEAN_ROUNDS):
-            changed = False
+            add, drop = set(), set()
             for (x, y) in sorted(water):
-                if (x, y) not in water:
+                thin = [(a, b) for a, b in (((x - 1, y), (x + 1, y)), ((x, y - 1), (x, y + 1)))
+                        if a not in water and b not in water]
+                if not thin:
                     continue
-                for (ax, ay), (bx, by) in (((x - 1, y), (x + 1, y)), ((x, y - 1), (x, y + 1))):
-                    if (ax, ay) in water or (bx, by) in water:
+                if not any((x + dx, y + dy) in water for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))):
+                    diag = [(dx, dy) for dy in (-1, 1) for dx in (-1, 1) if (x + dx, y + dy) in water]
+                    if not diag:
+                        drop.add((x, y))
                         continue
-                    n = sum(c in water for c in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)))
-                    if n == 0:
-                        water.discard((x, y))
-                    else:
-                        water.add((bx, by) if (bx, by) not in road else (ax, ay))
-                    changed = True
-                    break
-            if not changed:
+                    dx, dy = diag[0]
+                    choices = [(x + dx, y), (x, y + dy)]
+                else:
+                    a, b = thin[0]
+                    choices = [b, a]
+                pick = next((c for c in choices if c not in road), None)
+                if pick is None:
+                    drop.add((x, y))
+                else:
+                    add.add(pick)
+            if not add and not drop:
                 break
-        return {c for c in water if x0 <= c[0] < x0 + w and y0 <= c[1] < y0 + h}
+            water = (water - drop) | add
+        out = {c for c in water if x0 <= c[0] < x0 + w and y0 <= c[1] < y0 + h}
+        self._memo[key] = out
+        return out
+
+    def road_on_land(self, x0, y0, w, h):
+        """The road cells the underlay draws: the road minus the (cleaned) water."""
+        return set(self.road_cells(x0, y0, w, h)) - self.clean_water(x0, y0, w, h)
 
     def underlay(self, name):
         """The map's rows as sketch characters: '~' water, '=' the road, '.' everything else.

@@ -8,23 +8,30 @@
                                              # them, grass ('.') elsewhere
   python dev/corridor.py compile ["Route 202"]
                                              # does each underlay build with mapgen's compiler?
-                                             # (a blank in-memory layout; nothing is written)
+                                             # (a blank in-memory layout of the planned size;
+                                             # nothing is written. A reused folder of another
+                                             # size must be resized before building in place:
+                                             # `check` lists the sizes.)
 
 The plan is design/region/corridor.toml (world tiles at one km-per-tile scale, origin on an anchor
 place). Connections are derived from the rectangles: two maps join where their edges touch.
 check exits 1 on an ERROR:
   - maps that overlap, a map nobody can reach, a map over the engine's size limit
     ((w + 15) * (h + 14) <= 10240, fieldmap.c);
-  - a river or road that reaches a seam on one side and not the other;
+  - a river or road whose runs along a seam don't pair up one to one between the two maps,
+    with each pair's ends within a tile (it would stop, split or jump sideways at the seam);
   - water at a seam narrower than 2 tiles (shores need 2), or the road at a seam narrower than 2.
-WARN: water or road touching the end of a seam (the neighbour's land beyond won't match), the
-road meeting a map edge with no neighbour or outside the joined stretch.
+Water and road are judged as the underlays draw them (cleaned water; road only where it isn't
+water). WARN: water or road touching the end of a seam (the neighbour's land beyond won't
+match), the road meeting a map edge with no neighbour or outside the joined stretch, the road
+with no verge from water, the road crossing water (a bridge for the map's design).
+With the game (the default) it also lists each reused folder's size against the plan's.
 It also lists the joins that differ from the game's current connections: the changes the plan
 asks for, made as each map is built.
 """
 import argparse, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mapkit.geo import Plan, ROOT, OPPOSITE, lonlat
+from mapkit.geo import Plan, ROOT, EDGES, lonlat
 
 OUT = os.path.join(ROOT, "dev", "out")
 MAX_MAP_DATA = 10240                     # include/fieldmap.h; checked as (w + 15) * (h + 14)
@@ -55,6 +62,28 @@ def seam_cells(plan, a, d, b):
     return [(t, (t, ea), (t, eb)) for t in range(lo, hi)]
 
 
+SEAM_SLACK = 1      # tiles: a diagonal river legitimately moves this much between two columns
+
+
+def seam_mismatches(ra, rb):
+    """The two maps' runs (of water or road) along one seam must pair up one to one, each pair's
+    ends within SEAM_SLACK tiles: otherwise the river or road jumps sideways at the connection, or
+    splits, or stops. Returns problem strings (empty when they match)."""
+    out = []
+    for mine, other, side in ((ra, rb, "{a}"), (rb, ra, "{b}")):
+        for r in mine:
+            hits = [o for o in other if r[0] <= o[1] + SEAM_SLACK and o[0] <= r[1] + SEAM_SLACK]
+            span = f"steps {r[0]}..{r[1]}"
+            if not hits:
+                out.append(f"on {side}'s side at {span} doesn't continue across")
+            elif len(hits) > 1:
+                out.append(f"on {side}'s side at {span} meets {len(hits)} runs on the other side")
+            elif abs(hits[0][0] - r[0]) > SEAM_SLACK or abs(hits[0][1] - r[1]) > SEAM_SLACK:
+                out.append(f"on {side}'s side at {span} doesn't line up with steps "
+                           f"{hits[0][0]}..{hits[0][1]} across the seam")
+    return list(dict.fromkeys(out))
+
+
 def check(plan, project=None):
     """Returns (errors, warnings, report lines)."""
     errors, warns, lines = [], [], []
@@ -77,24 +106,27 @@ def check(plan, project=None):
         if m["name"] not in seen:
             errors.append(f"{m['name']} can't be reached from {plan.maps[0]['name']}")
 
-    # cells of every map, once
+    # cells of every map as its underlay draws them: cleaned water, and the road where it isn't
+    # water
     cells = {}
     for m in plan.maps:
         x0, y0, w, h = plan.rect(m)
-        cells[m["name"]] = (plan.clean_water(x0, y0, w, h), plan.road_cells(x0, y0, w, h))
-    raw = {}
-    for m in plan.maps:
-        raw.update(plan.water_cells(*plan.rect(m)))
-    water = {c: raw.get(c, "water") for wc, _ in cells.values() for c in wc}
+        cells[m["name"]] = (plan.clean_water(x0, y0, w, h), plan.road_on_land(x0, y0, w, h))
+    water = {c for wc, _ in cells.values() for c in wc}
     road = {c for _, rc in cells.values() for c in rc}
-    # road against water with no verge: the grammar gives water a grass margin, which would eat
-    # the road there (a crossing is a bridge, the map's own design)
     for name, (wc, rc) in cells.items():
-        touch = sorted(c for c in rc if c not in wc and any(
+        # road against water with no verge: the grammar gives water a grass margin, which would
+        # eat the road there
+        touch = sorted(c for c in rc if any(
             (c[0] + dx, c[1] + dy) in wc for dx in (-1, 0, 1) for dy in (-1, 0, 1)))
         if touch:
             warns.append(f"{name}: the road touches water with no verge at {len(touch)} cells, "
                          f"e.g. {touch[:3]}")
+        # the drawn road crossing water: the map's design must bridge it
+        wet = sorted(set(plan.road_cells(*plan.rect(plan.by_name[name]))) & wc)
+        if wet:
+            warns.append(f"{name}: the road crosses water at {len(wet)} cells, e.g. {wet[:3]} "
+                         "(a bridge for the map's design)")
 
     lines.append("Connections (derived from the rectangles):")
     for a, d, b, off, shared in conns:
@@ -108,11 +140,10 @@ def check(plan, project=None):
             coord = lambda r: f"{seam[r[0]][0]}..{seam[r[1]][0]}"
             if ra or rb:
                 lines.append(f"      {kind}: {a} {[coord(r) for r in ra]}, {b} {[coord(r) for r in rb]}")
-            for side, mine, other in ((a, ra, rb), (b, rb, ra)):
+            for problem in seam_mismatches(ra, rb):
+                errors.append(f"{a}/{b} seam: {kind} " + problem.format(a=a, b=b))
+            for side, mine in ((a, ra), (b, rb)):
                 for r in mine:
-                    if not any(r[0] <= o[1] and o[0] <= r[1] for o in other):
-                        errors.append(f"{a}/{b} seam: {kind} at {coord(r)} on {side}'s side "
-                                      "doesn't continue across")
                     if r[1] - r[0] + 1 < 2:
                         errors.append(f"{a}/{b} seam: {kind} at {coord(r)} on {side}'s side is "
                                       "1 tile wide (needs 2)")
@@ -158,7 +189,7 @@ def check(plan, project=None):
                 and plan.rect(m)[1] <= c[1] < plan.rect(m)[1] + plan.rect(m)[3]]
         if host:
             lines.append(f"  {name:<14} world ({wx:6.1f}, {wy:6.1f}) in {host[0]}"
-                         + (f", in the drawn {water[c]} (the design puts it on the bank)"
+                         + (", in the drawn water (the design puts it on the bank)"
                             if c in water else ""))
     # against the game as it is
     if project is not None:
@@ -170,7 +201,7 @@ def check(plan, project=None):
         for f in folder.values():
             for c in project.load_map(f).connections:
                 other = project.const_to_map.get(c["map"])
-                if other in folder.values():
+                if other in folder.values() and c["direction"] in EDGES:   # not dive/emerge
                     current.add((f, c["direction"], other, c["offset"]))
         for a, d, b, off in sorted(planned - current):
             lines.append(f"  add    {a} -{d}-> {b} offset {off}")
@@ -179,6 +210,15 @@ def check(plan, project=None):
         news = [m["name"] for m in plan.maps if m.get("map", "new") == "new"]
         if news:
             lines.append(f"  new maps: {', '.join(news)} (their joins come when they're created)")
+        lines.append("Map sizes (a reused folder is resized to the plan when it's rebuilt):")
+        for m in plan.maps:
+            if m.get("map", "new") == "new":
+                continue
+            L = project.load_map(m["map"]).layout
+            w, h = plan.rect(m)[2:]
+            lines.append(f"  {m['map']:<14} {L.width}x{L.height}"
+                         + ("  matches the plan" if (L.width, L.height) == (w, h)
+                            else f"  -> {w}x{h} (resize before building the underlay in place)"))
     return errors, warns, lines
 
 
@@ -217,8 +257,7 @@ def build_kit(project):
 
 
 def render(plan, path):
-    from PIL import Image
-    from blueprint import Canvas, font, STAGE_COLOURS
+    from blueprint import Canvas, font
     from mapkit.geo import load_geo
     geo = load_geo()
     xs = [v for m in plan.maps for v in (plan.rect(m)[0], plan.rect(m)[0] + plan.rect(m)[2])]
@@ -285,6 +324,9 @@ def main():
         render(plan, path)
         print("wrote", os.path.relpath(path, ROOT))
         return 0
+    if a.name is not None and a.name not in plan.by_name:
+        ap.error(f"{a.name!r} isn't a planned map; the plan has: "
+                 + ", ".join(f'"{n}"' for n in plan.by_name))
     if a.cmd == "compile":
         from mapkit.project import Project
         project = Project()
@@ -302,17 +344,32 @@ def main():
                 print(f"{n}: builds; {report.get('shore_tiles', 0)} shore tiles, "
                       f"{len(report.get('grammar_repairs', {}))} grammar repairs")
         return 1 if bad else 0
-    if a.name not in plan.by_name:
-        ap.error(f"underlay needs a planned map: {', '.join(plan.by_name)}")
+    if a.name is None:
+        ap.error("underlay needs a planned map: " + ", ".join(f'"{n}"' for n in plan.by_name))
     m = plan.by_name[a.name]
     rows = plan.underlay(a.name)
     path = a.out or os.path.join(OUT, a.name.replace(" ", "") + "_underlay.txt")
+    # `// map:` makes the sketch buildable with mapgen, which needs the folder at the planned
+    # size; a reused folder that isn't yet is named in a plain comment instead
+    header, note = None, None
+    w, h = plan.rect(m)[2:]
+    if m.get("map", "new") != "new":
+        from mapkit.project import Project
+        L = Project().load_map(m["map"]).layout
+        if (L.width, L.height) == (w, h):
+            header = f"// map: {m['map']}"
+        else:
+            note = (f"// for {m['map']}, which is {L.width}x{L.height}: resize it to {w}x{h} "
+                    "before building this in place")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        if m.get("map", "new") != "new":
-            fh.write(f"// map: {m['map']}\n")
-        fh.write(f"// underlay of {a.name} from design/region/corridor.toml, world rect {m['rect']}\n")
+        for line in (header, note,
+                     f"// underlay of {a.name} from design/region/corridor.toml, world rect {m['rect']}"):
+            if line:
+                fh.write(line + "\n")
         fh.write("\n".join(rows) + "\n")
     print("\n".join(rows))
+    if note:
+        print(note[3:])
     print("wrote", os.path.relpath(path, ROOT))
     return 0
 
