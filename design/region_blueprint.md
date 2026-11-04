@@ -21,7 +21,7 @@
 | `dev/corridor.py check` | Checks the corridor plan (`design/region/corridor.toml`): overlaps, reachability, the engine's map size limit, and every seam: the river and the road must cross it on both sides, at least 2 tiles wide. Lists the joins it derives (map.json offsets) and what changes against the game's current connections. |
 | `dev/corridor.py render` | `dev/out/corridor_plan.png`: the planned maps over real geography, with the river (real data, exaggerated width) and the road drawn at tile resolution. |
 | `dev/corridor.py underlay "<Map>"` | A starter sketch of a planned map: the real river `~` and the road `=` exactly where the plan has them, so every map's design starts on the true geography and its seams already match its neighbours'. Design scripts can call `geo.Plan().underlay(name)` directly. |
-| `dev/corridor.py compile` | Builds every underlay with `mapgen`'s compiler on a blank in-memory layout: the starting point is always buildable. |
+| `dev/corridor.py compile` | Builds every underlay with `mapgen`'s compiler on a blank in-memory layout of the planned size: the starting point is always buildable. A reused folder of another size must be resized first (`check` lists the sizes; all five differ today, so each rebuild starts with a resize). |
 | `dev/blueprint.py` | The whole region: real coastlines, rivers, borders, anchor places, and the corridor plan; plus how the *game's current maps* fit reality (fitted scale, error in km, bearings). |
 | `dev/tests/corridor_plan.py` | The plan's checks: projection, connection math against the game's real map.json, seams, the water cleanup, the checker's errors, every underlay compiles. |
 
@@ -123,7 +123,7 @@ shore, over the **Mactaquac Dam**, and into **Fredericton**, whose downtown is o
 | Woodstock | 48×42 | Woodstock_2 | **The confluence town** on the west bank: the Meduxnekeag comes in from the south-west and meets the Saint John at downtown. Main street by the big river, a bridge over the creek, the wildlife station. North edge: the way to Hartland (later). |
 | Route 202 | 42×36 | Route202_1 | **The river road**: south along the west bank past islands and intervale fields, upland ledges down to the flats; at Meductic the river swings east and the road follows its south bank. |
 | Nackawic | 36×42 | new | **The bridge town**: the road stays on the south bank (Pokiok); a long bridge crosses the widening headpond to Nackawic on the north bank: the mill and the giant axe. |
-| Route 203 | 58×46 | new | **The headpond**: a wide lake, the road on the south shore through mixed woods and old farms, the Kings Landing heritage hamlet, islands for Surf later. Ends past the dam's bend, the gateway to Fredericton. |
+| Route 203 | 62×46 | new | **The headpond**: a wide lake, the road on the south shore through mixed woods and old farms, the Kings Landing heritage hamlet, islands for Surf later. Ends past the dam's bend, the gateway to Fredericton. |
 | Fredericton | 52×60 | Fredericton_0 | **The capital on the river**: downtown on the south bank (the Legislature, Officers' Square, the Green), the walking bridge to the north side, where the Nashwaak comes in. East exit toward Oromocto (later). |
 
 Pacing: start hamlet → first route → river town → river route → a small town with a Pokémon
@@ -141,7 +141,8 @@ that area's turn.
    placed from design scripts with their doors wired (`add_interior.py` already clones interiors).
    Today buildings are only *kept* from hand-painted maps (`#`), so no town can be rebuilt yet.
    A TownLab dev map proves it, like LedgeLab, ShoreLab and GroveLab.
-3. **M15: Woodstock**, the anchor town: the confluence, downtown, the creek bridge (which vanilla
+3. **M15: Woodstock**, the anchor town. First a small `resize_map` step (a layout to the planned
+   size, events kept or reported if they fall outside); every reused folder needs it. Then: the confluence, downtown, the creek bridge (which vanilla
    bridge pieces fit, and how their elevations work, is research for that milestone), the
    station. Its seams move to the plan (Route 201's and Route 202's
    connections are re-offset; until they're rebuilt, the creek meets an old seam, which is
