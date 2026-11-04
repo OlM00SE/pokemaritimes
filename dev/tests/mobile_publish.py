@@ -12,9 +12,11 @@ Uses the ROM already built (run dev/fastbuild.py first) and the real mGBA verifi
      line is reported as that line's; a broken one is reported as WON'T LOAD; neither is booted;
      My Boy!'s Google Drive sync folder (MyBoy/, beside the publish folder) is read, never
      written: its PokeMaritimes saves are backed up into saves/myboy/, the newest is the one
-     booted, another game's save is ignored, and a file no layout reads is "can't check";
+     booted, another game's save and a save state are ignored, a file that isn't a flash image
+     is "can't check", and a damaged flash image is WON'T LOAD;
   3. publishing the same ROM again uploads no ROM, refreshes a README whose text changed, and
-     backs up no save twice.
+     backs up no save twice; a synced save that changes (same timestamp) gets a second backup
+     beside the first, which stays as it was.
 """
 import argparse, glob, hashlib, json, os, shutil, sys, tempfile, time, zipfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -106,6 +108,12 @@ def main():
         open(os.path.join(myboy, "PokeMaritimes_junk.sav"), "wb").write(b"\x55" * 2000)
         os.utime(os.path.join(myboy, "PokeMaritimes_junk.sav"), (0, 0))
         open(os.path.join(myboy, "OtherGame.sav"), "wb").write(b"\x66" * 2000)
+        open(os.path.join(myboy, f"PokeMaritimes_save{n}.ss1"), "wb").write(b"\x77" * 300000)
+        damaged = bytearray(open(game_save, "rb").read())
+        for _, o in savefile.sectors_with_id(damaged, 0):        # SaveBlock2 fails its checksum in both slots
+            damaged[o + 0x100] ^= 0xFF
+        open(os.path.join(myboy, "PokeMaritimes_damaged.sav"), "wb").write(damaged)
+        os.utime(os.path.join(myboy, "PokeMaritimes_damaged.sav"), (1000, 1000))
 
         def tree(d):
             return {os.path.relpath(os.path.join(r, f), d): (os.path.getmtime(os.path.join(r, f)),
@@ -121,14 +129,17 @@ def main():
         check(seen == [synced], "the newest loadable phone save (My Boy!'s synced one) was booted")
         check(tree(os.path.join(tmp, "MyBoy")) == myboy_before, "My Boy!'s sync folder is untouched")
         backups = {sha(open(q, "rb").read()) for q in glob.glob(os.path.join(folder, "saves", "myboy", "*"))}
-        check(backups == {sha(open(synced, "rb").read()), sha(b"\x55" * 2000)},
-              "saves/myboy/ backs up both PokeMaritimes files, not the other game's")
+        check(backups == {sha(open(synced, "rb").read()), sha(b"\x55" * 2000), sha(bytes(damaged))},
+              "saves/myboy/ backs up the PokeMaritimes saves, not the other game's or the save state")
         check(f"MyBoy/save/PokeMaritimes_save{n}.sav" in text, "README: the synced save is listed by its Drive path")
         check("PokeMaritimes_junk.sav" in text and "can't check" in text, "README: an unreadable synced file is 'can't check'")
-        check("OtherGame" not in text, "README: another game's save isn't listed")
+        check("OtherGame" not in text and ".ss1" not in text, "README: another game's save and the state aren't listed")
+        line = next((l for l in text.splitlines() if "PokeMaritimes_damaged.sav" in l), "")
+        check("WON'T LOAD" in line, "README: a damaged synced save is WON'T LOAD, not 'can't check'")
         check("phone.sav" in text and "loads" in text, "README: the phone save loads")
         check("broken.sav" in text and "WON'T LOAD" in text, "README: the broken save won't load")
-        check(f"older save line (a save line {n - 1} save: it plays in {old_play}" in text,
+        line = next((l for l in text.splitlines() if "saves/older.srm" in l), "")
+        check(f"older save line (a save line {n - 1} save: it plays in {old_play}" in line,
               "README: the restamped save (.srm) belongs to the older save line")
         check(len(json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))) == 3,
               "index.json gained the new build")
@@ -144,6 +155,17 @@ def main():
               "a changed README is refreshed for the same build (still announcing its save break)")
         check(sorted(os.listdir(os.path.join(folder, "builds"))) == before, "nothing new was written")
         check(sorted(os.listdir(os.path.join(folder, "saves", "myboy"))) == saved, "no save backed up twice")
+        first = {q: open(os.path.join(folder, "saves", "myboy", q), "rb").read() for q in saved}
+        changed = bytearray(open(synced, "rb").read())
+        changed[-1] ^= 0xFF
+        mtime = os.path.getmtime(synced)
+        open(synced, "wb").write(changed)
+        os.utime(synced, (mtime, mtime))
+        check(mobile.publish(args) == 0, "publish succeeds")
+        now = sorted(os.listdir(os.path.join(folder, "saves", "myboy")))
+        check(len(now) == len(saved) + 1 and all(open(os.path.join(folder, "saves", "myboy", q), "rb").read() == b
+                                                 for q, b in first.items()),
+              "a changed synced save (same timestamp) gets a new backup; the first is untouched")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("PASS" if not failed else f"FAIL: {failed} check(s)")

@@ -32,7 +32,7 @@ save, and CONTINUE to the same spot; the newest phone save in saves/ that this b
 CONTINUEs to the overworld (My Boy!'s synced saves included); with --full, the slice playthrough passes too. Nothing is published
 from a tree with uncommitted changes unless --allow-dirty says so: a build is named by its commit.
 """
-import argparse, ctypes, datetime, glob, hashlib, io, json, os, shutil, sqlite3, string, subprocess
+import argparse, ctypes, datetime, glob, hashlib, io, json, os, shutil, sqlite3, string, struct, subprocess
 import sys, tempfile, time, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mgba_bridge import Emu, REPO, UNTHROTTLED
@@ -44,6 +44,8 @@ OUT = os.path.join(REPO, "dev", "out", "mobile")
 ROM_SRC = os.path.join(REPO, "pokeemerald.gba")
 HISTORY_IN_README = 8
 SYNC_FOLDERS = ("MyBoy", "MyOldBoy")    # My Boy!'s "Sync with Google Drive" folders, in My Drive
+FLASH_SIZE = savefile.NUM_SAVE_SLOTS * savefile.NUM_SECTORS_PER_SLOT * savefile.SECTOR_SIZE \
+    + 4 * savefile.SECTOR_SIZE          # both slots, then Hall of Fame and Trainer Hill sectors: 128 KB
 
 
 # ---------------------------------------------------------------- the build
@@ -160,8 +162,8 @@ def volume_label(root):
 
 def drive_folder():
     """The publish folder: MARITIMES_DRIVE_DIR, or <the Google Drive volume>/My Drive/<FOLDER_NAME>."""
-    if os.environ.get("MARITIMES_DRIVE_DIR"):
-        return os.environ["MARITIMES_DRIVE_DIR"]
+    if os.environ.get("MARITIMES_DRIVE_DIR"):     # My Boy!'s sync folders are looked for beside it
+        return os.path.normpath(os.environ["MARITIMES_DRIVE_DIR"])
     for letter in string.ascii_uppercase:
         root = f"{letter}:\\"
         if os.path.isdir(os.path.join(root, "My Drive")) and volume_label(root) == "Google Drive":
@@ -271,55 +273,92 @@ def load_index(folder):
 
 
 def synced_saves(folder):
-    """My Boy!'s synced saves for this game: files under <My Drive>/MyBoy (or MyOldBoy) whose names
-    contain the game's name, at most 1 MB. Only read, never written: a change there would sync
-    back to the phone and replace the save My Boy! plays from."""
-    root, out = os.path.dirname(folder), []
+    """(saves, ignored): My Boy!'s synced saves for this game, under <My Drive>/MyBoy (or MyOldBoy):
+    files whose names contain the game's name and that end in .sav/.srm or are the size of a
+    flash image (128 KB, plus up to 1 KB of clock data). Other files with the game's name (save
+    states, say) are counted in `ignored`. Only read, never written: a change there would sync
+    back to the phone and replace the save My Boy! plays from. A file that vanishes mid-scan (a
+    sync in progress) is skipped."""
+    root, saves, ignored = os.path.dirname(folder), [], []
     for sync in SYNC_FOLDERS:
         for dirpath, _, names in os.walk(os.path.join(root, sync)):
             for name in names:
+                if GAME.lower() not in name.lower():
+                    continue
                 p = os.path.join(dirpath, name)
-                if GAME.lower() in name.lower() and os.path.getsize(p) <= 1 << 20:
-                    out.append(p)
-    return out
+                try:
+                    size = os.path.getsize(p)
+                except OSError:
+                    continue
+                if name.lower().endswith((".sav", ".srm")) or FLASH_SIZE <= size <= FLASH_SIZE + 1024:
+                    saves.append(p)
+                else:
+                    ignored.append(p)
+    return saves, ignored
 
 
-def back_up_synced(folder):
-    """Copy each synced save whose content isn't backed up yet into saves/myboy/ as
-    <its time>_<its name>. Returns the backups written."""
+def back_up_synced(folder, synced):
+    """Copy each synced save whose content differs from its newest backup into saves/myboy/ as
+    <its time>_<its name> (never over another backup). Returns the backups written. Only the
+    newest backup of each name is read, so the cost doesn't grow with the history."""
     dest = os.path.join(folder, "saves", "myboy")
-    have = {sha256(open(p, "rb").read()) for p in glob.glob(os.path.join(dest, "*")) if os.path.isfile(p)}
     written = []
-    for p in synced_saves(folder):
-        data = open(p, "rb").read()
-        if sha256(data) in have:
+    for p in synced:
+        try:
+            data, mtime = open(p, "rb").read(), os.path.getmtime(p)
+        except OSError:
+            continue
+        name = os.path.basename(p)
+        previous = sorted(glob.glob(os.path.join(dest, "*_" + glob.escape(name))))
+        if previous and open(previous[-1], "rb").read() == data:
             continue
         os.makedirs(dest, exist_ok=True)
-        when = datetime.datetime.fromtimestamp(os.path.getmtime(p))
-        out = os.path.join(dest, f"{when:%Y-%m-%d_%H%M%S}_{os.path.basename(p)}")
+        stem = os.path.join(dest, f"{datetime.datetime.fromtimestamp(mtime):%Y-%m-%d_%H%M%S}")
+        out, k = f"{stem}_{name}", 1
+        while os.path.exists(out):
+            k += 1
+            out = f"{stem}-{k}_{name}"
         write_verified(out, data)
-        have.add(sha256(data))
         written.append(out)
     return written
 
 
-def phone_saves(folder, index):
+def looks_like_image(path):
+    """A flash image as the game writes it: full size, with at least one signed sector. A synced
+    file that isn't one may be My Boy!'s own format (undocumented), so it can't be judged."""
+    try:
+        buf = open(path, "rb").read()
+    except OSError:
+        return False
+    return len(buf) >= FLASH_SIZE and any(
+        struct.unpack_from("<I", buf, i * savefile.SECTOR_SIZE + savefile.SIGNATURE_OFF)[0] == savefile.SECTOR_SIGNATURE
+        for i in range(savefile.NUM_SECTORS_PER_SLOT * savefile.NUM_SAVE_SLOTS))
+
+
+def phone_saves(folder, index, synced):
     """[(path, verdict, why)] for My Boy!'s synced saves and for saves/*.sav and *.srm (uploaded by
     hand; .srm is RetroArch's and Lemuroid's), newest first, judged for this build's layout. All
     are the 128 KB flash image, maybe with a clock block after it.
     A save this build can't read is tried against the older save lines published (their layouts
     are in the index): verdict 'older', with the play file that reads it. A synced file that
-    no layout reads is 'unknown': My Boy!'s sync format isn't documented, so it may not be the
-    raw image."""
+    isn't a flash image at all is 'unknown' (My Boy!'s sync format isn't documented); one that is,
+    but fails its checks, is 'stale' like any other: a damaged save must say so."""
     rec = save_layout.recorded()
     older = {}
     for e in index:
         if e.get("layout") and e["layout"]["SAVE_LAYOUT_STAMP"] != rec["SAVE_LAYOUT_STAMP"]:
             older[e["layout"]["SAVE_LAYOUT_STAMP"]] = e
-    synced = synced_saves(folder)
-    found = synced + [p for ext in ("*.sav", "*.srm") for p in glob.glob(os.path.join(folder, "saves", ext))]
+    found = []
+    for p in synced + [p for ext in ("*.sav", "*.srm") for p in glob.glob(os.path.join(folder, "saves", ext))]:
+        try:
+            found.append((os.path.getmtime(p), p))
+        except OSError:
+            continue
     out = []
-    for p in sorted(found, key=os.path.getmtime, reverse=True):
+    for _, p in sorted(found, reverse=True):
+        if p in synced and not looks_like_image(p):
+            out.append((p, "unknown", "not a raw flash image: My Boy!'s sync may store saves another way"))
+            continue
         verdict, why = savefile.check(p, rec)
         if verdict == "stale":
             for e in older.values():
@@ -327,9 +366,6 @@ def phone_saves(folder, index):
                     verdict, why = "older", (f"a save line {e['save_layout_version']} save: it plays in "
                                              f"{e['play']}, not in this build")
                     break
-            else:
-                if p in synced:
-                    verdict, why = "unknown", f"not a save image this tool can read ({why})"
         out.append((p, verdict, why))
     return out
 
@@ -340,6 +376,11 @@ def shown(p, folder):
 
 
 # ---------------------------------------------------------------- the README on Drive
+def has_commit(commit):
+    return subprocess.run(["git", "-C", REPO, "cat-file", "-e", f"{commit}^{{commit}}"],
+                          capture_output=True).returncode == 0
+
+
 def changes_since(prev_commit, upto="HEAD"):
     if prev_commit and subprocess.run(["git", "-C", REPO, "merge-base", "--is-ancestor", prev_commit,
                                        upto], capture_output=True).returncode == 0:
@@ -352,6 +393,9 @@ def refresh_readme(folder, index, saves):
     """Rewrite README.txt for the latest build if its text changed (new instructions or save
     checks); the ROM and the archive stay as they are. True if it was rewritten."""
     entry = index[-1]
+    if not has_commit(entry["commit"]):
+        print(f"README.txt kept: commit {entry['short']} isn't in this checkout, so its change list can't be rebuilt")
+        return False
     prev = index[-2]["commit"] if len(index) > 1 else None
     text = readme(entry, index, saves, *changes_since(prev, entry["commit"]), folder).encode("utf-8")
     path = os.path.join(folder, "README.txt")
@@ -389,7 +433,7 @@ def readme(entry, index, saves, changes, first, folder):
     L += [""]
     if saves:
         L += ["Phone saves found, checked against this build:"]
-        for p, verdict, why in saves[:6]:
+        for p, verdict, why in saves[:10]:
             when = datetime.datetime.fromtimestamp(os.path.getmtime(p))
             label = {"ok": "loads", "warn": "loads (one slot damaged)", "none": "empty",
                      "older": "older save line", "unknown": "can't check"}.get(verdict, "WON'T LOAD")
@@ -467,9 +511,11 @@ def status():
               f"{'uploaded' if (uploaded(files, 0) or set()) >= set(files) else 'not confirmed uploaded'}")
     rec = save_layout.recorded()
     print(f"this checkout's save line: {rec['SAVE_LAYOUT_VERSION']}")
-    synced = synced_saves(folder)
+    synced, ignored = synced_saves(folder)
     print(f"My Boy! synced saves (My Drive/MyBoy): {len(synced) or 'none (is Sync with Google Drive on?)'}")
-    for p, verdict, why in phone_saves(folder, index) if os.path.isdir(folder) else []:
+    for p in ignored:
+        print(f"  ignored (not a save image by name or size): {shown(p, folder)} ({os.path.getsize(p)} bytes)")
+    for p, verdict, why in phone_saves(folder, index, synced) if os.path.isdir(folder) else []:
         print(f"  {shown(p, folder)}: {verdict}: {why}")
     return 0
 
@@ -500,10 +546,12 @@ def publish(a):
             folder = None
     else:
         folder = drive_folder()
-        for p in back_up_synced(folder):
+    synced = synced_saves(folder)[0] if folder else []
+    if not a.check:
+        for p in back_up_synced(folder, synced):
             print(f"backed up My Boy!'s save: {shown(p, folder)}")
     index = load_index(folder) if folder and os.path.isdir(folder) else []
-    saves = phone_saves(folder, index) if folder and os.path.isdir(folder) else []
+    saves = phone_saves(folder, index, synced) if folder and os.path.isdir(folder) else []
     # only a clean save is booted: one with a damaged slot shows a message first (the game then
     # loads the other slot), and booting through that would prove little
     loadable = next((p for p, verdict, _ in saves if verdict == "ok"), None)
@@ -566,9 +614,7 @@ def publish(a):
     index.append(entry)
     write_verified(os.path.join(folder, "builds", "index.json"),
                    (json.dumps(index, indent=1) + "\n").encode("utf-8"))
-    changes, first = changes_since(prev["commit"] if prev else None)
-    write_verified(os.path.join(folder, "README.txt"),
-                   readme(entry, index, saves, changes, first, folder).encode("utf-8"))
+    refresh_readme(folder, index, saves)
     # 4. a play file from an older save line leaves the top level once its archive holds it
     for old in glob.glob(os.path.join(folder, f"{GAME}_save*.gba")):
         if os.path.basename(old) == play:
