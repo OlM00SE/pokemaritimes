@@ -19,13 +19,34 @@
   - **Cleanup:** the README was built in two places, and `MyBoy/` was walked several times per run.
   - **Test:** the `older.srm` check had lost its file.
 
+**Downloading on the phone, fixed** (branch `mobile-zip`, merged). Tom reported that the Drive app's ⋮ menu on `PokeMaritimes_save2.gba` had no Download item.
+- **Diagnosis:**
+  - **The upload and permissions are fine.** Drive for Desktop's own record of the file has the same owner capabilities as the README and the archive; the only differences are the type (`application/octet-stream` vs `text/plain`/`application/zip`) and size. The file was uploaded and hash-verified.
+  - **The file is private.** Requested without a sign-in, its download URL returns Google's sign-in page, which also settles the privacy check that couldn't be done in Chrome.
+  - **Likely cause:** Google's help page for Android says *"When Data Saver is turned on in your network settings, the download option isn't available."* That's a phone setting, which nothing here can verify.
+- **The fix, in the workflow, so it doesn't depend on that menu:**
+  - The play file is now **`PokeMaritimes_save<N>.zip`** (only the ROM inside, 13 MB instead of 32, `application/zip`). My Boy!'s FAQ: "In case of .zip, My Boy! will load the first recognized file in the archive". The ZIP is deterministic, and the verification boots the ZIP itself in mGBA.
+  - `README.txt` and the tool's output carry a **direct download link**, `https://drive.usercontent.google.com/download?id=<cloud id>&export=download`, built from the file's cloud id once Drive has uploaded it. It opens in Chrome, not the Drive app, and works only when signed in to Tom's account. `--status` prints it too.
+  - The README explains Data Saver and says not to unzip. The loose `.gba` from before was retired from the top level; `builds/` still has it.
+- `tests/mobile_publish.py` 53/53, twice. Starting from the folder as it was before the ZIPs, the same ROM is repackaged (no duplicate archive or entry) and the loose `.gba` retired. The ZIP holds only the ROM byte for byte; the verification boots it, saves, and CONTINUEs at the same spot, and the phone save is CONTINUEd from the ZIP. There's no link until Drive has uploaded the file.
+- `/code-review medium mobile-zip` raised 10 findings, all fixed:
+  - **The phone save** was CONTINUEd through the loose `.gba`, not the ZIP the phone opens (now the ZIP, which also saves and CONTINUEs in its own check).
+  - **The link:**
+    - It could be written while an overwritten ZIP, which keeps its id, was still uploading. It now waits for the measured upload signals.
+    - A copy in a trashed folder could be picked up.
+    - The README kept its placeholder after a timeout (`--status` now refreshes it).
+    - Pending uploads were matched by substring, and `name.zip.partial` contains `name.zip`. They're now matched by the length-prefixed name.
+  - **Packaging:** the same ROM would have been archived twice; the play ZIP's bytes depended on the platform.
+  - **README text:** the README named `(1).gba` and a hard-coded `save2` ROM.
+  - **Efficiency:** the README was rebuilt and the Drive database copied several times per run (now once, in `finish()`).
+
 **How it works** (`dev/mobile.py`; manual: `dev/README.md`, "Play on the phone"):
 | Step | What |
 |---|---|
 | Upload route | Google Drive for Desktop is installed and signed in (the `G:` volume): the tool copies into `G:\My Drive\PokeMaritimes playtest\` and Drive uploads it. Weighed and not chosen: the claude.ai Drive connector (needs Tom to sign in each session, isn't scriptable, and isn't suited to 32 MB binaries), and rclone or the Drive API (an OAuth client and a token to keep safe, for nothing the synced folder doesn't already do). |
 | Private | The folder is created in My Drive's root, so only Tom's account can see it until someone shares it by hand. The tool never shares anything, and holds no credentials: Drive for Desktop's own sign-in does the upload. Nothing it writes is inside the repo. |
 | Verified | Header (game code BPEE, which phone emulators use to pick 128 KB flash and the clock; complement check). In mGBA, on the exact bytes uploaded: a new game reaches the overworld, saves, `savefile.py` reads the save as loadable, and after a power cycle CONTINUE lands on the same spot; the newest loadable phone save in `saves/` CONTINUEs too. `--full` adds the slice playthrough. A tree with uncommitted changes is refused: a build is named by its commit. |
-| Save compatibility | The play file is `PokeMaritimes_save<N>.gba`, N = `SAVE_LAYOUT_VERSION`. Phone emulators find a save by the ROM's file name, so replacing the file within a save line keeps the save; a save break gives the new build a new name and a fresh save, and the old save stays with the old file, untouched (the phone's version of `play.py` setting stale saves aside). The README announces a save break in a banner, and lists each save in `saves/` as loads / won't load. |
+| Save compatibility | The play file is `PokeMaritimes_save<N>.zip` (a `.gba` until `mobile-zip`), N = `SAVE_LAYOUT_VERSION`. Phone emulators find a save by the ROM's file name, so replacing the file within a save line keeps the save; a save break gives the new build a new name and a fresh save, and the old save stays with the old file, untouched (the phone's version of `play.py` setting stale saves aside). The README announces a save break in a banner, and lists each save in `saves/` as loads / won't load. |
 | History | `builds/PokeMaritimes_<date>_<commit>_save<N>.zip` (13 MB: the ROM under its play name, and `build.txt` with the commit and sha256), `builds/index.json`. Publishing a ROM that's already the phone build uploads nothing. An old play file leaves the top level only once its hash is in the archive (deleting from the Drive volume goes to Drive's trash). |
 | Upload confirmed | Drive for Desktop gives a file a cloud id once it's uploaded; the tool reads that from Drive's local metadata database (a copy of it, read-only; undocumented, so best effort: "unknown" if it can't tell) and waits up to 10 minutes. |
 
@@ -532,7 +553,7 @@ dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
-dev/tests/mobile_publish.py           # 43/43 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
+dev/tests/mobile_publish.py           # 53/53 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
