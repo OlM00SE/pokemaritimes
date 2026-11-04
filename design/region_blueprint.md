@@ -1,77 +1,79 @@
-# PokéMaritimes: regional blueprint (v0.1, 2026-11-04)
+# PokéMaritimes: regional blueprint (v0.2, 2026-11-04)
 
 > Tom's direction (2026-11-04): **follow the real geography of the Maritimes as closely as
 > practical.** Recognizable landmasses, coastlines, rivers and relative locations, with exaggerated
 > terrain and the full range of biomes. *Geography guides the world; gameplay guides the details.*
 > The frame takes in New Brunswick, Nova Scotia, PEI, Cape Breton, the Gaspé, Anticosti and the
-> Gulf of St. Lawrence. Development stays in the western NB corridor (HomeTown → Woodstock →
-> Fredericton); everything else here is a blueprint, not a plan of work.
+> Gulf of St. Lawrence.
 >
-> This updates `region_plan.md`'s "real geography is an influence, not a 1:1 copy": geography
-> now comes first, and a departure from it needs a gameplay reason.
+> And, the same day: **the existing maps are prototypes, not commitments.** HomeTown, Woodstock,
+> Fredericton and the routes between them built the tooling; any of them may be redesigned or
+> replaced if the result is better and more geographically true. Claude takes creative ownership
+> of the world-building. Work stays in small, tested milestones, recoverable through git, and
+> focused on the corridor: a rural start west of Woodstock → Woodstock → down the Saint John to
+> Fredericton.
+>
+> This replaces `region_plan.md`'s "real geography is an influence, not a 1:1 copy".
 
-## The tool
-`dev/blueprint.py` draws the real geography (Natural Earth 1:10m, public domain, clipped by
-`dev/geo_extract.py` into `design/region/geo/`) with the anchor places in
-`design/region/anchors.toml`, and measures how our connected maps fit them:
-- `dev/out/blueprint_region.png`: the whole frame, the anchors, a 50 km grid, our maps as boxes.
-- `dev/out/blueprint_corridor.png`: western NB with our maps laid over the real river, as they
-  are now (top) and with the planned maps (`[[plan]]` in `anchors.toml`) inserted (bottom).
-- The report: one scale (km per tile) and an offset fitted to the anchors that have a map, each
-  anchor's error in km, and real vs game bearings between neighbouring anchors.
+## The tools
+| Tool | What it does |
+|---|---|
+| `dev/corridor.py check` | Checks the corridor plan (`design/region/corridor.toml`): overlaps, reachability, the engine's map size limit, and every seam: the river and the road must cross it on both sides, at least 2 tiles wide. Lists the joins it derives (map.json offsets) and what changes against the game's current connections. |
+| `dev/corridor.py render` | `dev/out/corridor_plan.png`: the planned maps over real geography, with the river (real data, exaggerated width) and the road drawn at tile resolution. |
+| `dev/corridor.py underlay "<Map>"` | A starter sketch of a planned map: the real river `~` and the road `=` exactly where the plan has them, so every map's design starts on the true geography and its seams already match its neighbours'. Design scripts can call `geo.Plan().underlay(name)` directly. |
+| `dev/corridor.py compile` | Builds every underlay with `mapgen`'s compiler on a blank in-memory layout: the starting point is always buildable. |
+| `dev/blueprint.py` | The whole region: real coastlines, rivers, borders, anchor places, and the corridor plan; plus how the *game's current maps* fit reality (fitted scale, error in km, bearings). |
+| `dev/tests/corridor_plan.py` | The plan's checks: projection, connection math against the game's real map.json, seams, the water cleanup, the checker's errors, every underlay compiles. |
 
-Use it whenever a map is added or a connection changes: the fit error should not grow without a
-gameplay reason. It reads only data; it changes nothing.
+Data: `design/region/geo/` (Natural Earth 1:10m, public domain, clipped by `dev/geo_extract.py`),
+`design/region/anchors.toml` (real places), `design/region/corridor.toml` (the plan of record).
 
 ## How real geography maps onto Emerald's system
-1. **Topology is exact.** What connects to what, which bank of a river a town stands on, the
-   order of places along a river or coast, and the side a river enters from. Breaking one of these
-   needs Tom's okay.
-2. **Directions are close.** Between neighbouring anchors the game's bearing stays within about
-   30° of the real one. The blueprint report prints it.
-3. **Scale is per section, not global.** Hoenn's own Town Map runs from 20 to 40 tiles per square
-   (Route 103 vs Route 110, measured), so it's a schematic too. Inside a section (western NB, the
-   Fundy coast...) one scale holds so distances feel right; between sections, the empty parts are
-   compressed. The corridor's fitted scale, about **0.6 km per tile**, is the reference for western
-   NB.
-   - At that density the whole frame (about 780 × 810 km) would be some 1,250 tiles across,
-     roughly twice Hoenn. So the outer sections must be coarser, and the Gulf, the central NB
-     barrens and open sea are compressed hardest.
-   - **Start areas are zoomed in.** HomeTown and Route 201 cover about 10 real km in 58 tiles, as
-     Littleroot and Route 101 do. The fit leaves HomeTown out.
-4. **Rivers are continuous and flow the right way.** A river crosses every seam it meets at the
-   same width and position, and the real river's bends survive as the route's shape. The Saint
-   John is the backbone of western NB: wide enough to Surf below Woodstock, a lake at the
-   Mactaquac headpond.
-5. **Coastlines are recognizable at Town Map scale, not tile by tile.** The Bay of Fundy, the
-   Northumberland Strait, PEI's crescent, the Chignecto isthmus and Cape Breton's Bras d'Or read
-   from the shapes of the sections, not from tracing the shore.
-6. **Terrain is exaggerated, never invented against the grain.** NB's rolling hills become ledges
-   and terraces; Mount Carleton, the Chic-Chocs and the Cape Breton Highlands become real
-   mountains; the Fundy cliffs become cliffs. A desert or a volcano would need a gameplay case and
-   a Maritime excuse (the Sable Island dunes, the Magdalen Islands' red cliffs).
-7. **Borders are the edge of the world.** Maine and Québec west of the Gaspé are out of the
-   region: the land there is forest or hills that close the map, never a road.
+1. **One projection per section.** A section (here the western NB corridor) is planned in *world
+   tiles*: one scale, origin on a real place. A map is a rectangle in that frame, so it's also a
+   real-world rectangle; maps join where their edges touch, and the connections and offsets
+   follow from the rectangles. The corridor uses **0.5 km per tile** with Woodstock at (0, 0).
+2. **Rivers come from real data.** The Saint John's centreline (Natural Earth, lightly smoothed)
+   is drawn into every map at an exaggerated width that varies along it: about 6 tiles at
+   Woodstock, 10–11 on the Mactaquac headpond, 7–8 below the dam. Its bends are where they really
+   are. Because all maps are cut from one world raster, a river always crosses a seam at the same
+   place on both sides.
+3. **Insets for the zoomed-in start.** Real Woodstock is only about 10 km from Maine, so the start
+   valley (HomeTown, Route 201) is an *inset*: planned in the same frame but not to scale, with
+   its water (the Meduxnekeag) drawn by hand. Start areas are always zoomed in (Littleroot and
+   Route 101 are too).
+4. **Topology is exact; directions are close.** Which bank a town is on, the order of places along
+   the river, which way the water flows: exact. Bearings between neighbouring places stay within
+   about 30°.
+5. **The road is part of the plan.** A hand-drawn road fixes where the way through crosses each
+   seam, keeps a verge from the water (the compiler's grammar gives water a grass margin), and
+   follows the real highways' banks: the Meduxnekeag's south bank, then the Saint John's west and
+   south banks.
+6. **Exaggerate terrain, don't invent against the grain.** NB's rolling hills become ledges and
+   terraces; Mount Carleton, the Chic-Chocs and the Cape Breton Highlands become real mountains;
+   the Fundy cliffs become cliffs.
+7. **Borders are the edge of the world.** Maine and Québec west of the Gaspé are outside the
+   region: forest or hills close the map there, never a road.
+8. **Scale varies between sections.** Hoenn's own Town Map runs from 20 to 40 tiles per square
+   (Route 103 vs Route 110). At the corridor's density the whole frame (about 780 × 810 km) would
+   be some 1,500 tiles across, so later sections are coarser and the Gulf and the empty interior
+   are compressed hardest.
 
 ## The Town Map: decision deferred
-The frame is about as tall as it is wide, and the GBA Town Map is 28 × 15 squares. Fitted to the
-frame's width (28 km per square), a 28 × 15 map covers only the northern half: the dashed box in
-`blueprint_region.png`. When the Town Map is built (`status.md`, "Later"), the options are:
-- **Squeeze the empty parts:** compress the Gulf and the Gaspé–Anticosti strait north to south,
-  so the land keeps its shape. Recommended: it's what Hoenn's map does with the sea.
-- A taller or scrolling custom map (new art and engine work).
-- Fewer northern areas (drop Anticosti or the north Gaspé shore).
+The frame is about as tall as it is wide; the GBA Town Map is 28 × 15 squares. Fitted to the
+frame's width (28 km per square) it covers only the northern half (the dashed box in
+`blueprint_region.png`). Options when it's built: squeeze the Gulf and the Gaspé–Anticosti strait
+north to south so the land keeps its shape (recommended; it's what Hoenn's map does with the sea),
+a taller or scrolling custom map, or fewer northern areas.
 
-Nothing in the corridor depends on this.
-
-## The region in sections (*all ideas; Tom decides*)
+## The region in sections (*ideas*)
 | Section | Real extent | Biome (exaggerated) | Possible role |
 |---|---|---|---|
-| **Upper Saint John valley** | Woodstock, Hartland, the headpond, Fredericton | River valley, rural woodland, farmland | The opening: the corridor below |
+| **Upper Saint John valley** | The border hills, Woodstock, Hartland, the headpond, Fredericton | Hardwood valleys, river valley, farmland | The opening: the corridor below |
 | Northern highlands | Edmundston, Mount Carleton, the Restigouche | Deep boreal forest, the region's high peaks | Mid-game wilderness, a mountain |
 | Gaspé | Campbellton to Percé, the Chic-Chocs | Sea cliffs, mountains, fishing villages | Late game; Percé Rock as a landmark |
 | Anticosti | The island | Remote limestone island, cliffs, waterfalls | Post-game or legendary island |
-| Acadian coast | Bathurst, Miramichi, Kouchibouguac | Sandy barrier beaches, salt marsh, salmon rivers | Coastal towns, Surf routes |
+| Acadian coast | Bathurst, Miramichi, Kouchibouguac | Barrier beaches, salt marsh, salmon rivers | Coastal towns, Surf routes |
 | Fundy | Saint John, Fundy NP, Hopewell Rocks, Grand Manan | Fog, cliffs, tide flats, sea stacks | Port city, tide mechanics |
 | Moncton and Chignecto | Moncton, the isthmus, Tantramar marshes | Crossroads, marsh | The hinge between NB and NS |
 | PEI | Charlottetown, red cliffs, farmland | Red sand, dunes, farmland | Confederation Bridge or a ferry |
@@ -79,60 +81,77 @@ Nothing in the corridor depends on this.
 | Cape Breton | The Highlands, Bras d'Or, Sydney | Mountains over the sea, a salt-water lake | Endgame |
 | Offshore | Magdalen Islands, Sable Island | Red cliffs, dunes, wild horses | Ferries, post-game |
 
-## The corridor: assessment of the existing maps
-Real geography (anchors in `anchors.toml`):
-- **Woodstock** is on the river's **west bank**, where the Meduxnekeag comes in from the west.
-  The Maine border is only about 10 km west, so "west of Woodstock" is a short strip of hills.
-- **Below Woodstock** the Saint John runs **south** for about 18 km to Meductic, then turns
-  **east** for about 75 km: past Nackawic (the giant axe), along the Mactaquac headpond (wide,
-  lake-like; Kings Landing heritage village on its south shore), over the Mactaquac Dam, and into
-  Fredericton.
-- **Fredericton:** the river flows west to east through the city. The downtown (the Legislature,
-  Officers' Square, the walking bridge) is on the **south bank**; the north side is residential,
-  and the Nashwaak joins there from the north. The road from Woodstock arrives on the south bank.
-- **Upriver**, north of Woodstock, Hartland has the world's longest covered bridge.
+## The corridor: what the prototypes taught
+`dev/blueprint.py` fits the game's current maps to the real places: 38 km off in all, Fredericton
+SE of Woodstock instead of ESE. They got the river's *shape* right (Woodstock on the west bank;
+Route 202 leaving south and turning east; Fredericton's river west to east), but:
+- the river's **75 km east leg** (Meductic, Nackawic, the headpond, Kings Landing, the dam) is
+  missing: Fredericton starts where the river turns;
+- the south leg is drawn long (46 tiles for about 18 km);
+- **the Meduxnekeag isn't there.** Woodstock stands at its mouth, and it's the natural spine for a
+  start valley "west of Woodstock";
+- Fredericton's Legislature-style building is on the north bank; the real downtown is south;
+- none of the towns has the river where the real town has it (Woodstock's downtown is at the
+  confluence; Fredericton spans both banks with a walking bridge).
 
-How our maps fit (`dev/blueprint.py`; the overlay is `blueprint_corridor.png`):
-| Map | What fits | What doesn't |
-|---|---|---|
-| HomeTown_0 | A forest village at the region's western edge, as wanted | It sits north of Route 201, so Woodstock is ESE instead of due east (26° off: within tolerance). Zoomed in, as start areas are. |
-| Route201_1 | A logging road east into Woodstock's west side: right direction, right biome | Nothing. The Meduxnekeag could be its creek one day (an idea). |
-| Woodstock_2 | River on the east side flowing south: **the town is on the west bank**, as in reality | Nothing structural. The pond in the south-west corner is where the Meduxnekeag's mouth would be (an idea; Tom's hand map). |
-| Route202_1 | Leaves Woodstock south along the west bank and turns east with the river: **the right shape** | It's the south leg drawn long (46 tiles for about 18 km), and **the 75 km east leg along the headpond is missing**: the river turns east and Fredericton starts at once. Borrows Route 103's name; no wild Pokémon, people or signs. |
-| Fredericton_0 | River west to east through the middle; one footbridge; the player arrives on the south bank | **The Legislature-style building is on the north bank**; the real downtown is on the south bank. 8 dead doors, no people or signs, borrows Rustboro's name and music. |
-| Route203_1 onward | Leaves Fredericton east along the south bank, toward Oromocto | Out of scope now. |
+So the corridor is **re-planned from the geography up** rather than patched, reusing the map
+folders (their warps, interiors, scripts and tests carry over) and rebuilding their contents.
 
-**In numbers:** fitted to Woodstock and Fredericton, our maps are **38 km** off in all, and
-Fredericton lies **SE** of Woodstock instead of **ESE** (30° off). Inserting one map of about
-60 × 34 tiles for the headpond leg between Route 202 and Fredericton brings it to **12 km** and
-9°, with nothing else moving except the maps east of Fredericton, which shift as a block. The
-plan panel of `blueprint_corridor.png` shows it.
+## The corridor plan (`design/region/corridor.toml`)
+Real geography it rests on: the **Meduxnekeag** rises in the hills on the Maine side and flows
+north-east into **Woodstock**, joining the Saint John at downtown (mouth about 46.148 N,
+67.573 W). Below Woodstock the **Saint John** runs south about 18 km to **Meductic**, then turns
+east for about 75 km: past **Nackawic** on the north bank (linked to the Trans-Canada on the south
+bank by the Hawkshaw Bridge), along the **Mactaquac headpond**, past **Kings Landing** on the south
+shore, over the **Mactaquac Dam**, and into **Fredericton**, whose downtown is on the south bank.
 
-## The corridor blueprint
 ```
-            (Maine border: forested hills close the map)
-HomeTown ─ Route 201 ─ WOODSTOCK ─ (north, later: Hartland covered bridge, potato country)
-                          │
-                       Route 202   south leg along the west bank (exists)
-                          │
-                          └─ Headpond route ─ FREDERICTON ─ Route 203 → Oromocto (exists)
-                             Nackawic, Kings Landing,        south bank: downtown
-                             the Mactaquac Dam               north bank: residential, Nashwaak
+      [HomeTown] ── Route 201 ── [WOODSTOCK] ── (north, later: Hartland, the covered bridge)
+       inset       Meduxnekeag       │
+                   valley (inset) Route 202  the river road south, Meductic bend
+                                     │
+                                     └── [NACKAWIC] ── Route 203 ─────── [FREDERICTON] ── (east, later)
+                                         bridge town    the headpond,      downtown on the
+                                         (north bank)   Kings Landing,     south bank
+                                                        the dam
 ```
-- **Route 202:** keep it. It's Tom's map, it has the right shape, and its south leg is close
-  enough. Later (optional): a Meductic landmark where the river turns.
-- **The headpond route (new, about 60 × 34):** the river widens into the headpond: a wide
-  Surf-able lake to the north, the road along its south shore through woods and old farmland, a
-  Kings Landing-style heritage hamlet (a couple of houses, a mill), and the dam at the east end as
-  the gateway to Fredericton. A small Nackawic-style stop could come later as its own town if the
-  route feels long.
-- **Fredericton:** the city is Tom's hand map. To match reality, the Legislature-style building
-  belongs on the south bank. Options for Tom: swap the halves, or read the north building as
-  something that really is on the north side (the Marysville cotton mill, a big brick mill on the
-  Nashwaak). No change without his okay.
 
-## What this changes in practice
-- New maps are placed from the blueprint: its anchors and section scale first, then the design.
-- The blueprint report is part of a map milestone's verification (fit error, bearings), beside
-  the checker, renders and in-game tests.
-- `region_plan.md` stays the creative brief; this file is the geography.
+| Map | Size | Folder | Design |
+|---|---|---|---|
+| HomeTown | 34×28 | HomeTown_0 | A hamlet in the Meduxnekeag hills against the border; forest closes the west and north. The brook comes down from the hills through the village; a small sawmill yard; the road leaves east. |
+| Route 201 | 52×28 | Route201_1 | The **Meduxnekeag valley**: the creek runs east the whole way, the road on its south bank. Appalachian hardwood forest (the real valley's preserve), a farm clearing, a ledge terrace down to the creek flats, a beaver pond. |
+| Woodstock | 48×42 | Woodstock_2 | **The confluence town** on the west bank: the Meduxnekeag comes in from the south-west and meets the Saint John at downtown. Main street by the big river, a bridge over the creek, the wildlife station. North edge: the way to Hartland (later). |
+| Route 202 | 42×36 | Route202_1 | **The river road**: south along the west bank past islands and intervale fields, upland ledges down to the flats; at Meductic the river swings east and the road follows its south bank. |
+| Nackawic | 36×42 | new | **The bridge town**: the road stays on the south bank (Pokiok); a long bridge crosses the widening headpond to Nackawic on the north bank: the mill and the giant axe. |
+| Route 203 | 58×46 | new | **The headpond**: a wide lake, the road on the south shore through mixed woods and old farms, the Kings Landing heritage hamlet, islands for Surf later. Ends past the dam's bend, the gateway to Fredericton. |
+| Fredericton | 52×60 | Fredericton_0 | **The capital on the river**: downtown on the south bank (the Legislature, Officers' Square, the Green), the walking bridge to the north side, where the Nashwaak comes in. East exit toward Oromocto (later). |
+
+Pacing: start hamlet → first route → river town → river route → a small town with a Pokémon
+Center halfway → a long scenic route → the capital. That's the Littleroot → Rustboro rhythm, laid
+on the real river.
+
+Map names are provisional (the routes may be renumbered). The prototypes east of Fredericton
+(Route203_1, Route203_1_2 and the Hoenn copies Route101_2/102_2) stay attached as they are until
+that area's turn.
+
+## Build order (each a milestone)
+1. **M13: the plan of record and its tools** (this): plan, checks, underlays, tests. No game data
+   changes.
+2. **M14: building stamps.** Towns need houses, a Pokémon Center, a Mart and landmark buildings
+   placed from design scripts with their doors wired (`add_interior.py` already clones interiors).
+   Today buildings are only *kept* from hand-painted maps (`#`), so no town can be rebuilt yet.
+   A TownLab dev map proves it, like LedgeLab, ShoreLab and GroveLab.
+3. **M15: Woodstock**, the anchor town: the confluence, downtown, the creek bridge (which vanilla
+   bridge pieces fit, and how their elevations work, is research for that milestone), the
+   station. Its seams move to the plan (Route 201's and Route 202's
+   connections are re-offset; until they're rebuilt, the creek meets an old seam, which is
+   acceptable for one milestone).
+4. **M16: the start valley**: HomeTown and Route 201 together, along the Meduxnekeag (the starter
+   scene and the events specs move with them).
+5. **M17: Route 202**, **M18: Nackawic** (a long bridge), **M19: Route 203**,
+   **M20: Fredericton.** The dam and the giant axe need custom tiles (Porytiles), so they get
+   stand-ins first.
+
+Every map milestone: start from the underlay, design with the kit, keep the plan's seams,
+`corridor.py check`, the usual three-way verification (checker, renders, in-game), the
+regression set, review, then the phone build.
