@@ -12,7 +12,12 @@
 - **README:** My Boy! setup (Quick load on start off, Sync with Google Drive on, a `Download/PokeMaritimes` game folder), install and update steps, the save break, a Pizza Boy GBA Pro section, and what to do if a save goes wrong. Each build says either SAVES CARRY OVER or SAVE BREAK, and `mobile.py` prints the same.
 - **Phone save backups without uploading by hand:** once sync is on, each run backs up the synced `*PokeMaritimes*` files into `saves/myboy/` (dated, deduplicated by content) and boots the newest readable one in the verification. It never writes into `MyBoy/`. A synced file no layout reads shows as "can't check": the sync format isn't documented. **Pending Tom:** turn sync on, then check that the files in `My Drive/MyBoy` are plain 128 KB `.sav` images (`dev/mobile.py --status`).
 - A run whose ROM is already on Drive still refreshes `README.txt` if its text changed (that's how these instructions reached Drive).
-- `tests/mobile_publish.py` 40/40, twice: a fake `MyBoy/` folder is left byte for byte untouched, its two game files are backed up and another game's isn't, the synced save is the one booted, an unreadable one is "can't check", nothing is backed up twice, and a stale README is refreshed.
+- `tests/mobile_publish.py` 43/43, twice: a fake `MyBoy/` folder is left byte for byte untouched; its game saves are backed up, but another game's save and a save state aren't; the synced save is the one booted; a file that isn't a flash image is "can't check", but a damaged image is WON'T LOAD; nothing is backed up twice; a changed save with the same timestamp gets a second backup beside the first; a stale README is refreshed.
+- `/code-review medium mobile-myboy` raised 10 findings, all fixed:
+  - **Saves:** a damaged synced save read as "can't check" (now only a file that isn't a flash image does). Save states syncing through `MyBoy/` would have been backed up on every change; only `.sav`/`.srm` or flash-image-sized files count now, and `--status` lists the rest. Two backups with the same name could overwrite each other.
+  - **Robustness:** a file vanishing mid-sync crashed the run. Deduplication hashed the whole backup history; it now reads only the newest backup per name. A missing commit could blank the README's change list. A trailing separator in `MARITIMES_DRIVE_DIR` lost the sync folder.
+  - **Cleanup:** the README was built in two places, and `MyBoy/` was walked several times per run.
+  - **Test:** the `older.srm` check had lost its file.
 
 **How it works** (`dev/mobile.py`; manual: `dev/README.md`, "Play on the phone"):
 | Step | What |
@@ -527,7 +532,7 @@ dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
-dev/tests/mobile_publish.py           # 40/40 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
+dev/tests/mobile_publish.py           # 43/43 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
