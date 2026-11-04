@@ -6,28 +6,22 @@
 Reads design/region/geo/maritimes_ne10m.json (Natural Earth, clipped by dev/geo_extract.py) and
 design/region/anchors.toml. Writes:
   dev/out/blueprint_region.png    the whole frame: land, rivers, borders, anchors by stage, a
-                                  50 km grid, and the area a 28x15 Town Map would cover
-  dev/out/blueprint_corridor.png  western NB, HomeTown to Fredericton: our connected maps laid
-                                  over the real river, as they are now (top) and with the
-                                  [[plan]] maps inserted (bottom)
+                                  50 km grid, the area a 28x15 Town Map would cover, and the
+                                  corridor plan's maps (design/region/corridor.toml)
+  dev/out/blueprint_corridor.png  western NB: the game's connected maps as they are, laid over
+                                  the real river at the fitted scale
+The corridor plan itself is checked and drawn by dev/corridor.py.
 
 The fit: every anchor with a `map` pairs the real place (km) with its map's centre (tiles). One
 scale (km per tile) and an offset are fitted by least squares, no rotation, then each anchor's
 error is reported in km along with real and game bearings between neighbouring anchors. Lower
 is closer to the real geography. Anchors with `fit = false` are drawn but not fitted.
 """
-import argparse, json, math, os, sys, tomllib
+import argparse, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mapkit.geo import ROOT, ANCHORS, LAT0, LON_W, km, load_geo, load_toml
 
-ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-GEO = os.path.join(ROOT, "design", "region", "geo", "maritimes_ne10m.json")
-ANCHORS = os.path.join(ROOT, "design", "region", "anchors.toml")
 OUT = os.path.join(ROOT, "dev", "out")
-
-LAT0 = 46.6                                   # projection: equirectangular, true at 46.6 N
-KX = 111.32 * math.cos(math.radians(LAT0))    # km per degree of longitude
-KY = 110.57                                   # km per degree of latitude
-LON_W = -69.4                                 # km origin: the frame's west edge, LAT0
 CORRIDOR = (-67.95, 45.70, -66.35, 46.45)     # lon0, lat0, lon1, lat1
 FIT_START = "HomeTown_0"
 
@@ -35,65 +29,11 @@ SEA, LAND, LAKE, RIVER = (148, 186, 222), (226, 222, 196), (148, 186, 222), (70,
 STAGE_COLOURS = {"built": (200, 40, 40), "corridor": (230, 140, 0), "later": (90, 90, 90)}
 
 
-def km(lon, lat):
-    """Real position in km: x east from LON_W, y south from LAT0 (screen-like)."""
-    return ((lon - LON_W) * KX, (LAT0 - lat) * KY)
-
-
 def load():
-    with open(GEO, encoding="utf-8") as fh:
-        geo = json.load(fh)
-    with open(ANCHORS, "rb") as fh:
-        spec = tomllib.load(fh)
-    return geo, spec.get("anchor", []), spec.get("plan", [])
+    return load_geo(), load_toml(ANCHORS).get("anchor", [])
 
 
 # --- the game's side ------------------------------------------------------------------------
-
-def connection_graph(project, names):
-    """{map: [(neighbour, direction)]} over edge connections among `names`."""
-    g = {n: [] for n in names}
-    for n in names:
-        for c in project.load_map(n).connections:
-            other = project.const_to_map.get(c["map"])
-            if other in g and c["direction"] in ("up", "down", "left", "right"):
-                g[n].append((other, c["direction"]))
-    return g
-
-
-def apply_plan(project, pos, size, plans):
-    """Insert each planned map between two joined maps. Maps on the far side of the join (reached
-    from the second map without crossing back) move by the new map's size along the join.
-    Returns new (pos, size, planned names)."""
-    pos, size, planned = dict(pos), dict(size), []
-    graph = connection_graph(project, list(pos))
-    for p in plans:
-        a, b = p["between"]
-        d = next((dr for o, dr in graph[a] if o == b), None)
-        if d is None:
-            raise SystemExit(f"plan {p['name']!r}: {a} and {b} aren't joined edge to edge")
-        far, queue = {b}, [b]
-        while queue:
-            n = queue.pop()
-            for o, _ in graph[n]:
-                if o not in far and not (n == b and o == a):
-                    far.add(o); queue.append(o)
-        if a in far:
-            raise SystemExit(f"plan {p['name']!r}: {a} is also reachable around the join")
-        w, h = p["width"], p["height"]
-        dx, dy = {"right": (w, 0), "left": (-w, 0), "down": (0, h), "up": (0, -h)}[d]
-        bx, by = pos[b]
-        for n in far:
-            pos[n] = (pos[n][0] + dx, pos[n][1] + dy)
-        # the new map takes the second map's old place, aligned on the join's axis
-        ax, ay = pos[a]
-        aw, ah = size[a]
-        new = {"right": (ax + aw, by), "left": (ax - w, by),
-               "down": (bx, ay + ah), "up": (bx, ay - h)}[d]
-        pos[p["name"]], size[p["name"]] = new, (w, h)
-        planned.append(p["name"])
-    return pos, size, planned
-
 
 def fit(anchors, pos, size):
     """Least-squares km = s * tile + t over anchors with a map. Returns (s, t, rows)."""
@@ -273,19 +213,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--no-render", action="store_true")
     a = ap.parse_args()
-    geo, anchors, plans = load()
+    geo, anchors = load()
     from mapkit.project import Project
     from mapkit import render
+    from mapkit.geo import Plan
     project = Project()
     pos, size = render.world_positions(project, FIT_START)
     s0, t0, rows0 = fit(anchors, pos, size)
-    e0 = report("Now", s0, rows0)
-    ppos, psize, planned = apply_plan(project, pos, size, plans)
-    s1, t1, rows1 = fit(anchors, ppos, psize)
-    e1 = report("With the plan (" + ", ".join(planned) + ")", s1, rows1)
-    print(f"\nfit error: now {e0:.1f} km, with the plan {e1:.1f} km")
+    e0 = report("The game's maps", s0, rows0)
+    print(f"\nfit error: {e0:.1f} km (the corridor plan, dev/corridor.py, is to scale by construction)")
     if a.no_render:
         return
+    plan = Plan(geo=geo)
     from PIL import Image
     os.makedirs(OUT, exist_ok=True)
     f, fb = font(13), font(18)
@@ -301,40 +240,32 @@ def main():
     rc.rect_dashed(box, (0, 0, 0, 150), 2)
     rc.text((box[0] + 6, box[1] + 4), f"Dashed box: what a 28x15 Town Map covers at {sq:.0f} km "
             "per square, fitted to the frame's width", f, (40, 40, 40))
-    for name, (x, y) in ppos.items():
-        w, h = psize[name]
-        b = (*rc.p(s1 * x + t1[0], s1 * y + t1[1]), *rc.p(s1 * (x + w) + t1[0], s1 * (y + h) + t1[1]))
-        rc.d.rectangle(b, outline=(230, 140, 0) if name in planned else (200, 40, 40), width=1)
+    for m in plan.maps:                    # the corridor plan, to scale (insets left out)
+        if m.get("inset"):
+            continue
+        x, y, w, h = plan.rect(m)
+        rc.d.rectangle((*rc.p(*plan.to_km(x, y)), *rc.p(*plan.to_km(x + w, y + h))),
+                       outline=(230, 140, 0), width=1)
     for an in anchors:                     # the corridor's places are too close to label here
         rc.anchor(an, f, label=an.get("stage") == "later" or an["name"] in ("Woodstock", "Fredericton"))
     rc.text((rc.m, 4), "PokéMaritimes blueprint: anchors (red built, orange corridor, grey later); "
-                       "our maps as boxes at the corridor's fit; 50 km grid", fb)
+                       "the corridor plan's maps in orange; 50 km grid", fb)
     rc.scale_bar(100, f)
     rc.img.save(os.path.join(OUT, "blueprint_region.png"))
 
-    # the corridor, now and with the plan
-    panels = []
-    for title, (pp, ps, s, t, rows, pl) in (
-            (f"Now: our maps fitted to the real places ({s0:.2f} km per tile, {e0:.0f} km off in all)",
-             (pos, size, s0, t0, rows0, [])),
-            (f"With the plan: {', '.join(planned)} ({s1:.2f} km per tile, {e1:.0f} km off in all)",
-             (ppos, psize, s1, t1, rows1, planned))):
-        cv = Canvas(CORRIDOR, 7.0, 34)
-        cv.geography(geo, 5)
-        cv.grid(10)
-        draw_maps(cv, project, pp, ps, s, t, pl, f)
-        link_lines(cv, rows)
-        for an in anchors:
-            if CORRIDOR[0] <= an["lon"] <= CORRIDOR[2] and CORRIDOR[1] <= an["lat"] <= CORRIDOR[3]:
-                cv.anchor(an, fb, 6)
-        cv.text((cv.m, 8), title, fb)
-        cv.scale_bar(10, f)
-        panels.append(cv.img)
-    out = Image.new("RGB", (max(p.width for p in panels), sum(p.height for p in panels)), (0, 0, 0))
-    y = 0
-    for p in panels:
-        out.paste(p, (0, y)); y += p.height
-    out.save(os.path.join(OUT, "blueprint_corridor.png"))
+    # the corridor: the game's maps as they are, fitted to the real places
+    cv = Canvas(CORRIDOR, 7.0, 34)
+    cv.geography(geo, 5)
+    cv.grid(10)
+    draw_maps(cv, project, pos, size, s0, t0, [], f)
+    link_lines(cv, rows0)
+    for an in anchors:
+        if CORRIDOR[0] <= an["lon"] <= CORRIDOR[2] and CORRIDOR[1] <= an["lat"] <= CORRIDOR[3]:
+            cv.anchor(an, fb, 6)
+    cv.text((cv.m, 8), f"The game's maps fitted to the real places ({s0:.2f} km per tile, "
+                       f"{e0:.0f} km off in all)", fb)
+    cv.scale_bar(10, f)
+    cv.img.save(os.path.join(OUT, "blueprint_corridor.png"))
     print("wrote dev/out/blueprint_region.png, dev/out/blueprint_corridor.png")
 
 

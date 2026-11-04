@@ -1,0 +1,321 @@
+"""The corridor plan of record: check it, draw it over real geography, and cut map underlays.
+
+  python dev/corridor.py check               # the plan's problems, its connections and seams
+  python dev/corridor.py render              # dev/out/corridor_plan.png
+  python dev/corridor.py underlay "Route 202" [-o file.txt]
+                                             # a starter sketch for one planned map: the real
+                                             # river ('~') and the road ('=') where the plan has
+                                             # them, grass ('.') elsewhere
+  python dev/corridor.py compile ["Route 202"]
+                                             # does each underlay build with mapgen's compiler?
+                                             # (a blank in-memory layout; nothing is written)
+
+The plan is design/region/corridor.toml (world tiles at one km-per-tile scale, origin on an anchor
+place). Connections are derived from the rectangles: two maps join where their edges touch.
+check exits 1 on an ERROR:
+  - maps that overlap, a map nobody can reach, a map over the engine's size limit
+    ((w + 15) * (h + 14) <= 10240, fieldmap.c);
+  - a river or road that reaches a seam on one side and not the other;
+  - water at a seam narrower than 2 tiles (shores need 2), or the road at a seam narrower than 2.
+WARN: water or road touching the end of a seam (the neighbour's land beyond won't match), the
+road meeting a map edge with no neighbour or outside the joined stretch.
+It also lists the joins that differ from the game's current connections: the changes the plan
+asks for, made as each map is built.
+"""
+import argparse, math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mapkit.geo import Plan, ROOT, OPPOSITE, lonlat
+
+OUT = os.path.join(ROOT, "dev", "out")
+MAX_MAP_DATA = 10240                     # include/fieldmap.h; checked as (w + 15) * (h + 14)
+
+
+def runs(flags):
+    """[(start, end)] inclusive runs of True in a list."""
+    out, start = [], None
+    for i, f in enumerate(flags + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            out.append((start, i - 1)); start = None
+    return out
+
+
+def seam_cells(plan, a, d, b):
+    """For the join a -d-> b: the world coordinate along the seam for each shared step, and the
+    two edge cells (a's last row/column, b's first) at each."""
+    ax, ay, aw, ah = plan.rect(plan.by_name[a])
+    bx, by, bw, bh = plan.rect(plan.by_name[b])
+    if d in ("left", "right"):
+        lo, hi = max(ay, by), min(ay + ah, by + bh)
+        ea, eb = (ax + aw - 1, bx) if d == "right" else (ax, bx + bw - 1)
+        return [(t, (ea, t), (eb, t)) for t in range(lo, hi)]
+    lo, hi = max(ax, bx), min(ax + aw, bx + bw)
+    ea, eb = (ay + ah - 1, by) if d == "down" else (ay, by + bh - 1)
+    return [(t, (t, ea), (t, eb)) for t in range(lo, hi)]
+
+
+def check(plan, project=None):
+    """Returns (errors, warnings, report lines)."""
+    errors, warns, lines = [], [], []
+    for a, b in plan.overlaps():
+        errors.append(f"{a} and {b} overlap")
+    for m in plan.maps:
+        x, y, w, h = plan.rect(m)
+        if (w + 15) * (h + 14) > MAX_MAP_DATA:
+            errors.append(f"{m['name']} is {w}x{h}: over the engine's map size limit")
+    conns = plan.connections()
+    graph = {m["name"]: set() for m in plan.maps}
+    for a, d, b, off, shared in conns:
+        graph[a].add(b)
+    seen, stack = {plan.maps[0]["name"]}, [plan.maps[0]["name"]]
+    while stack:
+        for o in graph[stack.pop()]:
+            if o not in seen:
+                seen.add(o); stack.append(o)
+    for m in plan.maps:
+        if m["name"] not in seen:
+            errors.append(f"{m['name']} can't be reached from {plan.maps[0]['name']}")
+
+    # cells of every map, once
+    cells = {}
+    for m in plan.maps:
+        x0, y0, w, h = plan.rect(m)
+        cells[m["name"]] = (plan.clean_water(x0, y0, w, h), plan.road_cells(x0, y0, w, h))
+    raw = {}
+    for m in plan.maps:
+        raw.update(plan.water_cells(*plan.rect(m)))
+    water = {c: raw.get(c, "water") for wc, _ in cells.values() for c in wc}
+    road = {c for _, rc in cells.values() for c in rc}
+    # road against water with no verge: the grammar gives water a grass margin, which would eat
+    # the road there (a crossing is a bridge, the map's own design)
+    for name, (wc, rc) in cells.items():
+        touch = sorted(c for c in rc if c not in wc and any(
+            (c[0] + dx, c[1] + dy) in wc for dx in (-1, 0, 1) for dy in (-1, 0, 1)))
+        if touch:
+            warns.append(f"{name}: the road touches water with no verge at {len(touch)} cells, "
+                         f"e.g. {touch[:3]}")
+
+    lines.append("Connections (derived from the rectangles):")
+    for a, d, b, off, shared in conns:
+        if d not in ("right", "down"):
+            continue                     # each join once; the reverse is implied
+        seam = seam_cells(plan, a, d, b)
+        lines.append(f"  {a} -{d}-> {b}: offset {off}, {shared} tiles shared")
+        for kind, layer in (("water", water), ("road", road)):
+            ra = runs([ca in layer for _, ca, _ in seam])
+            rb = runs([cb in layer for _, _, cb in seam])
+            coord = lambda r: f"{seam[r[0]][0]}..{seam[r[1]][0]}"
+            if ra or rb:
+                lines.append(f"      {kind}: {a} {[coord(r) for r in ra]}, {b} {[coord(r) for r in rb]}")
+            for side, mine, other in ((a, ra, rb), (b, rb, ra)):
+                for r in mine:
+                    if not any(r[0] <= o[1] and o[0] <= r[1] for o in other):
+                        errors.append(f"{a}/{b} seam: {kind} at {coord(r)} on {side}'s side "
+                                      "doesn't continue across")
+                    if r[1] - r[0] + 1 < 2:
+                        errors.append(f"{a}/{b} seam: {kind} at {coord(r)} on {side}'s side is "
+                                      "1 tile wide (needs 2)")
+                    if r[0] == 0 or r[1] == len(seam) - 1:
+                        warns.append(f"{a}/{b} seam: {kind} at {coord(r)} touches the end of the "
+                                     "seam")
+    # the road leaving a map where there's no neighbour
+    for m in plan.maps:
+        x0, y0, w, h = plan.rect(m)
+        rc = cells[m["name"]][1]
+        joined = {d for a, d, b, _, _ in conns if a == m["name"]}
+        edges = {"up": [(x, y0) for x in range(x0, x0 + w)],
+                 "down": [(x, y0 + h - 1) for x in range(x0, x0 + w)],
+                 "left": [(x0, y) for y in range(y0, y0 + h)],
+                 "right": [(x0 + w - 1, y) for y in range(y0, y0 + h)]}
+        for d, edge in edges.items():
+            hits = [c for c in edge if c in rc]
+            if not hits:
+                continue
+            if d not in joined:
+                warns.append(f"{m['name']}: the road meets the {d} edge at {hits[0]} with no "
+                             "neighbour there")
+                continue
+            # joined on that edge, but is this stretch inside a shared range?
+            shared = {cb for a, dd, b, _, _ in conns if a == m["name"] and dd == d
+                      for _, cb, _ in seam_cells(plan, a, dd, b)}
+            loose = [c for c in hits if c not in shared]
+            if loose:
+                warns.append(f"{m['name']}: the road meets the {d} edge at {loose[0]}, outside "
+                             "the part joined to a neighbour")
+    # anchors
+    # The river is drawn many times its real width (6-11 tiles = 3-5 km), so a riverside town's
+    # real point often falls in the drawn water: reported, not warned. Anchors not fitted (an
+    # inset's provisional spot) aren't placed.
+    lines.append("Anchor places:")
+    for name, a in plan.anchors.items():
+        if not a.get("fit", True):
+            continue
+        wx, wy = plan.world(a["lon"], a["lat"])
+        c = (math.floor(wx), math.floor(wy))
+        host = [m["name"] for m in plan.maps if not m.get("inset")
+                and plan.rect(m)[0] <= c[0] < plan.rect(m)[0] + plan.rect(m)[2]
+                and plan.rect(m)[1] <= c[1] < plan.rect(m)[1] + plan.rect(m)[3]]
+        if host:
+            lines.append(f"  {name:<14} world ({wx:6.1f}, {wy:6.1f}) in {host[0]}"
+                         + (f", in the drawn {water[c]} (the design puts it on the bank)"
+                            if c in water else ""))
+    # against the game as it is
+    if project is not None:
+        lines.append("Changes to the game's connections the plan asks for:")
+        folder = {m["name"]: m["map"] for m in plan.maps if m.get("map", "new") != "new"}
+        planned = {(folder[a], d, folder[b], off) for a, d, b, off, _ in conns
+                   if a in folder and b in folder}
+        current = set()
+        for f in folder.values():
+            for c in project.load_map(f).connections:
+                other = project.const_to_map.get(c["map"])
+                if other in folder.values():
+                    current.add((f, c["direction"], other, c["offset"]))
+        for a, d, b, off in sorted(planned - current):
+            lines.append(f"  add    {a} -{d}-> {b} offset {off}")
+        for a, d, b, off in sorted(current - planned):
+            lines.append(f"  remove {a} -{d}-> {b} offset {off}")
+        news = [m["name"] for m in plan.maps if m.get("map", "new") == "new"]
+        if news:
+            lines.append(f"  new maps: {', '.join(news)} (their joins come when they're created)")
+    return errors, warns, lines
+
+
+BLANK_LIKE = "Route201_1"               # a General + Petalburg outdoor layout to compile against
+
+
+def compile_underlay(plan, name, project, kit=None):
+    """Compile the map's underlay with mapgen's compiler on a blank in-memory layout of the
+    planned size (nothing is written). Returns (problems, report); problems is [] when it
+    builds. kit: (corpus, vocab, rules, forbidden), shared across maps."""
+    import copy
+    from mapkit.sketch import Sketch, SketchError, compile_sketch
+    from mapkit.layout import pack
+    corpus, vocab, rules, forbidden = kit or build_kit(project)
+    x0, y0, w, h = plan.rect(plan.by_name[name])
+    L = copy.copy(project.load_map(BLANK_LIKE).layout)
+    L.width, L.height = w, h
+    L.blocks = [pack(1, 0, 3)] * (w * h)          # plain grass; only '#' cells would read it
+    sk = Sketch(name, plan.underlay(name))
+    try:
+        _, report = compile_sketch(project, corpus, rules, sk, L, vocab, forbidden, fresh=True)
+    except SketchError as ex:
+        return [(x0 + x, y0 + y, m) for x, y, m in ex.problems], {}
+    return [], report
+
+
+def build_kit(project):
+    from mapkit.corpus import Corpus
+    from mapkit.terrain import Vocabulary
+    from mapgen import vanilla_maps, learn, forbidden_pairs, class_adjacency
+    corpus = Corpus(project)
+    vocab = Vocabulary(project, corpus)
+    entries = vanilla_maps(corpus)
+    return corpus, vocab, learn(project, vocab, entries), \
+        forbidden_pairs(class_adjacency(project, vocab, entries))
+
+
+def render(plan, path):
+    from PIL import Image
+    from blueprint import Canvas, font, STAGE_COLOURS
+    from mapkit.geo import load_geo
+    geo = load_geo()
+    xs = [v for m in plan.maps for v in (plan.rect(m)[0], plan.rect(m)[0] + plan.rect(m)[2])]
+    ys = [v for m in plan.maps for v in (plan.rect(m)[1], plan.rect(m)[1] + plan.rect(m)[3])]
+    (kx0, ky0), (kx1, ky1) = plan.to_km(min(xs) - 6, min(ys) - 6), plan.to_km(max(xs) + 6, max(ys) + 6)
+    lon0, lat1 = lonlat(kx0, ky0)
+    lon1, lat0 = lonlat(kx1, ky1)
+    ppt = 6                                   # pixels per tile
+    cv = Canvas((lon0, lat0, lon1, lat1), ppt / plan.kpt, 34)
+    cv.geography(geo, 3)
+    f, fb = font(13), font(18)
+    tile = lambda x, y: (*cv.p(*plan.to_km(x, y)), *cv.p(*plan.to_km(x + 1, y + 1)))
+    for m in plan.maps:
+        x0, y0, w, h = plan.rect(m)
+        p0, p1 = cv.p(*plan.to_km(x0, y0)), cv.p(*plan.to_km(x0 + w, y0 + h))
+        box = tuple(int(round(v)) for v in (*p0, *p1))
+        cv.d.rectangle(box, fill=(255, 255, 255, 120 if m.get("inset") else 90))
+        for c in plan.road_cells(x0, y0, w, h):
+            cv.d.rectangle(tile(*c), fill=(196, 160, 96, 255))
+        for c in plan.clean_water(x0, y0, w, h):
+            cv.d.rectangle(tile(*c), fill=(60, 110, 210, 255))
+        if m.get("inset"):
+            cv.rect_dashed(box, (120, 60, 160, 255), 2)
+        else:
+            cv.d.rectangle(box, outline=(30, 30, 30, 255), width=2)
+        new = m.get("map", "new") == "new"
+        label = f"{m['name']}  {w}x{h}" + ("  (new)" if new else f"  [{m['map']}]") \
+            + ("  inset: zoomed in" if m.get("inset") else "")
+        cv.text((box[0] + 4, box[1] + 3), label, f, (110, 40, 140) if m.get("inset") else (20, 20, 20))
+    for name, a in plan.anchors.items():
+        wx, wy = plan.world(a["lon"], a["lat"])
+        if a.get("fit", True) and min(xs) - 6 <= wx <= max(xs) + 6 and min(ys) - 6 <= wy <= max(ys) + 6:
+            cv.anchor(a, fb, 5)
+    cv.text((cv.m, 6), f"Corridor plan: {plan.kpt} km per tile; water from real data (inset water "
+                       "drawn by hand), road in tan; the start valley is an inset over the border", fb)
+    cv.scale_bar(10, f)
+    cv.img.save(path)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("cmd", choices=("check", "render", "underlay", "compile"))
+    ap.add_argument("name", nargs="?")
+    ap.add_argument("-o", "--out")
+    ap.add_argument("--no-game", action="store_true", help="check: skip the game comparison")
+    a = ap.parse_args()
+    plan = Plan()
+    os.makedirs(OUT, exist_ok=True)
+    if a.cmd == "check":
+        project = None
+        if not a.no_game:
+            from mapkit.project import Project
+            project = Project()
+        errors, warns, lines = check(plan, project)
+        print("\n".join(lines))
+        for w in warns:
+            print("WARN ", w)
+        for e in errors:
+            print("ERROR", e)
+        print(f"{len(plan.maps)} maps, {len(errors)} errors, {len(warns)} warnings")
+        return 1 if errors else 0
+    if a.cmd == "render":
+        path = a.out or os.path.join(OUT, "corridor_plan.png")
+        render(plan, path)
+        print("wrote", os.path.relpath(path, ROOT))
+        return 0
+    if a.cmd == "compile":
+        from mapkit.project import Project
+        project = Project()
+        kit = build_kit(project)
+        names = [a.name] if a.name else list(plan.by_name)
+        bad = 0
+        for n in names:
+            problems, report = compile_underlay(plan, n, project, kit)
+            if problems:
+                bad += 1
+                print(f"{n}: NOT BUILT, {len(problems)} problem(s) (world x, y):")
+                for x, y, msg in problems[:12]:
+                    print(f"    ({x},{y}) {msg}")
+            else:
+                print(f"{n}: builds; {report.get('shore_tiles', 0)} shore tiles, "
+                      f"{len(report.get('grammar_repairs', {}))} grammar repairs")
+        return 1 if bad else 0
+    if a.name not in plan.by_name:
+        ap.error(f"underlay needs a planned map: {', '.join(plan.by_name)}")
+    m = plan.by_name[a.name]
+    rows = plan.underlay(a.name)
+    path = a.out or os.path.join(OUT, a.name.replace(" ", "") + "_underlay.txt")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        if m.get("map", "new") != "new":
+            fh.write(f"// map: {m['map']}\n")
+        fh.write(f"// underlay of {a.name} from design/region/corridor.toml, world rect {m['rect']}\n")
+        fh.write("\n".join(rows) + "\n")
+    print("\n".join(rows))
+    print("wrote", os.path.relpath(path, ROOT))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
