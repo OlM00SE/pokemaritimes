@@ -6,14 +6,15 @@ Uses the ROM already built (run dev/fastbuild.py first) and the real mGBA verifi
   1. a first publish: the play file is the ROM byte for byte, named for its save line; the archive
      holds the same ROM under that name plus build.txt; index.json and README.txt describe it;
   2. a save break: with a previous build on another save line in the index, the README says SAVE
-     BREAK, the old play file leaves the top level (it's archived), and a stray ROM that isn't
-     archived is kept; the phone save in saves/ (the game's own, from step 1) is checked, reported
-     as loading, and CONTINUEd in mGBA; a broken one is reported as WON'T LOAD and not booted;
+     BREAK, the old play file leaves the top level (an archive in builds/ holds it), and a ROM
+     the index names but no archive holds is kept; the phone save in saves/ (the game's own, from
+     step 1) is reported as loading and CONTINUEd in mGBA; the same save restamped for the older
+     line is reported as that line's; a broken one is reported as WON'T LOAD; neither is booted;
   3. publishing the same ROM again uploads nothing.
 """
 import argparse, glob, hashlib, json, os, shutil, sys, tempfile, zipfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import fastbuild, mobile, save_layout
+import fastbuild, mobile, save_layout, savefile
 
 failed = 0
 
@@ -68,23 +69,44 @@ def main():
         with open(os.path.join(folder, "saves", "broken.sav"), "wb") as f:
             f.write(b"\0" * 1000)
         os.utime(os.path.join(folder, "saves", "broken.sav"), (0, 0))   # older than phone.sav
+        # the previous build, on an older save line (same block sizes, another stamp), archived
         old = b"an older build" * 100
         old_play = f"PokeMaritimes_save{n - 1}.gba"
         open(os.path.join(folder, old_play), "wb").write(old)
-        open(os.path.join(folder, "PokeMaritimes_save0.gba"), "wb").write(b"not archived")
-        index[0].update(sha256=sha(old), save_layout_version=n - 1, play=old_play)
+        older = dict(save_layout.recorded(), SAVE_LAYOUT_VERSION=n - 1)
+        older["SAVE_LAYOUT_STAMP"] -= 1
+        with zipfile.ZipFile(os.path.join(folder, "builds", "old.zip"), "w") as z:
+            z.writestr(old_play, old)
+        index[0].update(sha256=sha(old), save_layout_version=n - 1, play=old_play, archive="old.zip",
+                        layout=older)
+        # a ROM the index names whose archive is gone
+        stray = f"PokeMaritimes_save{n + 50}.gba"
+        open(os.path.join(folder, stray), "wb").write(b"not archived")
+        index.insert(0, {k: v for k, v in index[0].items() if k != "layout"}
+                     | dict(sha256=sha(b"not archived"), archive="gone.zip", play=stray, save_layout_version=n + 50))
         json.dump(index, open(os.path.join(folder, "builds", "index.json"), "w", encoding="utf-8"))
+        # the game's save, restamped as the older line's
+        buf = bytearray(open(game_save, "rb").read())
+        for _, o in savefile.sectors_with_id(buf, 0):
+            buf[o + savefile.STAMP_OFF:o + savefile.STAMP_OFF + 2] = older["SAVE_LAYOUT_STAMP"].to_bytes(2, "little")
+            chk = savefile.sector_checksum(buf, o, savefile.sector_size(0, older))
+            buf[o + savefile.CHECKSUM_OFF:o + savefile.CHECKSUM_OFF + 2] = chk.to_bytes(2, "little")
+        open(os.path.join(folder, "saves", "older.srm"), "wb").write(buf)
+        os.utime(os.path.join(folder, "saves", "older.srm"), (0, 0))
         seen.clear()
         check(mobile.publish(args) == 0, "publish succeeds")
         text = open(os.path.join(folder, "README.txt"), encoding="utf-8").read()
         check(f"*** SAVE BREAK: this build can't read saves from save line {n - 1}" in text, "README announces the save break")
         check(not os.path.exists(os.path.join(folder, old_play)), f"the archived {old_play} left the top level")
-        check(os.path.exists(os.path.join(folder, "PokeMaritimes_save0.gba")), "a ROM not in the archive is kept")
+        check(os.path.exists(os.path.join(folder, stray)), "a ROM whose archive is gone is kept")
         check(seen == [os.path.join(folder, "saves", "phone.sav")], "the loadable phone save was booted")
         check("phone.sav" in text and "loads" in text, "README: the phone save loads")
         check("broken.sav" in text and "WON'T LOAD" in text, "README: the broken save won't load")
-        check(len(json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))) == 2,
-              "index.json has both builds")
+        check(f"older.srm (1970" not in text and "older.srm" in text
+              and f"older save line (a save line {n - 1} save: it plays in {old_play}" in text,
+              "README: the restamped save (.srm) belongs to the older save line")
+        check(len(json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))) == 3,
+              "index.json gained the new build")
 
         print("3. the same ROM again")
         mobile.verify = lambda rom_bytes, phone_save=None, full=False: (True, [])

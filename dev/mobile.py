@@ -170,10 +170,14 @@ def drivefs_running():
 
 
 def uploaded(files, since):
-    """Which of {name: size} Google Drive for Desktop has finished uploading, judged from its local
-    metadata database (undocumented, so this is best effort): an item with that title and size,
-    modified since `since` (epoch seconds), not trashed, holding a cloud id rather than a
-    local-only one. Returns a set of names, or None if the database can't be read."""
+    """Which of {name: (folder name, size)} Google Drive for Desktop has finished uploading, judged
+    from its local metadata database (undocumented, so this is best effort; None if it can't be
+    read). Measured on Drive for Desktop 133 with a 32 MB file, new and overwritten: while content
+    is uploading, the item has a 'local-content-size' property and a pending operation names it,
+    and its modified_date (the cloud's) stays as it was; once uploaded both marks are gone and
+    modified_date moves. So a file counts as uploaded when its item, in a folder of that name, has
+    a cloud id rather than a local one, the size, a modified_date since `since` (epoch seconds),
+    neither mark, and isn't trashed."""
     base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "DriveFS")
     dbs = glob.glob(os.path.join(base, "*", "metadata_sqlite_db"))
     if not dbs:
@@ -181,20 +185,26 @@ def uploaded(files, since):
     done = set()
     try:
         for db in dbs:
-            with tempfile.TemporaryDirectory() as tmp:
-                # copy with its WAL: reading the live file could block Drive's own writes
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+                # a copy with its WAL: reading the live file could block Drive's own writes
                 for suffix in ("", "-wal", "-shm"):
                     if os.path.exists(db + suffix):
                         shutil.copyfile(db + suffix, os.path.join(tmp, "m" + suffix))
                 con = sqlite3.connect(os.path.join(tmp, "m"))
                 try:
-                    for name, size in files.items():
+                    pending = [r[0] or b"" for r in con.execute("SELECT CAST(proto AS BLOB) FROM operations")]
+                    for name, (parent, size) in files.items():
                         row = con.execute(
-                            "SELECT 1 FROM items WHERE local_title = ? AND file_size = ? AND trashed = 0"
-                            " AND is_tombstone = 0 AND modified_date >= ? AND id NOT LIKE 'local%'"
-                            " AND stable_id NOT IN (SELECT stable_id FROM local_stable_ids)",
-                            (name, size, int((since - 5) * 1000))).fetchone()
-                        if row:
+                            "SELECT 1 FROM items i JOIN stable_parents sp ON sp.item_stable_id = i.stable_id"
+                            " JOIN items f ON f.stable_id = sp.parent_stable_id"
+                            " WHERE i.local_title = ? AND f.local_title = ? AND i.file_size = ?"
+                            " AND i.trashed = 0 AND i.is_tombstone = 0 AND i.modified_date >= ?"
+                            " AND i.id NOT LIKE 'local%'"
+                            " AND i.stable_id NOT IN (SELECT stable_id FROM local_stable_ids)"
+                            " AND NOT EXISTS (SELECT 1 FROM item_properties ip WHERE"
+                            " ip.item_stable_id = i.stable_id AND ip.key = 'local-content-size')",
+                            (name, parent, size, int((since - 5) * 1000))).fetchone()
+                        if row and not any(name.encode() in op for op in pending):
                             done.add(name)
                 finally:
                     con.close()
@@ -231,6 +241,20 @@ def write_verified(path, data):
             sys.exit(f"read-back mismatch: {path}")
 
 
+def archived(folder, index, digest):
+    """True if an archive in builds/ that the index names holds a ROM with this hash."""
+    for e in index:
+        path = os.path.join(folder, "builds", e.get("archive", ""))
+        if e.get("sha256") == digest and os.path.isfile(path):
+            try:
+                with zipfile.ZipFile(path) as z:
+                    if sha256(z.read(e["play"])) == digest:
+                        return True
+            except (zipfile.BadZipFile, KeyError, OSError):
+                pass
+    return False
+
+
 def load_index(folder):
     p = os.path.join(folder, "builds", "index.json")
     if os.path.exists(p):
@@ -239,11 +263,26 @@ def load_index(folder):
     return []
 
 
-def phone_saves(folder):
-    """[(path, verdict, why)] for saves/*.sav, newest first, judged for this build's layout."""
+def phone_saves(folder, index):
+    """[(path, verdict, why)] for saves/*.sav and *.srm (RetroArch, Lemuroid), newest first, judged
+    for this build's layout. Both are the 128 KB flash image, maybe with a clock block after it.
+    A save this build can't read is tried against the older save lines published (their layouts
+    are in the index): verdict 'older', with the play file that reads it."""
+    rec = save_layout.recorded()
+    older = {}
+    for e in index:
+        if e.get("layout") and e["layout"]["SAVE_LAYOUT_STAMP"] != rec["SAVE_LAYOUT_STAMP"]:
+            older[e["layout"]["SAVE_LAYOUT_STAMP"]] = e
     out = []
-    for p in sorted(glob.glob(os.path.join(folder, "saves", "*.sav")), key=os.path.getmtime, reverse=True):
-        verdict, why = savefile.check(p)
+    found = [p for ext in ("*.sav", "*.srm") for p in glob.glob(os.path.join(folder, "saves", ext))]
+    for p in sorted(found, key=os.path.getmtime, reverse=True):
+        verdict, why = savefile.check(p, rec)
+        if verdict == "stale":
+            for e in older.values():
+                if savefile.check(p, e["layout"])[0] in ("ok", "warn"):
+                    verdict, why = "older", (f"a save line {e['save_layout_version']} save: it plays in "
+                                             f"{e['play']}, not in this build")
+                    break
         out.append((p, verdict, why))
     return out
 
@@ -287,9 +326,9 @@ def readme(entry, index, saves, changes, first):
         L += ["Phone saves in saves/, checked against this build:"]
         for p, verdict, why in saves[:5]:
             when = datetime.datetime.fromtimestamp(os.path.getmtime(p))
-            L += [f"  - {os.path.basename(p)} ({when:%Y-%m-%d %H:%M}): "
-                  + {"ok": "loads", "warn": "loads (one slot damaged)", "none": "empty"}.get(verdict, "WON'T LOAD")
-                  + f" ({why})"]
+            label = {"ok": "loads", "warn": "loads (one slot damaged)", "none": "empty",
+                     "older": "older save line"}.get(verdict, "WON'T LOAD")
+            L += [f"  - {os.path.basename(p)} ({when:%Y-%m-%d %H:%M}): {label} ({why})"]
         L += [""]
     L += ["On the phone",
           "------------",
@@ -313,7 +352,8 @@ def readme(entry, index, saves, changes, first):
           "  Nothing to delete: the old ROM and its save stay as they were.",
           "",
           "Backing up your save (worth doing before each update):",
-          "  Upload the emulator's .sav file (the ROM's name with .sav) into saves/ here",
+          "  Upload the emulator's save file (the ROM's name with .sav; .srm in RetroArch and",
+          "  Lemuroid) into saves/ here",
           "  (Drive app: + > Upload). The next phone build is tested against the newest one, and",
           "  this file says whether each loads.",
           "",
@@ -341,18 +381,18 @@ def status():
         print(f"  {e['version']}  save line {e['save_layout_version']}  {e['subject']}")
     if index:
         e = index[-1]
-        files = {e["play"]: e["size"]}
+        files = {e["play"]: (os.path.basename(folder), e["size"])}
         print(f"latest: {e['play']} ({e['version']}), "
               f"{'uploaded' if (uploaded(files, 0) or set()) >= set(files) else 'not confirmed uploaded'}")
     rec = save_layout.recorded()
     print(f"this checkout's save line: {rec['SAVE_LAYOUT_VERSION']}")
-    for p, verdict, why in phone_saves(folder) if os.path.isdir(folder) else []:
+    for p, verdict, why in phone_saves(folder, index) if os.path.isdir(folder) else []:
         print(f"  phone save {os.path.basename(p)}: {verdict}: {why}")
     return 0
 
 
 def publish(a):
-    ident = build_identity(a.allow_dirty)
+    ident = build_identity(a.allow_dirty or a.check)     # --check publishes nothing to name
     if ident["branch"] != "develop":
         print(f"note: on branch {ident['branch']}, not develop")
     import fastbuild
@@ -371,8 +411,11 @@ def publish(a):
     print(f"ROM {ident['version']}: {len(rom) / 2**20:.0f} MiB, save line {n}, sha256 {digest[:16]}...")
 
     folder = None if a.check else drive_folder()
-    saves = phone_saves(folder) if folder and os.path.isdir(folder) else []
-    loadable = next((p for p, verdict, _ in saves if verdict in ("ok", "warn")), None)
+    index = load_index(folder) if folder and os.path.isdir(folder) else []
+    saves = phone_saves(folder, index) if folder and os.path.isdir(folder) else []
+    # only a clean save is booted: one with a damaged slot shows a message first (the game then
+    # loads the other slot), and booting through that would prove little
+    loadable = next((p for p, verdict, _ in saves if verdict == "ok"), None)
     for p, verdict, why in saves:
         print(f"phone save {os.path.basename(p)}: {verdict}: {why}")
     print("Verifying in mGBA:")
@@ -385,13 +428,12 @@ def publish(a):
         return 0
 
     play = f"{GAME}_save{n}.gba"
-    index = load_index(folder)
     play_path = os.path.join(folder, play)
     if index and index[-1]["sha256"] == digest and os.path.exists(play_path) \
             and sha256(open(play_path, "rb").read()) == digest:
         print(f"This ROM is already the phone build ({index[-1]['version']}): nothing to upload.")
-        if a.wait:
-            print(f"Google Drive: {wait_uploaded({play: len(rom)}, 0, a.wait)}")
+        if a.wait and drivefs_running():
+            print(f"Google Drive: {wait_uploaded({play: (os.path.basename(folder), len(rom))}, 0, a.wait)}")
         return 0
 
     if not drivefs_running():
@@ -407,7 +449,7 @@ def publish(a):
     entry = {**{k: ident[k] for k in ("version", "commit", "short", "date", "subject", "branch", "dirty")},
              "published": f"{datetime.datetime.now():%Y-%m-%d %H:%M}", "verified": verified,
              "sha256": digest, "size": len(rom), "save_layout_version": n,
-             "save_layout_stamp": rec["SAVE_LAYOUT_STAMP"], "play": play,
+             "save_layout_stamp": rec["SAVE_LAYOUT_STAMP"], "layout": rec, "play": play,
              "archive": f"{GAME}_{ident['version']}_save{n}.zip"}
     if any(e["archive"] == entry["archive"] for e in index):      # same commit, other bytes
         entry["archive"] = entry["archive"][:-4] + f"_{digest[:8]}.zip"
@@ -435,21 +477,23 @@ def publish(a):
     write_verified(os.path.join(folder, "README.txt"),
                    readme(entry, index, saves, changes, first).encode("utf-8"))
     # 4. a play file from an older save line leaves the top level once its archive holds it
-    archived = {e["sha256"] for e in index}
     for old in glob.glob(os.path.join(folder, f"{GAME}_save*.gba")):
         if os.path.basename(old) == play:
             continue
-        if sha256(open(old, "rb").read()) in archived:
-            os.remove(old)
-            print(f"removed {os.path.basename(old)} from the top level (it's in builds/)")
+        if archived(folder, index, sha256(open(old, "rb").read())):
+            os.remove(old)      # on the Drive volume this goes to Drive's trash
+            print(f"removed {os.path.basename(old)} from the top level (builds/ holds it)")
         else:
-            print(f"kept {os.path.basename(old)}: it isn't one of the archived builds")
+            print(f"kept {os.path.basename(old)}: no archive in builds/ holds it")
 
     if prev and prev["save_layout_version"] != n:
         print(f"SAVE BREAK: save line {prev['save_layout_version']} -> {n}: the phone build has a new name, "
               f"{play}, and starts with a fresh save")
-    files = {play: len(rom), entry["archive"]: len(buf.getvalue())}
-    state = wait_uploaded(files, since, a.wait) if a.wait else "not waited for"
+    files = {play: (os.path.basename(folder), len(rom)), entry["archive"]: ("builds", len(buf.getvalue()))}
+    if not drivefs_running():
+        state = "waiting for Google Drive for Desktop to start"
+    else:
+        state = wait_uploaded(files, since, a.wait) if a.wait else "not waited for"
     print(f"\nPublished {entry['version']} to {folder}\n  play file: {play}\n  archive:   builds/{entry['archive']}"
           f"\n  Google Drive: {state}")
     if state == "syncing":
