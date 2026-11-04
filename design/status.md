@@ -1,9 +1,30 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-03 (milestone 11). Read this first in a new session. Creative direction lives in
+> Updated 2026-11-04 (milestone 12). Read this first in a new session. Creative direction lives in
 > `region_plan.md`; tooling in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 12 done: mobile playtesting** (branch `milestone12-mobile-playtest`, merged into `develop`). Tooling only: the ROM is unchanged.
+
+**Tom's workflow:** double-click `RomHackDev/Send PokeMaritimes to phone.bat` (or `dev/mobile.py`). On the phone, open the Google Drive app → **PokeMaritimes playtest** → `README.txt` says what to download and whether saves carry over. **Part of every milestone now:** after merging into `develop`, run `dev/mobile.py` and say in the handoff whether it was a save break.
+
+**How it works** (`dev/mobile.py`; manual: `dev/README.md`, "Play on the phone"):
+| Step | What |
+|---|---|
+| Upload route | Google Drive for Desktop is installed and signed in (the `G:` volume): the tool copies into `G:\My Drive\PokeMaritimes playtest\` and Drive uploads it. Weighed and not chosen: the claude.ai Drive connector (needs Tom to sign in each session, isn't scriptable, and isn't suited to 32 MB binaries), and rclone or the Drive API (an OAuth client and a token to keep safe, for nothing the synced folder doesn't already do). |
+| Private | The folder is created in My Drive's root, so only Tom's account can see it until someone shares it by hand. The tool never shares anything, and holds no credentials: Drive for Desktop's own sign-in does the upload. Nothing it writes is inside the repo. |
+| Verified | Header (game code BPEE, which phone emulators use to pick 128 KB flash and the clock; complement check). In mGBA, on the exact bytes uploaded: a new game reaches the overworld, saves, `savefile.py` reads the save as loadable, and after a power cycle CONTINUE lands on the same spot; the newest loadable phone save in `saves/` CONTINUEs too. `--full` adds the slice playthrough. A tree with uncommitted changes is refused: a build is named by its commit. |
+| Save compatibility | The play file is `PokeMaritimes_save<N>.gba`, N = `SAVE_LAYOUT_VERSION`. Phone emulators find a save by the ROM's file name, so replacing the file within a save line keeps the save; a save break gives the new build a new name and a fresh save, and the old save stays with the old file, untouched (the phone's version of `play.py` setting stale saves aside). The README announces a save break in a banner, and lists each save in `saves/` as loads / won't load. |
+| History | `builds/PokeMaritimes_<date>_<commit>_save<N>.zip` (13 MB: the ROM under its play name, and `build.txt` with the commit and sha256), `builds/index.json`. Publishing a ROM that's already the phone build uploads nothing. An old play file leaves the top level only once its hash is in the archive (deleting from the Drive volume goes to Drive's trash). |
+| Upload confirmed | Drive for Desktop gives a file a cloud id once it's uploaded; the tool reads that from Drive's local metadata database (a copy of it, read-only; undocumented, so best effort: "unknown" if it can't tell) and waits up to 10 minutes. |
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Verification | `mobile.py --check`: 6/6 in mGBA (new game → save → power cycle → CONTINUE at the same spot; screenshots `dev/out/mobile/check_*.png`). |
+| Publishing | `tests/mobile_publish.py` 31/31 in a scratch folder: the play file and the archive's ROM are the built ROM byte for byte; a save break is announced, the archived old play file retired and an unarchived one kept; the game's own save in `saves/` is reported as loading and CONTINUEd in mGBA, a broken one reported as won't load and not booted; re-publishing uploads nothing. |
+| Drive | The live publish to Tom's Drive (below). |
+
 **Milestone 11 done: room for the whole region's story in the save** (branch `milestone11-save-vars`, merged into `develop`). Foundation only: no gameplay or map changed. The plan, the format and the version history: `design/save_format.md`.
 
 **Save compatibility: layout version 2.** Saves from milestone 10 (version 1) are refused with the outdated-save message. Tom: if you're partway through the slice on the milestone 10 build, finish on that build; on this one, start a new game once.
@@ -497,6 +518,7 @@ dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
+dev/tests/mobile_publish.py           # 31/31 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
@@ -524,6 +546,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Phone builds:** publish from a clean `develop` after the merge (`dev/mobile.py`), not from a milestone branch: the build is named by its commit. Phone emulators find a save by the ROM's file name, which is why the play file is named for its save line and nothing else; never put a date or commit in that name. Save states don't carry across builds (a snapshot of the old build's memory), only in-game saves. The upload goes through Google Drive for Desktop: if it isn't running, the files wait in its cache and the tool says the upload isn't confirmed.
 - **Playing by hand:** use `RomHackDev/Play PokeMaritimes.bat` (`dev/play.py`), not `pokeemerald.gba` directly. On 2026-11-03 Tom got "The save file has been erased due to corruption or damage." from a March save sitting beside `pokeemerald.gba`. It had no layout stamp, and SaveBlock1 has grown since, so its last SaveBlock1 sector fails the checksum in both slots. The game calls that erased **before** the stamp check can say "older version": the outdated-save message only appears when a stale save's block sizes happen to match. The launcher reads the save first (`dev/savefile.py`, which agrees with the game in `ingame_save.py`) and sets stale saves aside in `playtest/old_saves/`. That save is kept there.
 - **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Story state: vars and flags come from `dev/save_ids.py` (256 story vars in SaveBlock3, 766 block flags); keep the 23 unused vanilla vars for engine features. The story block must stay SaveBlock3's first field (a link save writes only sectors 0–4; `save.c` asserts it). `design/save_format.md` has the version history: add a row on every bump. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
 - **Hand-painted maps:** add a sign post or a flower with `dev/mapgen.py patch <Map> s@x,y`, not a rebuild from an extract (Woodstock rebuilds at 95.8%).
