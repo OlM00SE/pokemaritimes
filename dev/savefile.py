@@ -81,15 +81,16 @@ def slot_status(buf, slot, rec=None):
     return ("ok" if len(valid) == NUM_SECTORS_PER_SLOT else "damaged"), counter, sb2
 
 
-def check(path):
-    """Can the build the headers describe load this save? ('none' | 'ok' | 'warn' | 'stale', why).
+def check(path, rec=None):
+    """Can the build the headers describe (or the layout `rec`, a save_layout.recorded() dict) load
+    this save? ('none' | 'ok' | 'warn' | 'stale', why).
     'warn': one slot is damaged but the other loads (the game says "The save file is corrupted.
     The previous save file will be loaded."). 'stale': the game would refuse it, as
     erased (no slot passes its checksums: often a save from an older layout, whose blocks had
     other sizes) or as outdated (a valid slot stamped with another layout version)."""
     if not os.path.exists(path):
         return "none", "no save file"
-    rec = save_layout.recorded()
+    rec = rec or save_layout.recorded()
     buf = open(path, "rb").read()
     if len(buf) < NUM_SAVE_SLOTS * NUM_SECTORS_PER_SLOT * SECTOR_SIZE:
         return "stale", f"only {len(buf)} bytes: not a full save"
