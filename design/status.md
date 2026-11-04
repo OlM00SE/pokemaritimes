@@ -22,8 +22,11 @@ How it was verified:
 | Area | Result |
 |---|---|
 | Verification | `mobile.py --check`: 6/6 in mGBA (new game → save → power cycle → CONTINUE at the same spot; screenshots `dev/out/mobile/check_*.png`). |
-| Publishing | `tests/mobile_publish.py` 31/31 in a scratch folder: the play file and the archive's ROM are the built ROM byte for byte; a save break is announced, the archived old play file retired and an unarchived one kept; the game's own save in `saves/` is reported as loading and CONTINUEd in mGBA, a broken one reported as won't load and not booted; re-publishing uploads nothing. |
-| Drive | The live publish to Tom's Drive (below). |
+| Publishing | `tests/mobile_publish.py` 33/33 in a scratch folder, twice: the play file and the archive's ROM are the built ROM byte for byte; a save break is announced; the old play file is retired only because an archive holds it, and a ROM whose archive is gone is kept; the game's own save in `saves/` is reported as loading and CONTINUEd in mGBA, the same save restamped for an older line (as `.srm`) is reported as that line's, a broken one as won't load; re-publishing uploads nothing. |
+| Upload signal | Measured with a 32 MB throwaway file in the Drive folder, new and then overwritten (deleted afterwards): while content uploads, Drive's database shows a `local-content-size` property and a pending operation naming the file, and the cloud `modified_date` doesn't move; all three clear once it's up, about 10 s here. |
+| Live | From clean `develop` at the merge: build `2026-11-04_5cd493a083` (save line 2, sha256 `d8e0494b…`), 6/6 in mGBA, uploaded and confirmed: `PokeMaritimes_save2.gba` (32 MB), `builds/PokeMaritimes_2026-11-04_5cd493a083_save2.zip` (13 MB), `README.txt`, `index.json`. A second run: "already the phone build", nothing uploaded. Privacy: by construction (a new folder in My Drive's root, owned by Tom's account, never shared); not checked in Drive's web UI, because Chrome was signed out. |
+| Regression | `ingame_save.py` PASS (`savefile.check` gained a layout argument). The ROM is unchanged (same sha256 before and after the milestone), so the map and event regression set wasn't re-run. |
+| Code review | `/code-review medium` raised 8 findings, all fixed: an overwritten play file (same name and size) could read as uploaded before its bytes were (now the measured signals above, scoped to the folder); an old play file was removed when the index listed its hash, without checking that an archive held it; a save from an older save line read as "WON'T LOAD" (now named as that line's: the index keeps each build's layout); `--check` refused uncommitted trees; a 10-minute wait with Drive for Desktop stopped; a save with a damaged slot was booted; the test's stray ROM could collide with the old play file; this table claimed a live publish before it happened. Also added: `.srm` saves. |
 
 **Milestone 11 done: room for the whole region's story in the save** (branch `milestone11-save-vars`, merged into `develop`). Foundation only: no gameplay or map changed. The plan, the format and the version history: `design/save_format.md`.
 
@@ -518,7 +521,7 @@ dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
-dev/tests/mobile_publish.py           # 31/31 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
+dev/tests/mobile_publish.py           # 33/33 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code changes
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
@@ -528,7 +531,7 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-1. **Tom plays the slice by hand (recommended next, needs Tom):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
+1. **Tom plays the slice by hand (recommended next, needs Tom; on the phone now works too, see milestone 12):** new game → starter → Route 201 → Woodstock, reading every text (it's all provisional), and gives notes. Nothing else in the slice is blocked on tooling now. Corrections are spec edits plus `events.py --apply`.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
 3. **The woods around HomeTown and Woodstock:** the landscape kit on their outer forest only. Propose a box per town to Tom before touching either. Route 203's north bank and levee meadow (the 54-tile straight tree row) are a small follow-up.
 4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too.
