@@ -56,14 +56,14 @@ idea = "The bridge town: the road stays on the south bank (Pokiok); a long bridg
 [[map]]
 name = "Route 203"
 map = "new"
-rect = [60, 26, 58, 46]       # ends east of the dam's bend, so the river crosses the seam
+rect = [60, 26, 62, 46]       # ends past the dam's bend, where the river runs straight across the seam
 role = "route"
 idea = "The headpond: a wide lake to the north, the road on the south shore through mixed woods and old farms, the Kings Landing heritage hamlet, islands for Surf later. The Mactaquac Dam at the east end is the gateway to Fredericton."
 
 [[map]]
 name = "Fredericton"
 map = "Fredericton_0"
-rect = [118, 14, 52, 60]
+rect = [122, 14, 52, 60]
 role = "city"
 idea = "The capital on the river: downtown on the south bank (the Legislature, Officers' Square, the Green along the water), the walking bridge to the north side, where the Nashwaak comes in. Exits east along the south bank toward Oromocto (later)."
 
