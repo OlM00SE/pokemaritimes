@@ -3,12 +3,16 @@
   python dev/tests/mobile_publish.py
 
 Uses the ROM already built (run dev/fastbuild.py first) and the real mGBA verification:
-  1. a first publish: the play file is the ROM byte for byte, named for its save line; the archive
-     holds the same ROM under that name plus build.txt; index.json and README.txt describe it;
-  2. a save break: with a previous build on another save line in the index, the README says SAVE
+  1. a publish over the folder as it was before the ZIPs (the same ROM as a loose .gba play file,
+     archived): it's repackaged, not republished: the play file becomes a ZIP named for its save
+     line, holding only the ROM byte for byte, which boots, saves and CONTINUEs in mGBA; the
+     build keeps its one index entry and archive (no duplicate); the loose .gba leaves the top
+     level; README.txt describes it (no direct link: the file isn't on Drive);
+  2. a save break: a new build is archived with build.txt carrying its hash; with the previous
+     build on another save line in the index, the README says SAVE
      BREAK, the old play file leaves the top level (an archive in builds/ holds it), and a ROM
      the index names but no archive holds is kept; the phone save in saves/ (the game's own, from
-     step 1) is reported as loading and CONTINUEd in mGBA; the same save restamped for the older
+     step 1) is reported as loading and CONTINUEd in mGBA from the ZIP; the same save restamped for the older
      line is reported as that line's; a broken one is reported as WON'T LOAD; neither is booted;
      My Boy!'s Google Drive sync folder (MyBoy/, beside the publish folder) is read, never
      written: its PokeMaritimes saves are backed up into saves/myboy/, the newest is the one
@@ -40,31 +44,50 @@ def main():
     args = argparse.Namespace(check=False, full=False, allow_dirty=True, wait=0)
     rom = open(mobile.ROM_SRC, "rb").read()
     n = save_layout.recorded()["SAVE_LAYOUT_VERSION"]
-    play = f"PokeMaritimes_save{n}.gba"
-    real_verify, seen = mobile.verify, []
+    play, rom_name = f"PokeMaritimes_save{n}.zip", f"PokeMaritimes_save{n}.gba"
+    real_verify, seen, last_lines = mobile.verify, [], []
 
-    def recording_verify(rom_bytes, phone_save=None, full=False):
+    def recording_verify(rom_bytes, phone_save=None, full=False, package=None):
         seen.append(phone_save)
-        return real_verify(rom_bytes, phone_save, full)
+        ok, lines = real_verify(rom_bytes, phone_save, full, package)
+        last_lines[:] = lines
+        return ok, lines
     mobile.verify = recording_verify
 
     tmp = tempfile.mkdtemp(prefix="maritimes_mobile_")
     folder = os.path.join(tmp, "PokeMaritimes playtest")
     os.environ["MARITIMES_DRIVE_DIR"] = folder
     try:
-        print("1. first publish")
+        print("1. first publish, over the folder as it was before the ZIPs")
+        os.makedirs(os.path.join(folder, "builds"))
+        open(os.path.join(folder, rom_name), "wb").write(rom)
+        with zipfile.ZipFile(os.path.join(folder, "builds", "before.zip"), "w") as z:
+            z.writestr(rom_name, rom)
+        head = mobile.git("rev-parse", "HEAD")
+        json.dump([{"version": "before", "commit": head, "short": head[:10], "subject": "before the ZIPs",
+                    "branch": "develop", "sha256": sha(rom), "size": len(rom), "save_layout_version": n,
+                    "play": rom_name, "archive": "before.zip", "layout": save_layout.recorded(),
+                    "date": "2026-11-04T08:00:00-05:00", "dirty": False, "published": "2026-11-04 08:00",
+                    "verified": "boots, starts a new game, saves and CONTINUEs in mGBA",
+                    "save_layout_stamp": save_layout.recorded()["SAVE_LAYOUT_STAMP"]}],
+                  open(os.path.join(folder, "builds", "index.json"), "w", encoding="utf-8"))
         check(mobile.publish(args) == 0, "publish succeeds")
         p = os.path.join(folder, play)
-        check(os.path.exists(p) and open(p, "rb").read() == rom, f"{play} is the ROM byte for byte")
+        with zipfile.ZipFile(p) as z:
+            check(z.namelist() == [rom_name] and z.read(rom_name) == rom,
+                  f"{play} holds only {rom_name}, the ROM byte for byte")
+        check(not os.path.exists(os.path.join(folder, rom_name)), f"the loose, archived {rom_name} left the top level")
         index = json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))
-        check(len(index) == 1 and index[0]["sha256"] == sha(rom) and index[0]["save_layout_version"] == n,
-              "index.json records the build, its hash and save line")
-        with zipfile.ZipFile(os.path.join(folder, "builds", index[0]["archive"])) as z:
-            check(sorted(z.namelist()) == sorted([play, "build.txt"]) and sha(z.read(play)) == sha(rom),
-                  f"the archive {index[0]['archive']} holds the same ROM as {play}, and build.txt")
-            check(sha(rom) in z.read("build.txt").decode(), "build.txt carries the hash")
+        check(len(index) == 1 and index[-1]["version"] == "before" and index[-1]["play"] == play
+              and index[-1]["rom"] == rom_name, "the build keeps its one entry, now naming the play ZIP")
+        check(sorted(os.listdir(os.path.join(folder, "builds"))) == ["before.zip", "index.json"],
+              "no duplicate archive for the same ROM")
+        check(any("after a power cycle, the ZIP CONTINUEs at the same spot" in l and "PASS" in l for l in last_lines),
+              "the verification booted, saved and CONTINUEd the play ZIP itself")
         text = open(os.path.join(folder, "README.txt"), encoding="utf-8").read()
         check(f"PLAY THIS: {play}" in text and "*** SAVE BREAK" not in text, "README: what to play, no save break")
+        check("Data Saver" in text and "appears here once Google Drive has finished uploading" in text,
+              "README: the Data Saver note, and no direct link for a file Drive hasn't uploaded")
         check(os.path.isdir(os.path.join(folder, "saves")), "saves/ exists for phone backups")
         check(seen == [None], "no phone save yet, so none was booted")
         check(not glob.glob(os.path.join(folder, "**", "*.partial"), recursive=True), "no partial files left")
@@ -83,12 +106,13 @@ def main():
         older["SAVE_LAYOUT_STAMP"] -= 1
         with zipfile.ZipFile(os.path.join(folder, "builds", "old.zip"), "w") as z:
             z.writestr(old_play, old)
-        index[0].update(sha256=sha(old), save_layout_version=n - 1, play=old_play, archive="old.zip",
-                        layout=older)
+        index[-1].update(sha256=sha(old), save_layout_version=n - 1, play=old_play, archive="old.zip",
+                         layout=older)
+        index[-1].pop("rom", None)
         # a ROM the index names whose archive is gone
         stray = f"PokeMaritimes_save{n + 50}.gba"
         open(os.path.join(folder, stray), "wb").write(b"not archived")
-        index.insert(0, {k: v for k, v in index[0].items() if k != "layout"}
+        index.insert(0, {k: v for k, v in index[-1].items() if k != "layout"}
                      | dict(sha256=sha(b"not archived"), archive="gone.zip", play=stray, save_layout_version=n + 50))
         json.dump(index, open(os.path.join(folder, "builds", "index.json"), "w", encoding="utf-8"))
         # the game's save, restamped as the older line's
@@ -127,6 +151,13 @@ def main():
         check(not os.path.exists(os.path.join(folder, old_play)), f"the archived {old_play} left the top level")
         check(os.path.exists(os.path.join(folder, stray)), "a ROM whose archive is gone is kept")
         check(seen == [synced], "the newest loadable phone save (My Boy!'s synced one) was booted")
+        check(any("CONTINUEs to the overworld from the play ZIP" in l and "PASS" in l for l in last_lines),
+              "the phone save was CONTINUEd from the play ZIP, as the phone opens it")
+        new = json.load(open(os.path.join(folder, "builds", "index.json"), encoding="utf-8"))[-1]
+        with zipfile.ZipFile(os.path.join(folder, "builds", new["archive"])) as z:
+            check(sorted(z.namelist()) == sorted([rom_name, "build.txt"]) and sha(z.read(rom_name)) == sha(rom)
+                  and sha(rom) in z.read("build.txt").decode(),
+                  f"the new build's archive {new['archive']} holds the ROM and build.txt with its hash")
         check(tree(os.path.join(tmp, "MyBoy")) == myboy_before, "My Boy!'s sync folder is untouched")
         backups = {sha(open(q, "rb").read()) for q in glob.glob(os.path.join(folder, "saves", "myboy", "*"))}
         check(backups == {sha(open(synced, "rb").read()), sha(b"\x55" * 2000), sha(bytes(damaged))},
@@ -145,7 +176,7 @@ def main():
               "index.json gained the new build")
 
         print("3. the same ROM again")
-        mobile.verify = lambda rom_bytes, phone_save=None, full=False: (True, [])
+        mobile.verify = lambda rom_bytes, phone_save=None, full=False, package=None: (True, [])
         before = sorted(os.listdir(os.path.join(folder, "builds")))
         saved = sorted(os.listdir(os.path.join(folder, "saves", "myboy")))
         open(os.path.join(folder, "README.txt"), "w").write("old instructions")

@@ -11,12 +11,17 @@ syncs it: no API keys or tokens, and nothing about the account is stored in the 
 "<My Drive>/PokeMaritimes playtest", created in My Drive's root, so it is private to the account
 unless someone shares it by hand. MARITIMES_DRIVE_DIR overrides the folder's path.
 
-  PokeMaritimes_save<N>.gba   the build to play. N is the save layout version: every build with
+  PokeMaritimes_save<N>.zip   the build to play: a ZIP holding PokeMaritimes_save<N>.gba (13 MB,
+                              not 32; My Boy! plays a .zip directly, and Android and the Drive app
+                              know the type). N is the save layout version: every build with
                               the same N reads the same saves, so replacing the file keeps the
                               phone's save (emulators find the save by the ROM's file name). A
                               save break changes N, so the new build gets a fresh save and the
                               old save stays with the old file.
-  README.txt                  this build, what changed, save compatibility, phone instructions
+  README.txt                  this build, what changed, save compatibility, phone instructions,
+                              and a direct download link (the Drive app hides its Download item
+                              while Android's Data Saver is on; the link opens in Chrome instead,
+                              and works only signed in to the owner's account)
   builds/                     every build published, zipped: PokeMaritimes_<date>_<commit>_save<N>.zip
                               (the ROM, named for its save line, and build.txt); index.json lists them
   saves/                      phone saves uploaded by hand (.sav, .srm); each publish checks them
@@ -72,6 +77,29 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def play_zip(rom_name, rom, iso_date):
+    """The play file: a ZIP holding only the ROM (My Boy! loads "the first recognized file in the
+    archive"), stamped with the commit's date so the same ROM always gives the same bytes."""
+    info = zipfile.ZipInfo(rom_name, date_time=tuple(int(x) for x in (
+        iso_date[0:4], iso_date[5:7], iso_date[8:10], iso_date[11:13], iso_date[14:16], iso_date[17:19])))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 0                  # else it follows the platform: the same bytes everywhere
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(info, rom, compresslevel=9)
+    return buf.getvalue()
+
+
+def zip_rom_digest(path):
+    """sha256 of the .gba inside a play ZIP, or None if it isn't one."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = [n for n in z.namelist() if n.lower().endswith(".gba")]
+            return sha256(z.read(names[0])) if len(names) == 1 else None
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return None
+
+
 def check_header(rom):
     """The GBA cartridge header a phone emulator relies on: Emerald's game code (it picks the save
     type, 128 KB flash, and the clock from it), a valid complement check, and a cartridge size."""
@@ -100,9 +128,10 @@ def _fresh(path):
             time.sleep(0.5)
 
 
-def verify(rom_bytes, phone_save=None, full=False):
+def verify(rom_bytes, phone_save=None, full=False, package=None):
     """Boot the exact bytes to publish. Returns (ok, [lines]). The ROM is copied to dev/out/mobile
-    with its .map (the bridge reads symbols from it); nothing touches a real save."""
+    with its .map (the bridge reads symbols from it); nothing touches a real save. `package`, the
+    play ZIP's bytes, is booted as it is, as My Boy! opens it."""
     os.makedirs(OUT, exist_ok=True)
     rom, sav = os.path.join(OUT, "check.gba"), os.path.join(OUT, "check.sav")
     _fresh(sav)
@@ -133,17 +162,37 @@ def verify(rom_bytes, phone_save=None, full=False):
                 after = e.player()
                 step(after == before, f"at the same spot ({e.map_name(after)} {after[2:]})")
                 e.shot(os.path.join(OUT, "check_continue.png"))
-    if ok and phone_save:
+    pkg, pkg_sav = os.path.join(OUT, "package.zip"), os.path.join(OUT, "package.sav")
+    if ok and package:      # the file the phone opens, as it is: its save is package.sav
+        with open(pkg, "wb") as f:
+            f.write(package)
+        shutil.copyfile(os.path.join(OUT, "check.map"), os.path.join(OUT, "package.map"))
+        _fresh(pkg_sav)
+        with Emu(pkg, extra_args=UNTHROTTLED) as e:
+            if step(e.boot_new_game(), "the play ZIP itself boots in mGBA and starts a new game"):
+                e.wait_for_control()
+                here = e.player()
+                step(e.save_game(), "the game saves, from the ZIP")
+        if ok:
+            with Emu(pkg, extra_args=UNTHROTTLED) as e:
+                back = e.boot_to_overworld()
+                if back:
+                    e.wait_for_control()
+                step(back and e.player() == here, "after a power cycle, the ZIP CONTINUEs at the same spot")
+        _fresh(pkg_sav)
+    if ok and phone_save:   # booted from what the phone opens: the ZIP when there is one
         name = os.path.basename(phone_save)
-        _fresh(sav)
-        shutil.copyfile(phone_save, sav)
-        with Emu(rom, extra_args=UNTHROTTLED) as e:
-            if step(e.boot_to_overworld(), f"the phone save {name} CONTINUEs to the overworld"):
+        target, target_sav = (pkg, pkg_sav) if package else (rom, sav)
+        _fresh(target_sav)
+        shutil.copyfile(phone_save, target_sav)
+        with Emu(target, extra_args=UNTHROTTLED) as e:
+            if step(e.boot_to_overworld(), f"the phone save {name} CONTINUEs to the overworld"
+                                           + (" from the play ZIP" if package else "")):
                 e.wait_for_control()
                 loc = e.player()
                 lines[-1] += f" ({e.map_name(loc)} {loc[2:]})"
                 e.shot(os.path.join(OUT, "check_phone_save.png"))
-        _fresh(sav)     # a copy of Tom's save: don't leave it lying in dev/out
+        _fresh(target_sav)  # a copy of Tom's save: don't leave it lying in dev/out
     if ok and full:
         r = subprocess.run([sys.executable, os.path.join(REPO, "dev", "tests", "playthrough_slice1.py")])
         step(r.returncode == 0, "the slice playthrough (tests/playthrough_slice1.py)")
@@ -178,6 +227,43 @@ def drivefs_running():
     return "GoogleDriveFS.exe" in r.stdout
 
 
+def _drive_dbs():
+    base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "DriveFS")
+    return glob.glob(os.path.join(base, "*", "metadata_sqlite_db"))
+
+
+def _query_drive(fn):
+    """Run fn(connection) on a copy of each Drive for Desktop metadata database (with its WAL:
+    reading the live file could block Drive's own writes); a list of the results, or None if
+    there's no database or it can't be read."""
+    dbs = _drive_dbs()
+    if not dbs:
+        return None
+    results = []
+    try:
+        for db in dbs:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+                for suffix in ("", "-wal", "-shm"):
+                    if os.path.exists(db + suffix):
+                        shutil.copyfile(db + suffix, os.path.join(tmp, "m" + suffix))
+                con = sqlite3.connect(os.path.join(tmp, "m"))
+                try:
+                    results.append(fn(con))
+                finally:
+                    con.close()
+    except (sqlite3.Error, OSError):
+        return None
+    return results
+
+
+ITEM_IN_FOLDER = ("FROM items i JOIN stable_parents sp ON sp.item_stable_id = i.stable_id"
+                  " JOIN items f ON f.stable_id = sp.parent_stable_id"
+                  " WHERE i.local_title = ? AND f.local_title = ? AND i.trashed = 0 AND i.is_tombstone = 0"
+                  " AND f.trashed = 0 AND f.is_tombstone = 0"
+                  " AND i.id NOT LIKE 'local%'"
+                  " AND i.stable_id NOT IN (SELECT stable_id FROM local_stable_ids)")
+
+
 def uploaded(files, since):
     """Which of {name: (folder name, size)} Google Drive for Desktop has finished uploading, judged
     from its local metadata database (undocumented, so this is best effort; None if it can't be
@@ -187,39 +273,45 @@ def uploaded(files, since):
     modified_date moves. So a file counts as uploaded when its item, in a folder of that name, has
     a cloud id rather than a local one, the size, a modified_date since `since` (epoch seconds),
     neither mark, and isn't trashed."""
-    base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "DriveFS")
-    dbs = glob.glob(os.path.join(base, "*", "metadata_sqlite_db"))
-    if not dbs:
-        return None
-    done = set()
+    def done_in(con):
+        pending = [r[0] or b"" for r in con.execute("SELECT CAST(proto AS BLOB) FROM operations")]
+        done = set()
+        for name, (parent, size) in files.items():
+            row = con.execute(
+                "SELECT 1 " + ITEM_IN_FOLDER + " AND i.file_size = ? AND i.modified_date >= ?"
+                " AND NOT EXISTS (SELECT 1 FROM item_properties ip WHERE"
+                " ip.item_stable_id = i.stable_id AND ip.key = 'local-content-size')",
+                (name, parent, size, int((since - 5) * 1000))).fetchone()
+            marker = bytes([len(name.encode())]) + name.encode()     # a protobuf string field
+            if row and not any(marker in op for op in pending):
+                done.add(name)
+        return done
+    found = _query_drive(done_in)
+    return None if found is None else set().union(*found)
+
+
+def download_link(folder, name):
+    """A direct download link for an uploaded file in the publish folder, from its cloud id:
+    it opens in a browser (not the Drive app), and serves the file only to a browser signed in to
+    the account that owns it (anyone else gets Google's sign-in page, checked 2026-11-04).
+    None until Drive has uploaded the file as it is on this PC (an overwritten file keeps its id,
+    so the id alone could serve the previous content)."""
+    path = os.path.join(folder, name)
     try:
-        for db in dbs:
-            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-                # a copy with its WAL: reading the live file could block Drive's own writes
-                for suffix in ("", "-wal", "-shm"):
-                    if os.path.exists(db + suffix):
-                        shutil.copyfile(db + suffix, os.path.join(tmp, "m" + suffix))
-                con = sqlite3.connect(os.path.join(tmp, "m"))
-                try:
-                    pending = [r[0] or b"" for r in con.execute("SELECT CAST(proto AS BLOB) FROM operations")]
-                    for name, (parent, size) in files.items():
-                        row = con.execute(
-                            "SELECT 1 FROM items i JOIN stable_parents sp ON sp.item_stable_id = i.stable_id"
-                            " JOIN items f ON f.stable_id = sp.parent_stable_id"
-                            " WHERE i.local_title = ? AND f.local_title = ? AND i.file_size = ?"
-                            " AND i.trashed = 0 AND i.is_tombstone = 0 AND i.modified_date >= ?"
-                            " AND i.id NOT LIKE 'local%'"
-                            " AND i.stable_id NOT IN (SELECT stable_id FROM local_stable_ids)"
-                            " AND NOT EXISTS (SELECT 1 FROM item_properties ip WHERE"
-                            " ip.item_stable_id = i.stable_id AND ip.key = 'local-content-size')",
-                            (name, parent, size, int((since - 5) * 1000))).fetchone()
-                        if row and not any(name.encode() in op for op in pending):
-                            done.add(name)
-                finally:
-                    con.close()
-    except (sqlite3.Error, OSError):
+        size, mtime = os.path.getsize(path), os.path.getmtime(path)
+    except OSError:
         return None
-    return done
+    if name not in (uploaded({name: (os.path.basename(folder), size)}, mtime) or set()):
+        return None
+
+    def ids(con):
+        return [r[0] for r in con.execute("SELECT i.id " + ITEM_IN_FOLDER,
+                                          (name, os.path.basename(folder)))]
+    found = _query_drive(ids)
+    cloud = sorted({i for batch in found or [] for i in batch})
+    if len(cloud) != 1:
+        return None
+    return f"https://drive.usercontent.google.com/download?id={cloud[0]}&export=download"
 
 
 def wait_uploaded(files, since, timeout):
@@ -257,11 +349,27 @@ def archived(folder, index, digest):
         if e.get("sha256") == digest and os.path.isfile(path):
             try:
                 with zipfile.ZipFile(path) as z:
-                    if sha256(z.read(e["play"])) == digest:
+                    if sha256(z.read(e.get("rom", e["play"]))) == digest:
                         return True
             except (zipfile.BadZipFile, KeyError, OSError):
                 pass
     return False
+
+
+def retire_old_play_files(folder, index, play):
+    """Any other play file (an older save line, or a loose .gba from before the ZIPs) leaves the
+    top level once an archive in builds/ holds its ROM; on the Drive volume a removal goes to
+    Drive's trash."""
+    olds = glob.glob(os.path.join(folder, f"{GAME}_save*.gba")) + glob.glob(os.path.join(folder, f"{GAME}_save*.zip"))
+    for old in olds:
+        if os.path.basename(old) == play:
+            continue
+        old_digest = zip_rom_digest(old) if old.endswith(".zip") else sha256(open(old, "rb").read())
+        if old_digest and archived(folder, index, old_digest):
+            os.remove(old)
+            print(f"removed {os.path.basename(old)} from the top level (builds/ holds it)")
+        else:
+            print(f"kept {os.path.basename(old)}: no archive in builds/ holds it")
 
 
 def load_index(folder):
@@ -390,23 +498,39 @@ def changes_since(prev_commit, upto="HEAD"):
 
 
 def refresh_readme(folder, index, saves):
-    """Rewrite README.txt for the latest build if its text changed (new instructions or save
-    checks); the ROM and the archive stay as they are. True if it was rewritten."""
+    """Rewrite README.txt for the latest build if its text changed (new instructions, save checks,
+    or the direct link once Drive has uploaded the play file); the ROM and the archive stay as
+    they are. Returns (rewritten, link)."""
     entry = index[-1]
+    link = download_link(folder, entry["play"])
     if not has_commit(entry["commit"]):
         print(f"README.txt kept: commit {entry['short']} isn't in this checkout, so its change list can't be rebuilt")
-        return False
+        return False, link
     prev = index[-2]["commit"] if len(index) > 1 else None
-    text = readme(entry, index, saves, *changes_since(prev, entry["commit"]), folder).encode("utf-8")
+    text = readme(entry, index, saves, *changes_since(prev, entry["commit"]), folder, link).encode("utf-8")
     path = os.path.join(folder, "README.txt")
     if os.path.exists(path) and open(path, "rb").read() == text:
-        return False
+        return False, link
     write_verified(path, text)
-    return True
+    return True, link
 
 
-def readme(entry, index, saves, changes, first, folder):
+def finish(folder, index, saves, files, since, wait):
+    """Wait for Drive to upload `files` ({name: (folder name, size)}), then refresh README.txt once
+    (with the direct link if the play file is up). Returns (state, link)."""
+    if not drivefs_running():
+        state = "waiting for Google Drive for Desktop to start"
+    else:
+        state = wait_uploaded(files, since, wait) if wait else "not waited for"
+    rewritten, link = refresh_readme(folder, index, saves)
+    if rewritten:
+        print("README.txt written" + (" with the direct download link" if link else ""))
+    return state, link
+
+
+def readme(entry, index, saves, changes, first, folder, link=None):
     play, n = entry["play"], entry["save_layout_version"]
+    size = f"{entry['play_size'] / 2**20:.0f} MB" if entry.get("play_size") else ""
     prev = index[-2] if len(index) > 1 else None
     L = ["PokeMaritimes: private playtest builds",
          "======================================",
@@ -414,7 +538,9 @@ def readme(entry, index, saves, changes, first, folder):
          "The ROM is built from the Pokemon Emerald decompilation and contains Nintendo / Game Freak",
          "material, so it must never be posted anywhere public.",
          "",
-         f"PLAY THIS: {play}",
+         f"PLAY THIS: {play}  {size}",
+         f"  direct download (Chrome on your phone, signed in to this Google account):",
+         f"  {link or '(appears here once Google Drive has finished uploading the file)'}",
          f"  build       {entry['version']}  ({entry['branch']}, commit {entry['short']}: {entry['subject']})",
          f"  published   {entry['published']}",
          f"  verified    {entry['verified']}",
@@ -455,13 +581,23 @@ def readme(entry, index, saves, changes, first, folder):
           "",
           "Installing a build (the first time, and every update):",
           "  1. If you're playing: save in-game (START > SAVE), then My Boy! MENU > Close.",
-          f"  2. Google Drive app > {FOLDER_NAME} > the three dots next to {play} > Download.",
+          f"  2. Download {play}, either way:",
+          f"     - Google Drive app > {FOLDER_NAME} > the three dots next to it > Download.",
+          "       No Download in that menu? Google: 'When Data Saver is turned on in your network",
+          "       settings, the download option isn't available.' Turn Data Saver off (search",
+          "       Android's Settings for 'Data Saver'), or use the next way.",
+          "     - Open the direct download link at the top of this file in Chrome. It downloads",
+          "       straight to Download/. It's private: without your Google sign-in it shows",
+          "       Google's sign-in page, not the file.",
           f"  3. Files app > Downloads: move {play} into Download/PokeMaritimes. On an update, if",
-          "     it asks, choose Replace.",
+          "     it asks, choose Replace. Don't unzip it: My Boy! plays the ZIP as it is.",
           f"     The name must stay exactly {play}: My Boy! finds your save by the ROM's file",
-          "     name, so a copy named '... (1).gba' would open with no save. If you see '(1)', delete",
+          f"     name, so a copy named '... (1){os.path.splitext(play)[1]}' would open with no save. If you see '(1)', delete",
           "     the old file and rename the new one.",
           "  4. Open it from My Boy!'s game list (refresh the list if it isn't there).",
+          f"     If a loose {entry.get('rom', play)} is in the list too, that's this same save line as a",
+          "     .gba from before the ZIPs; delete it once the ZIP plays, so there's one entry per",
+          "     save line. (A ROM with another save number is another save line: keep it.)",
           "     The first time: NEW GAME. An update on the same save line: CONTINUE.",
           "     If CONTINUE is missing after an update, don't save: MENU > Close and tell Claude.",
           "     Your save is still there; the new file just isn't being matched to it.",
@@ -479,13 +615,15 @@ def readme(entry, index, saves, changes, first, folder):
           "report it.",
           "",
           "Fallback: Pizza Boy GBA Pro",
-          "  The same file and the same rule: keep the name exactly as published. Its saves are its",
+          "  The same file and the same rule: keep the name exactly as published (if it won't open",
+          "  the ZIP, extract it in the Files app and play the .gba inside). Its saves are its",
           "  own, separate from My Boy!'s: a game saved in one doesn't appear in the other. Turn off",
           "  any automatic loading of save states there too. To back up a Pizza Boy save, export it",
           "  from Pizza Boy and upload the .sav into saves/ here (Drive app: + > Upload).",
           "",
-          "Older builds: builds/ keeps every phone build, zipped, with its build.txt. Unzip one to",
-          "play it; the ROM inside is named for its save line, so a save with the same number loads.",
+          "Older builds: builds/ keeps every phone build, zipped, with its build.txt. Unzip one",
+          "and play the .gba inside; it's named for its save line, so a save with the same number",
+          "loads.",
           "",
           "This is a development build: holding R and pressing START in the overworld opens the",
           "debug menu. Leave it alone for normal play.",
@@ -506,9 +644,12 @@ def status():
         print(f"  {e['version']}  save line {e['save_layout_version']}  {e['subject']}")
     if index:
         e = index[-1]
-        files = {e["play"]: (os.path.basename(folder), e["size"])}
+        files = {e["play"]: (os.path.basename(folder), e.get("play_size", e["size"]))}
         print(f"latest: {e['play']} ({e['version']}), "
               f"{'uploaded' if (uploaded(files, 0) or set()) >= set(files) else 'not confirmed uploaded'}")
+        rewritten, link = refresh_readme(folder, index, phone_saves(folder, index, synced_saves(folder)[0]))
+        print(f"direct download: {link or '(not uploaded yet)'}"
+              + ("  (README.txt updated)" if rewritten else ""))
     rec = save_layout.recorded()
     print(f"this checkout's save line: {rec['SAVE_LAYOUT_VERSION']}")
     synced, ignored = synced_saves(folder)
@@ -546,6 +687,8 @@ def publish(a):
             folder = None
     else:
         folder = drive_folder()
+        for sub in ("builds", "saves"):
+            os.makedirs(os.path.join(folder, sub), exist_ok=True)
     synced = synced_saves(folder)[0] if folder else []
     if not a.check:
         for p in back_up_synced(folder, synced):
@@ -557,8 +700,10 @@ def publish(a):
     loadable = next((p for p, verdict, _ in saves if verdict == "ok"), None)
     for p, verdict, why in saves:
         print(f"phone save {shown(p, folder)}: {verdict}: {why}")
+    rom_name, play = f"{GAME}_save{n}.gba", f"{GAME}_save{n}.zip"
+    package = play_zip(rom_name, rom, ident["date"])
     print("Verifying in mGBA:")
-    ok, lines = verify(rom, loadable, a.full)
+    ok, lines = verify(rom, loadable, a.full, package)
     if not ok:
         print("Verification FAILED: nothing published. Screenshots: dev/out/mobile/")
         return 1
@@ -566,23 +711,36 @@ def publish(a):
         print("Verified. --check: nothing published.")
         return 0
 
-    play = f"{GAME}_save{n}.gba"
     play_path = os.path.join(folder, play)
-    if index and index[-1]["sha256"] == digest and os.path.exists(play_path) \
-            and sha256(open(play_path, "rb").read()) == digest:
-        print(f"This ROM is already the phone build ({index[-1]['version']}): nothing to upload.")
-        if refresh_readme(folder, index, saves):
-            print("README.txt refreshed (instructions or save checks changed)")
-        if a.wait and drivefs_running():
-            print(f"Google Drive: {wait_uploaded({play: (os.path.basename(folder), len(rom))}, 0, a.wait)}")
+    last = index[-1] if index else None
+    same_rom = bool(last) and last["sha256"] == digest and archived(folder, [last], digest)
+    if same_rom and last["play"] == play and zip_rom_digest(play_path) == digest:
+        print(f"This ROM is already the phone build ({last['version']}): nothing to upload.")
+        state, link = finish(folder, index, saves, {play: (os.path.basename(folder), len(package))}, 0, a.wait)
+        print(f"Google Drive: {state}\ndirect download: {link or '(not uploaded yet)'}")
+        return 0
+    if same_rom:
+        # the same ROM, archived already, published as another play file (the .gba before the
+        # ZIPs): only the play file changes; the build keeps its entry and archive
+        print(f"Repackaging {last['version']} as {play} (the ROM and its archive stay as they are)")
+        since = time.time()
+        write_verified(play_path, package)
+        if zip_rom_digest(play_path) != digest:
+            sys.exit("the play ZIP's ROM doesn't match after writing it")
+        last.update(play=play, rom=rom_name, play_size=len(package))
+        write_verified(os.path.join(folder, "builds", "index.json"),
+                       (json.dumps(index, indent=1) + "\n").encode("utf-8"))
+        retire_old_play_files(folder, index, play)
+        state, link = finish(folder, index, saves, {play: (os.path.basename(folder), len(package))}, since, a.wait)
+        print(f"\nSaves carry over: the same ROM, save line {n}"
+              f"\nPlay file: {play} ({len(package) / 2**20:.0f} MB)\n  Google Drive: {state}"
+              f"\n  direct download: {link or '(once uploaded: run dev/mobile.py --status)'}")
         return 0
 
     if not drivefs_running():
         print("warning: Google Drive for Desktop isn't running; the files will upload when it starts")
-    for sub in ("builds", "saves"):
-        os.makedirs(os.path.join(folder, sub), exist_ok=True)
     since = time.time()
-    verified = "boots, starts a new game, saves and CONTINUEs in mGBA"
+    verified = "boots (as the ZIP too), starts a new game, saves and CONTINUEs in mGBA"
     if loadable:
         verified += f"; your phone save {shown(loadable, folder)} CONTINUEs"
     if a.full:
@@ -591,6 +749,7 @@ def publish(a):
              "published": f"{datetime.datetime.now():%Y-%m-%d %H:%M}", "verified": verified,
              "sha256": digest, "size": len(rom), "save_layout_version": n,
              "save_layout_stamp": rec["SAVE_LAYOUT_STAMP"], "layout": rec, "play": play,
+             "rom": rom_name, "play_size": len(package),
              "archive": f"{GAME}_{ident['version']}_save{n}.zip"}
     if any(e["archive"] == entry["archive"] for e in index):      # same commit, other bytes
         entry["archive"] = entry["archive"][:-4] + f"_{digest[:8]}.zip"
@@ -601,29 +760,24 @@ def publish(a):
     # 1. the archive, first: a later step may remove an older play file only once it's archived
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        z.writestr(play, rom)
+        z.writestr(rom_name, rom)
         z.writestr("build.txt", build_txt)
     write_verified(os.path.join(folder, "builds", entry["archive"]), buf.getvalue())
     with zipfile.ZipFile(os.path.join(folder, "builds", entry["archive"])) as z:
-        if sha256(z.read(play)) != digest:
+        if sha256(z.read(rom_name)) != digest:
             sys.exit("the archive's ROM doesn't match after writing it")
-    # 2. the play file
-    write_verified(play_path, rom)
+    # 2. the play file: the ZIP that was booted in the verification, byte for byte
+    write_verified(play_path, package)
+    if zip_rom_digest(play_path) != digest:
+        sys.exit("the play ZIP's ROM doesn't match after writing it")
     # 3. the index and README
     prev = index[-1] if index else None
     index.append(entry)
     write_verified(os.path.join(folder, "builds", "index.json"),
                    (json.dumps(index, indent=1) + "\n").encode("utf-8"))
-    refresh_readme(folder, index, saves)
-    # 4. a play file from an older save line leaves the top level once its archive holds it
-    for old in glob.glob(os.path.join(folder, f"{GAME}_save*.gba")):
-        if os.path.basename(old) == play:
-            continue
-        if archived(folder, index, sha256(open(old, "rb").read())):
-            os.remove(old)      # on the Drive volume this goes to Drive's trash
-            print(f"removed {os.path.basename(old)} from the top level (builds/ holds it)")
-        else:
-            print(f"kept {os.path.basename(old)}: no archive in builds/ holds it")
+    # (README.txt is written by finish(), once, after the upload)
+    # 4. any other play file leaves the top level once an archive holds its ROM
+    retire_old_play_files(folder, index, play)
 
     if prev and prev["save_layout_version"] != n:
         print(f"SAVE BREAK: save line {prev['save_layout_version']} -> {n}: the phone build has a new name, "
@@ -632,13 +786,11 @@ def publish(a):
         print(f"Saves carry over: same save line ({n}) and file name as the previous build ({prev['version']})")
     else:
         print(f"The first phone build on save line {n}")
-    files = {play: (os.path.basename(folder), len(rom)), entry["archive"]: ("builds", len(buf.getvalue()))}
-    if not drivefs_running():
-        state = "waiting for Google Drive for Desktop to start"
-    else:
-        state = wait_uploaded(files, since, a.wait) if a.wait else "not waited for"
-    print(f"\nPublished {entry['version']} to {folder}\n  play file: {play}\n  archive:   builds/{entry['archive']}"
-          f"\n  Google Drive: {state}")
+    files = {play: (os.path.basename(folder), len(package)), entry["archive"]: ("builds", len(buf.getvalue()))}
+    state, link = finish(folder, index, saves, files, since, a.wait)
+    print(f"\nPublished {entry['version']} to {folder}\n  play file: {play} ({len(package) / 2**20:.0f} MB)"
+          f"\n  archive:   builds/{entry['archive']}\n  Google Drive: {state}"
+          f"\n  direct download: {link or '(once uploaded: run dev/mobile.py --status)'}")
     if state == "syncing":
         print("  still uploading: it finishes in the background while Drive for Desktop runs")
     elif state == "unknown":
@@ -649,7 +801,8 @@ def publish(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true", help="build and verify; publish nothing")
-    ap.add_argument("--status", action="store_true", help="report what's on Drive; build nothing")
+    ap.add_argument("--status", action="store_true",
+                    help="report what's on Drive, refreshing README.txt's link; build nothing")
     ap.add_argument("--full", action="store_true", help="also run tests/playthrough_slice1.py")
     ap.add_argument("--allow-dirty", action="store_true", help="allow uncommitted changes")
     ap.add_argument("--wait", type=int, default=600, metavar="S",
