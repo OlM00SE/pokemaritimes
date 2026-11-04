@@ -46,7 +46,7 @@ name = "Nackawic"
 lat = 45.997
 lon = -67.244
 stage = "corridor"
-note = "Mill town on the headpond; the giant axe."
+note = "Mill town on the headpond's north bank; the giant axe. The Hawkshaw Bridge links it to Route 2 on the south bank."
 
 [[anchor]]
 name = "Kings Landing"
@@ -226,13 +226,4 @@ lat = 43.93
 lon = -59.91
 stage = "later"
 
-# --- Proposed: what the corridor's chain could look like (dev/blueprint.py --plan) -----------
-# An inserted map sits between two existing ones that are joined edge to edge. Everything on
-# the far side of the join moves by the new map's size; nothing else changes.
-
-[[plan]]
-name = "Headpond route (proposed)"
-between = ["Route202_1", "Fredericton_0"]
-width = 60
-height = 34
-note = "The river's east-flowing leg along the Mactaquac headpond: Nackawic, Kings Landing, the dam."
+# The corridor's maps are planned in design/region/corridor.toml (dev/corridor.py).

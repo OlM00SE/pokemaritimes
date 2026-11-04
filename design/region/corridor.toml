@@ -1,0 +1,100 @@
+# The western NB corridor: the plan of record (dev/corridor.py checks and draws it).
+#
+# World tiles: x east, y south, (0, 0) on the origin anchor, one scale for the whole corridor, so
+# a map's rectangle is also a real-world rectangle. Neighbouring maps join where their edges
+# touch; dev/corridor.py derives the connections and their offsets from the rectangles.
+# Design rationale: design/region_blueprint.md, "The corridor plan".
+#
+# map:   the game map folder that will hold it (existing folders are rebuilt in place; their
+#        interiors, warps and scripts carry over). "new" until it's created.
+# inset: drawn zoomed in, not to the corridor's scale (the start valley: real Woodstock is only
+#        about 10 km from the Maine border).
+
+[projection]
+origin = "Woodstock"
+km_per_tile = 0.5
+
+# --- maps, west to east ---------------------------------------------------------------------
+
+[[map]]
+name = "HomeTown"
+map = "HomeTown_0"
+rect = [-120, -10, 34, 28]
+inset = true
+role = "start"
+idea = "A hamlet in the Meduxnekeag hills against the border: forest closes the west and north. The brook comes down from the hills through the village; a small sawmill yard; the road leaves east."
+
+[[map]]
+name = "Route 201"
+map = "Route201_1"
+rect = [-86, -8, 52, 28]
+inset = true
+role = "route"
+idea = "The Meduxnekeag valley: the creek runs east the whole way with the road on its south bank. Appalachian hardwood forest (the real valley's preserve), a farm clearing, a ledge terrace down to the creek flats, a beaver pond."
+
+[[map]]
+name = "Woodstock"
+map = "Woodstock_2"
+rect = [-34, -22, 48, 42]
+role = "town"
+idea = "The confluence town on the Saint John's west bank: the Meduxnekeag comes in from the west and joins the big river at downtown. Main street along the river, a bridge over the creek, the wildlife station. North edge: the way to Hartland (later)."
+
+[[map]]
+name = "Route 202"
+map = "Route202_1"
+rect = [-18, 20, 42, 36]
+role = "route"
+idea = "The river road: south along the west bank past islands and intervale fields, upland ledges down to the flats; at Meductic the river swings east and the road follows its south bank."
+
+[[map]]
+name = "Nackawic"
+map = "new"
+rect = [24, 14, 36, 42]
+role = "town"
+idea = "The bridge town: the road stays on the south bank (Pokiok); a long bridge crosses the widening headpond to Nackawic on the north bank: the mill and the giant axe."
+
+[[map]]
+name = "Route 203"
+map = "new"
+rect = [60, 26, 58, 46]       # ends east of the dam's bend, so the river crosses the seam
+role = "route"
+idea = "The headpond: a wide lake to the north, the road on the south shore through mixed woods and old farms, the Kings Landing heritage hamlet, islands for Surf later. The Mactaquac Dam at the east end is the gateway to Fredericton."
+
+[[map]]
+name = "Fredericton"
+map = "Fredericton_0"
+rect = [118, 14, 52, 60]
+role = "city"
+idea = "The capital on the river: downtown on the south bank (the Legislature, Officers' Square, the Green along the water), the walking bridge to the north side, where the Nashwaak comes in. Exits east along the south bank toward Oromocto (later)."
+
+# --- water ----------------------------------------------------------------------------------
+
+[[water]]
+name = "Saint John River"
+natural_earth = "Saint John"
+smooth = 2
+# width in tiles at named anchors (real width exaggerated; the headpond is the widest)
+widths = [["Hartland", 5], ["Woodstock", 6], ["Meductic", 7], ["Nackawic", 10],
+          ["Kings Landing", 11], ["Mactaquac Dam", 8], ["Fredericton", 7], ["Oromocto", 7]]
+
+[[water]]
+name = "Meduxnekeag"
+inset = true
+width = 3
+# drawn by hand: down from the border hills, east through the valley, into the Saint John at
+# downtown Woodstock (the real mouth is about 46.148 N, 67.573 W: world tile (3.8, 0.9))
+# It comes in from the south-west, so downtown sits north of its last stretch.
+world = [[-112, -10], [-108, -4], [-101, 2], [-93, 6], [-86, 8], [-76, 10], [-66, 8], [-56, 9],
+         [-46, 9], [-34, 10], [-24, 10], [-14, 8], [-6, 5], [4, 1]]
+
+# --- the main road --------------------------------------------------------------------------
+# Drawn by hand in world tiles; it fixes where the road crosses each seam. It runs on the
+# Meduxnekeag's south bank, then the Saint John's west and south banks, as the real highways do.
+
+[[road]]
+name = "corridor road"
+width = 2
+world = [[-108, 10], [-98, 14], [-86, 15], [-74, 16], [-62, 15], [-50, 15], [-40, 15],
+         [-34, 15], [-22, 15], [-12, 14], [-8, 16], [-8, 20], [-6, 26], [-2, 34], [4, 40],
+         [12, 44], [24, 46], [36, 48], [48, 49], [60, 48], [72, 50], [82, 57], [90, 64],
+         [100, 67], [108, 64], [114, 60], [120, 55], [130, 49], [138, 46]]
