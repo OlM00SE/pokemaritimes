@@ -24,9 +24,24 @@ Run everything from the repo root with `C:\Python313\python.exe`; the commands b
 | Id budget | `dev/tests/id_budget.py` (no emulator): trainer ids, saved flags, the story var block, the unused vanilla vars and the save blocks' room, with what's left of each. |
 | Save layout | `dev/save_layout.py [--update]` measures the save blocks exactly (a probe compiled in the WSL mirror) and compares with `include/save_layout.h`, which the build asserts. After a change that moves the layout (a flag or trainer range raised, a SaveBlock field added): `--update` rewrites the numbers and bumps `SAVE_LAYOUT_VERSION`, so old saves are refused with a message instead of loading as garbage. Then run `tests/ingame_save.py`. |
 | Fix attributes | `dev/fix_attrs.py <Map> [--surfable] [--apply]` sets collision/elevation to vanilla's confident values. |
+| Make terrain private | `dev/unique_layout.py <Map> [--apply]` copies a shared layout's blocks and border, appends a layout, and points only that map at it. Events, map IDs and existing layout IDs stay unchanged. Default: preview. Run this before customizing a copied room's terrain. |
 | New blank map | `dev/new_map.py <Name> <W>x<H> [--like <Map>] [--group G] [--spawn x,y] [--apply]` makes an all-grass outdoor map with the `--like` map's tilesets, border and header, and no connections. A spawn point (an arrival-only warp to `MAP_DYNAMIC`) gives the checker an entrance until real connections exist. It appends to `gMapGroup_DevMaritimes` by default (no id moves). The default is a dry run. |
 
 ## Making or editing a map
+**Shared layouts and failed commands.** Copied standard interiors initially share their template's
+terrain. `mapgen` and `fix_attrs` refuse changed bytes when other maps use that same block file
+(even through different layout IDs); `--force` does not override this. First use
+`dev/unique_layout.py <Map> --apply`. An unchanged rebuild is safe and still allowed. Porymap
+edits bypass the Python guard, so detach a room before editing its shared terrain there too.
+
+`mapgen`, building/interior creation, event application, area naming, layout detachment and
+attribute batches roll back their declared source files on exceptions or Ctrl-C. Newly created
+room/layout folders are removed, and existing bytes are restored. Previews in `dev/out` remain
+available to inspect. Individual layout/JSON replacements also avoid truncating the live file.
+Run one authoring command at a time; rollback is not a power-loss/process-kill journal and does
+not replace git. Building plans reserve every generated floor and map constant together and
+refuse existing orphan folders/registered names, before application.
+
 1. **Get a sketch.**
    - From an existing map: `dev/mapgen.py extract <Map>` writes `design/maps/<Map>.txt`.
    - For a new design: write a design script like `design/maps/route203_design.py` or `ledgelab_design.py`. For a brand-new map, run `dev/new_map.py` first. `route203_design.py` is the worked example of ledges on a real route (a levee terrace and a wooded bench).
@@ -184,6 +199,15 @@ People's names follow the map: `LOCALID_<MAP>_<NAME>`, `<Map>_EventScript_<Name>
 **Id budget.** Trainer ids and saved flags are global and never move. Milestone 9 raised `MAX_TRAINERS_COUNT_EMERALD` to 1376 (520 ids free) and added a Maritimes flag block after the daily flags; milestone 11 sized that block for a whole region (768 flags) and added a 256-var story block in SaveBlock3 (`design/save_format.md`). The block flags are shared: `events.py` takes item and gift flags from it, `save_ids.py` story flags. The dry run prints what's left after each new id, and `dev/tests/id_budget.py` checks the whole budget. To grow a block, raise the constant (`opponents.h`, `MARITIMES_FLAGS_COUNT` in `flags.h`, `MARITIMES_VARS_COUNT` in `vars.h`). That changes the save layout: the build stops until `dev/save_layout.py --update` bumps the version, and old saves are refused. Prefer one generous raise to several small ones, and run `tests/ingame_save.py` afterwards. Once the Hoenn maps are removed, their trainer ids, flags and vars can be reclaimed too.
 
 ## Test suites
+`tests/authoring_safety.py` runs real writers in disposable fixtures under `dev/out`: shared
+layout refusal and explicit detachment, floor/constant collisions in both placement orders,
+successful room creation and return-warps, and byte-for-byte recovery after late failures
+(including event IDs and Ctrl-C). It never edits the game's maps.
+
+`tests/ingame_respawn.py` uses three actual trainer defeats without test mode: fresh home,
+an all-zero respawn repaired on CONTINUE, and a saved Center choice. It checks arrival,
+healing and returned control using the disposable `dev/out/test.sav`.
+
 | Test | What it proves |
 |---|---|
 | `tests/conformance.py [Map...]` | The engine model predicts single steps exactly like the game. Result: 482/482 on 13 maps. |

@@ -1,10 +1,39 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-04 (milestone 14). Read this first in a new session. The world's geography and
+> Updated 2026-11-05 (foundation hardening awaiting merge). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Foundation hardening (2026-11-05), branch `foundation-hardening`, ready for Tom's merge approval; not merged or pushed.**
+Tom requested fixes to the independent review's highest-priority findings before the Woodstock
+redesign. Scope: initial/legacy-zero respawn, shared-layout editing safety, generated floor/name
+collisions, and rollback for failed authoring commands. No world redesign or new gameplay content.
+
+Authoring changes: changed shared terrain is refused (including distinct layout IDs aliasing one
+block file); `dev/unique_layout.py <Map> [--apply]` explicitly detaches one map with identical
+blocks/border and unchanged events/map IDs. Standard copied rooms can keep their shared templates
+until customization. Porymap bypasses the Python guard: detach before editing shared terrain there.
+Building plans reserve all generated floors/constants, including orphan registered names/folders.
+Source edits for maps/rooms, events/IDs, area names, layout copies and attribute batches roll back
+on exceptions/Ctrl-C. This is not recovery from power loss/process termination or concurrent edits.
+
+Respawn changes: new games initialize the existing home heal location; CONTINUE repairs an
+all-zero heal location in older saves while preserving any valid Center choice. No save layout,
+map ID, or heal-location ID changed; **no save break**. Three actual trainer defeats in mGBA
+(fresh, repaired legacy, saved Center) confirm the destination, healed party, and returned control.
+The pre-fix M14 ROM, under the same real-loss scenario, whiteouts to Petalburg City with an
+all-zero fresh heal location; this reproduces the original defect directly.
+
+Verification: 20 authoring success/fault-injection tests pass; new shared-layout/collision tests
+fail against the original `develop` implementations. The build, save-layout v2 check, var-macro
+check, all 20 static regression commands and all 17 emulator regression commands passed
+(including conformance, real-play slice, four autowalks, doors/buildings, encounters, ledges,
+events, save, shores, flora and scratch mobile-publish test). Checker: 33 maps, 0 errors;
+baseline: 0 unexpected and 8 known. A separate read-only review found a detachment idempotence
+edge case, now fixed and tested, and no remaining actionable findings. The ROM has not been
+published; publish the phone build only after the approved merge into `develop`.
+
 **Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves. **Phone build published** from `develop` after the merge: `2026-11-04_f9d2bbe2fb` (save line 2, sha256 `d22722f2…`), 9/9 in mGBA (new game, save, CONTINUE at the same spot, from the ZIP too), uploaded and confirmed by Drive; **saves carry over** (same play file, `PokeMaritimes_save2.zip`). TownLab isn't reachable in normal play (dev group, like LedgeLab).
 
 **Starting the next session:** read `region_blueprint.md`, then "Next milestone" below (M15, Woodstock, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
@@ -612,6 +641,7 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 ## Regression set (run before merging anything)
 ```
 dev/fastbuild.py
+dev/tests/authoring_safety.py         # 20 fixture tests: shared terrain, room collisions, rollback and fault injection
 dev/check_maps.py --baseline          # 0 unexpected, 8 known
 dev/check_maps.py                     # 33 maps, 0 errors (3 WARN: Fredericton's 8 dead doors; TownLab's Center upstairs, as vanilla's)
 dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 766 block flags, 256 story vars, 148 save bytes)
@@ -620,6 +650,7 @@ dev/tests/conformance.py              # 532/532 (seeded samples; the count moves
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
 dev/tests/ingame_doors.py HomeTown_0 Woodstock_2 TownLab   # TownLab: 10 doors, 3 upper floors (the Center's escalator)
 dev/tests/ingame_buildings.py         # TownLab 8/8: entering the Center sets the respawn point, the nurse heals, the Mart sells
+dev/tests/ingame_respawn.py           # three real losses: fresh home, repaired legacy save, saved Center
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route203_1_2
