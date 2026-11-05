@@ -49,6 +49,7 @@
 #include "mystery_gift.h"
 #include "union_room_chat.h"
 #include "constants/map_groups.h"
+#include "constants/heal_locations.h"
 #include "constants/items.h"
 #include "difficulty.h"
 #include "follower_npc.h"
@@ -138,7 +139,11 @@ static void WarpToTruck(void)
     if (IS_FRLG)
         SetWarpDestination(MAP_GROUP(MAP_PALLET_TOWN_PLAYERS_HOUSE_2F), MAP_NUM(MAP_PALLET_TOWN_PLAYERS_HOUSE_2F), WARP_ID_NONE, 6, 6);
     else // Maritimes: new game starts in the player's bedroom in HomeTown, not the moving truck
+    {
+        // The skipped truck scripts used to initialize this. Set it before the first battle.
+        SetLastHealLocationWarp(HEAL_LOCATION_LITTLEROOT_TOWN_MY_HOUSE_2F);
         SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN_MY_HOUSE_2F_0), MAP_NUM(MAP_LITTLEROOT_TOWN_MY_HOUSE_2F_0), WARP_ID_NONE, -1, -1);
+    }
     WarpIntoMap();
 }
 

@@ -79,6 +79,7 @@
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
 #include "constants/layouts.h"
+#include "constants/heal_locations.h"
 #include "constants/region_map_sections.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
@@ -2113,6 +2114,13 @@ static void FieldCB_FadeTryShowMapPopup(void)
 void CB2_ContinueSavedGame(void)
 {
     u8 trainerHillMapId;
+    const struct WarpData *heal = &gSaveBlock1Ptr->lastHealLocation;
+
+    // Maritimes: early saves never visited the vanilla truck's setrespawn script. Repair
+    // only its uninitialized sentinel; keep every existing Center/relocated heal point.
+    if (!IS_FRLG && heal->mapGroup == 0 && heal->mapNum == 0 && heal->warpId == 0
+     && heal->x == 0 && heal->y == 0)
+        SetLastHealLocationWarp(HEAL_LOCATION_LITTLEROOT_TOWN_MY_HOUSE_2F);
 
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
