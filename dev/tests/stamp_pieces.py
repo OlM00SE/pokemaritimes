@@ -11,7 +11,8 @@
 4. Refused: a stamp off the map, overlapping, on the wrong tileset, unknown, drawn wrongly or
    uncovered `B`; a door facing a tree or water; a doormat nothing walkable leads onto.
    Accepted: a General stamp on a Rustboro map.
-5. Doors (buildings.plan, in memory): an extracted town's doors are all "unchanged"; a building
+5. Doors (buildings.plan, in memory): an extracted town's doors (HomeTown, Woodstock, TownLab
+   with its Center's heal location) are all "unchanged"; a building
    moved 2 tiles keeps its warp index and moves it; a new room is planned from the template,
    with a heal location for a Center; refused: two doors naming one room, a room that belongs
    to another map, a two-floor room named without _1F, two Centers, a warp left inside a
@@ -31,7 +32,7 @@ from mapkit.doors import door_tiles, _upstream_maps
 from mapkit import stamps, interiors, buildings
 
 TOWNS = ["LittlerootTown", "OldaleTown", "PetalburgCity"]
-OURS = ["HomeTown_0", "Woodstock_2"]
+OURS = ["HomeTown_0", "Woodstock_2", "TownLab"]
 MIN_VANILLA_DOORS = 37           # recognised across vanilla's General maps when this was written
 FAILS = []
 
@@ -180,6 +181,11 @@ def refused(p, c, rules, forb):
 
 def doors(p, c, v, rules, forb):
     print("5. door plans")
+    for n in ("Woodstock_2", "TownLab"):
+        sk = extract(p, v, n, rules, forb, c)
+        dp = buildings.plan(p, p.load_map(n), sk.stamps)
+        check(not dp.problems and len(dp.keeps) == len(sk.stamps) and not dp.moves and not dp.creates
+              and not dp.heals, f"{n}'s extracted stamps: {len(dp.keeps)} doors unchanged {dp.problems}")
     m = p.load_map("HomeTown_0")
     sk = extract(p, v, "HomeTown_0", rules, forb, c)
     dp = buildings.plan(p, m, sk.stamps)
