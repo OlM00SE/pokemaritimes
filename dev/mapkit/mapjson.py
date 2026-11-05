@@ -1,13 +1,12 @@
 """Shared helpers for tools that edit map JSON (add_interior, name_area, ...)."""
 import json
+from .transaction import atomic_write
 
 
 def dump_json(path, obj):
     """Write JSON exactly as Porymap does (2-space indent, UTF-8, trailing newline), so an
     unchanged load+dump round-trips byte-for-byte."""
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    atomic_write(path, (json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def add_to_group(p, group, names):

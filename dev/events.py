@@ -527,6 +527,18 @@ def cmd_list(p, name):
     return 0
 
 
+def apply_events(p, m, scripts, new_trainers, parties, new_flags):
+    """Keep event/script edits and their global saved IDs together on failure."""
+    from mapkit.transaction import edit
+    with edit(p, [f"data/maps/{m.name}/map.json", f"data/maps/{m.name}/scripts.pory",
+                  "include/constants/opponents.h", "src/data/trainers.party", "include/constants/flags.h"]):
+        m.save()
+        with open(p.path("data/maps", m.name, "scripts.pory"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(scripts)
+        write_trainers(p, new_trainers, parties)
+        write_flags(p, new_flags)
+
+
 def cmd_build(p, spec_path, apply, force):
     names = known_names(p)
     try:
@@ -625,11 +637,7 @@ def cmd_build(p, spec_path, apply, force):
     if new_errors and not force:
         print("NOT APPLIED: fix the errors marked NEW first (or pass --force)")
         return 1
-    new.save()
-    with open(pory_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(with_block(pory, block))
-    write_trainers(p, new_trainers, parties)
-    write_flags(p, new_flags)
+    apply_events(p, new, with_block(pory, block), new_trainers, parties, new_flags)
     print(f"applied: data/maps/{m.name}/map.json, scripts.pory"
           + (", opponents.h, trainers.party" if parties else "") + (", flags.h" if new_flags else "")
           + "\nnext: dev/fastbuild.py, then dev/tests/ingame_events.py " + m.name)

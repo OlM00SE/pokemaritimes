@@ -18,6 +18,7 @@ A stamp with no `-> <Interior>` is left as a dead door (the checker warns).
 import re
 from . import stamps, interiors
 from .doors import map_const
+from .transaction import edit
 
 NAME = re.compile(r"[A-Z][A-Za-z0-9_]*")
 
@@ -117,6 +118,10 @@ def plan(p, m, placements):
                     continue                    # neither the room nor the heal location is made
                 dp.heals.append((None, ip.first, (door[0], door[1] + 1)))
             dp.creates.append((pl, ip, door))
+    try:
+        interiors.validate_new_names(p, [n for _, ip, _ in dp.creates for n in ip.names.values()])
+    except interiors.InteriorError as ex:
+        dp.problems.append(str(ex))
     if len(centers) > 1:
         dp.problems.append(f"{len(centers)} Pokémon Centers on {m.name}: one per map (its heal location is "
                            "named for the map)")
@@ -166,8 +171,27 @@ def preview(m, dp):
                       "dest_warp_id": str(ip.exit_id)})
 
 
+def write_set(m, dp):
+    files = [f"data/maps/{m.name}/map.json", interiors.HEAL_JSON]
+    dirs = []
+    for _, ip, _ in dp.creates:
+        f, d = interiors.write_set(ip)
+        files.extend(f)
+        dirs.extend(d)
+    return files, dirs
+
+
 def apply(p, m, dp, tool="dev/mapgen.py"):
     """Write it: map.json (m.j after preview), the new rooms, the heal locations. Returns lines."""
+    if dp.problems:
+        raise interiors.InteriorError("invalid door plan: " + "; ".join(dp.problems))
+    interiors.validate_new_names(p, [n for _, ip, _ in dp.creates for n in ip.names.values()])
+    files, dirs = write_set(m, dp)
+    with edit(p, files, dirs):
+        return _apply(p, m, dp, tool)
+
+
+def _apply(p, m, dp, tool):
     out = []
     warps = m.j["warp_events"]
     first_new = len(warps) - len(dp.creates)

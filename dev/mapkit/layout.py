@@ -2,7 +2,22 @@
 
 map.bin: u16 per block, row-major. bits 0-9 metatile id, 10-11 collision, 12-15 elevation.
 """
-import json, struct
+import json, os, struct
+from .mapjson import dump_json
+from .transaction import atomic_write
+
+
+class SharedLayoutError(ValueError):
+    pass
+
+
+def layout_users(project, entry):
+    """Maps sharing these block bytes, including distinct layout IDs aliasing one file."""
+    path = os.path.normcase(os.path.realpath(project.path(entry["blockdata_filepath"])))
+    aliases = {lid for lid, e in project.layouts.items()
+               if os.path.normcase(os.path.realpath(project.path(e["blockdata_filepath"]))) == path}
+    return [n for n in project.map_names
+            if json.load(open(project.path("data/maps", n, "map.json"), encoding="utf-8"))["layout"] in aliases]
 
 
 def pack(mid, coll, elev):
@@ -54,8 +69,15 @@ class Layout:
         return self.border[i] if i < len(self.border) else 0
 
     def save(self):
-        with open(self.project.path(self.entry["blockdata_filepath"]), "wb") as f:
-            f.write(struct.pack(f"<{len(self.blocks)}H", *self.blocks))
+        path = self.project.path(self.entry["blockdata_filepath"])
+        data = struct.pack(f"<{len(self.blocks)}H", *self.blocks)
+        if open(path, "rb").read() == data:
+            return                     # shared, unchanged layouts are safe to re-apply
+        users = layout_users(self.project, self.entry)
+        if len(users) > 1:
+            raise SharedLayoutError(f"layout {self.id} is shared by {', '.join(users)}; "
+                                    "run dev/unique_layout.py <Map> --apply before editing its terrain")
+        atomic_write(path, data)
 
 
 class MapData:
@@ -77,6 +99,4 @@ class MapData:
 
     def save(self):
         """Write map.json the way Porymap does (2-space indent, UTF-8, LF, trailing newline)."""
-        with open(self.json_path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(self.j, f, indent=2, ensure_ascii=False)
-            f.write("\n")
+        dump_json(self.json_path, self.j)

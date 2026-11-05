@@ -17,6 +17,7 @@ to the vanilla exterior or to another copied floor, or the copy is refused.
 import json, os, re
 from .doors import map_const
 from .mapjson import dump_json, add_to_group, add_script_includes, indoor_closure, shared_room
+from .transaction import edit
 
 GROUP = "gMapGroup_IndoorMaritimes"
 STRIP_KEYS = ("shared_events_map", "shared_scripts_map")
@@ -30,6 +31,35 @@ BEGIN = "// ---- {tool}: the {kind}'s workings. Edit freely; the tool writes thi
 
 class InteriorError(ValueError):
     pass
+
+
+def validate_new_names(p, names):
+    """Reserve every generated floor and constant together, before any source writes."""
+    used_names, used_ids = set(), set()
+    existing = {n.casefold() for n in p.map_names}
+    groups = json.load(open(p.path("data/maps/map_groups.json"), encoding="utf-8"))
+    registered = {map_const(n): n for group in groups["group_order"] for n in groups[group]}
+    existing.update(n.casefold() for n in registered.values())
+    for n in names:
+        if not re.fullmatch(r"[A-Z][A-Za-z0-9_]*", n):
+            raise InteriorError(f"invalid generated map name {n!r}")
+        const = map_const(n)
+        if n.casefold() in used_names or const in used_ids:
+            raise InteriorError(f"generated map {n} ({const}) is reserved twice by these buildings")
+        used_names.add(n.casefold())
+        used_ids.add(const)
+        if n.casefold() in existing or os.path.exists(p.path("data/maps", n)):
+            raise InteriorError(f"map or folder {n} already exists")
+        if const in p.const_to_map:
+            raise InteriorError(f"{n} would get id {const}, which {p.const_to_map[const]} uses")
+        if const in registered:
+            raise InteriorError(f"{n} would get id {const}, reserved by registered map {registered[const]}")
+
+
+def write_set(plan):
+    """Shared files and new directories changed by writing an interior plan."""
+    return (["data/maps/map_groups.json", "data/event_scripts.s"],
+            [f"data/maps/{n}" for n in plan.names.values()])
 
 
 def load(p, name):
@@ -91,11 +121,7 @@ class Plan:
         self.exterior = exterior_of(p, template)
         self.names = floor_names(p, template, base)
         self.first = self.names[template]
-        for n in self.names.values():
-            if n in p.map_names:
-                raise InteriorError(f"map {n} already exists")
-            if map_const(n) in p.const_to_map:
-                raise InteriorError(f"{n} would get id {map_const(n)}, which {p.const_to_map[map_const(n)]} uses")
+        validate_new_names(p, self.names.values())
         vconsts = {load(p, v)["id"] for v in self.names}
         for v in self.names:
             for w in load(p, v).get("warp_events") or []:
@@ -150,6 +176,13 @@ def write(p, plan, outdoor_name, outdoor_id, ext_warp_id, tool="dev/add_interior
     """Write the copied floors. Their exits lead to warp `ext_warp_id` of `outdoor_name`
     (`outdoor_id` its map const), which the caller creates or moves. Registers the maps in
     the indoor group and data/event_scripts.s. Returns the new map names."""
+    validate_new_names(p, plan.names.values())
+    files, dirs = write_set(plan)
+    with edit(p, files, dirs):
+        return _write(p, plan, outdoor_name, outdoor_id, ext_warp_id, tool)
+
+
+def _write(p, plan, outdoor_name, outdoor_id, ext_warp_id, tool):
     vconst = {load(p, v)["id"]: n for v, n in plan.names.items()}
     ext = load(p, outdoor_name)
     for v, n in plan.names.items():
