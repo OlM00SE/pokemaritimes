@@ -15,6 +15,7 @@ import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
 from mapkit.mapjson import dump_json, indoor_closure
+from mapkit.transaction import edit
 
 SECTIONS = "src/data/region_map/region_map_sections.json"
 MAX_NAME = 16
@@ -63,12 +64,13 @@ def main(argv):
         data["map_sections"].append({"id": sec, "name": name})
     else:
         entry["name"] = name
-    dump(spath, data)
-    for m, _ in changes:
-        mp = p.path("data/maps", m, "map.json")
-        j = json.load(open(mp, encoding="utf-8"))
-        j["region_map_section"] = sec
-        dump(mp, j)
+    with edit(p, [SECTIONS] + [f"data/maps/{m}/map.json" for m, _ in changes]):
+        dump(spath, data)
+        for m, _ in changes:
+            mp = p.path("data/maps", m, "map.json")
+            j = json.load(open(mp, encoding="utf-8"))
+            j["region_map_section"] = sec
+            dump(mp, j)
     print(f"written: {len(changes)} maps. Next: dev/fastbuild.py, then check the popup in-game.")
     return 0
 

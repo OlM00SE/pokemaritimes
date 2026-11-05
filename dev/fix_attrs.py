@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from check_maps import maritimes_maps
+from mapkit.layout import SharedLayoutError
+from mapkit.transaction import edit
 
 
 def propose(p, corpus, name, surfable_only):
@@ -35,17 +37,25 @@ def main(argv):
     p = Project()
     corpus = Corpus(p)
     names = maritimes_maps(p) if "--maritimes" in argv else [a for a in argv if not a.startswith("--")]
-    for n in names:
-        m, ch = propose(p, corpus, n, "--surfable" in argv)
+    plans = [propose(p, corpus, n, "--surfable" in argv) for n in names]
+    for m, ch in plans:
+        n = m.name
         summary = Counter((f"{mid:03X}", have, want) for _, _, mid, have, want in ch)
         print(f"{n}: {len(ch)} block(s) to change")
         for (mid, have, want), k in summary.most_common(8):
             print(f"    {k:4} x metatile {mid}: (coll,elev) {have} -> {want}")
-        if ch and "--apply" in argv:
-            for x, y, mid, have, want in ch:
-                m.layout.set(x, y, coll=want[0], elev=want[1])
-            m.layout.save()
-            print("    applied")
+    if "--apply" in argv:
+        try:
+            with edit(p, [m.layout.entry["blockdata_filepath"] for m, ch in plans if ch]):
+                for m, ch in plans:
+                    if ch:
+                        for x, y, mid, have, want in ch:
+                            m.layout.set(x, y, coll=want[0], elev=want[1])
+                        m.layout.save()
+        except SharedLayoutError as ex:
+            print(f"NOT APPLIED: {ex}")
+            return 1
+        print("applied")
     return 0
 
 

@@ -21,6 +21,7 @@ from mapkit.project import Project
 from mapkit.doors import door_tiles, identify
 from mapkit.mapjson import dump_json
 from mapkit import interiors
+from mapkit.transaction import edit
 
 
 def plan(p, outdoor, x, y, base, like=None, kind="plain"):
@@ -50,6 +51,13 @@ def plan(p, outdoor, x, y, base, like=None, kind="plain"):
 
 
 def apply(p, m, x, y, pl):
+    files, dirs = interiors.write_set(pl)
+    files += [f"data/maps/{m.name}/map.json", interiors.HEAL_JSON]
+    with edit(p, files, dirs):
+        _apply(p, m, x, y, pl)
+
+
+def _apply(p, m, x, y, pl):
     ext = interiors.load(p, m.name)
     ext_warps = ext.get("warp_events") or []
     new_id = len(ext_warps)

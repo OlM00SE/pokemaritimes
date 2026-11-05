@@ -28,6 +28,8 @@ from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, CHAR_TO_
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
 from mapkit import landscape, routes, buildings
+from mapkit.layout import SharedLayoutError
+from mapkit.transaction import edit
 
 
 def render_context_pair(p, m, old_blocks, margin=6):
@@ -83,6 +85,14 @@ def patch_sketch(p, name, pieces):
             raise ValueError(f"{spec!r}: outside the map ({L.width}x{L.height})")
         rows[y][x] = m.group(1)
     return Sketch(name, ["".join(r) for r in rows], [f"// patch: {' '.join(pieces)}"])
+
+
+def apply(p, m, doors=None):
+    """Commit terrain and its door/room plan in one rollback boundary."""
+    files, dirs = buildings.write_set(m, doors) if doors else ([], [])
+    with edit(p, files + [m.layout.entry['blockdata_filepath']], dirs):
+        m.layout.save()
+        return buildings.apply(p, m, doors) if doors and (doors.moves or doors.creates or doors.heals) else []
 
 
 def main():
@@ -258,12 +268,14 @@ def main():
     if new and not a.force:
         print("NOT APPLIED: fix the errors marked NEW first (or pass --force)")
         return 1
-    m.layout.save()
+    try:
+        lines = apply(p, m, doors)
+    except SharedLayoutError as ex:
+        print(f"NOT APPLIED: {ex}")
+        return 1
     print(f"applied: {m.layout.entry['blockdata_filepath']}")
-    if doors and (doors.moves or doors.creates or doors.heals):
-        for line in buildings.apply(p, m, doors):
-            print(line)
-        print(f"  doors written: data/maps/{m.name}/map.json")
+    for line in lines:
+        print(line)
     return 0
 
 
