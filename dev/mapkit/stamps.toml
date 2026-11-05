@@ -1,0 +1,141 @@
+# Building stamps: whole vanilla buildings that mapgen places from a sketch (mapkit/stamps.py).
+#
+# Each stamp is cut from a vanilla map (`source`, top-left `at`) and copied block for block:
+# metatile, collision and elevation, exactly as vanilla has them. `shape` marks which cells of
+# the rectangle belong to the building ('#') and which are left to the terrain ('.'); a mat
+# below a door is a '#' in an extra row. The door is found from the tiles (one WarpDoor cell).
+# Stamps whose tiles all come from gTileset_General work on any map with that primary; the
+# others need the source's secondary tileset (mapgen refuses them elsewhere).
+#
+# `interior` is the vanilla interior a placed door gets a copy of (mapkit/interiors.py), with
+# its upper floors; `kind` adds what makes it work: "pokemon_center" (a nurse who heals, the
+# respawn point, the cable club upstairs), "mart" (a clerk with a stock list), or "plain".
+# Add a stamp by appending an entry; dev/tests/stamp_pieces.py checks every entry.
+
+[[stamp]]
+name = "pokemon_center"
+about = "Pokémon Center: the nurse heals and it becomes the respawn point; the cable club upstairs"
+source = "PetalburgCity"
+at = [19, 13]
+shape = ["####",
+         "####",
+         "####",
+         "####"]
+interior = "OldaleTown_PokemonCenter_1F"
+kind = "pokemon_center"
+
+[[stamp]]
+name = "mart"
+about = "Poké Mart: a clerk with a stock list"
+source = "SlateportCity"
+at = [12, 23]
+shape = ["####",
+         "####",
+         "####",
+         "####"]
+interior = "OldaleTown_Mart"
+kind = "mart"
+
+[[stamp]]
+name = "gym"
+about = "Gym (a placeholder interior: Rustboro's hall, emptied)"
+source = "PetalburgCity"
+at = [12, 4]
+shape = ["######",
+         "######",
+         "######",
+         "######",
+         "######"]
+interior = "RustboroCity_Gym"
+kind = "plain"
+
+[[stamp]]
+name = "house_small"
+about = "Small house, red roof (General: any General map)"
+source = "PetalburgCity"
+at = [9, 16]
+shape = ["####",
+         "####",
+         "####",
+         "####"]
+interior = "PetalburgCity_House1"
+kind = "plain"
+
+[[stamp]]
+name = "house_small_wide"
+about = "Small house, red roof, five wide (General: any General map)"
+source = "Route114"
+at = [25, 33]
+shape = ["#####",
+         "#####",
+         "#####",
+         "#####"]
+interior = "PetalburgCity_WallysHouse"
+kind = "plain"
+
+[[stamp]]
+name = "house_oldale"
+about = "Small house, brown roof (Petalburg tileset)"
+source = "OldaleTown"
+at = [4, 4]
+shape = ["####",
+         "####",
+         "####",
+         "####"]
+interior = "OldaleTown_House1"
+kind = "plain"
+
+[[stamp]]
+name = "house_two_storey"
+about = "Two-storey house with a doormat (Petalburg tileset); upstairs room included"
+source = "LittlerootTown"
+at = [2, 4]
+shape = ["#####",
+         "#####",
+         "#####",
+         "#####",
+         "#####",
+         "...#."]
+interior = "LittlerootTown_BrendansHouse_1F"
+kind = "plain"
+
+[[stamp]]
+name = "house_two_storey_left"
+about = "Two-storey house, door on the left, with a doormat (Petalburg tileset); upstairs room included"
+source = "LittlerootTown"
+at = [13, 4]
+shape = ["#####",
+         "#####",
+         "#####",
+         "#####",
+         "#####",
+         ".#..."]
+interior = "LittlerootTown_MaysHouse_1F"
+kind = "plain"
+
+[[stamp]]
+name = "lab"
+about = "Research lab with a doormat (Petalburg tileset)"
+source = "LittlerootTown"
+at = [3, 12]
+shape = ["#######",
+         "#######",
+         "#######",
+         "#######",
+         "#######",
+         "....#.."]
+interior = "LittlerootTown_ProfessorBirchsLab"
+kind = "plain"
+
+[[stamp]]
+name = "house_wide"
+about = "Wide house with a lean-to (Petalburg tileset)"
+source = "PetalburgCity"
+at = [18, 20]
+shape = ["########",
+         "########",
+         "########",
+         "########",
+         ".####..#"]
+interior = "PetalburgCity_House2"
+kind = "plain"
