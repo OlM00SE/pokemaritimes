@@ -5,7 +5,7 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves.
+**Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves. **Phone build published** from `develop` after the merge: `2026-11-04_f9d2bbe2fb` (save line 2, sha256 `d22722f2…`), 9/9 in mGBA (new game, save, CONTINUE at the same spot, from the ZIP too), uploaded and confirmed by Drive; **saves carry over** (same play file, `PokeMaritimes_save2.zip`). TownLab isn't reachable in normal play (dev group, like LedgeLab).
 
 **Starting the next session:** read `region_blueprint.md`, then "Next milestone" below (M15, Woodstock, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
 
