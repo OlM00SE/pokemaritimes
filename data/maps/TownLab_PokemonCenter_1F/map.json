@@ -2,7 +2,7 @@
   "id": "MAP_TOWN_LAB_POKEMON_CENTER_1F",
   "name": "TownLab_PokemonCenter_1F",
   "layout": "LAYOUT_POKEMON_CENTER_1F",
-  "music": "MUS_LITTLEROOT",
+  "music": "MUS_POKE_CENTER",
   "region_map_section": "MAPSEC_HOMETOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
