@@ -5,7 +5,9 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 13 done: the corridor plan of record** (branch `milestone13-corridor-plan`, which includes the earlier `region-blueprint` branch).
+**Milestone 13 done: the corridor plan of record** (branch `milestone13-corridor-plan`, which includes the earlier `region-blueprint` branch; merged into `develop` and pushed 2026-11-04). The phone build was re-verified after the merge: the ROM is byte-identical to the published build (sha256 `d8e0494b…`), so nothing was uploaded and saves carry over.
+
+**Starting the next session:** read `region_blueprint.md` (the geography rules, the corridor plan, the build order), then "Next milestone" below (M14, building stamps, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
 
 Tom's direction (2026-11-04):
 - Follow the real geography of the Maritimes as closely as practical.
