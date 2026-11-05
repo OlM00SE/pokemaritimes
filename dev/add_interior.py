@@ -3,39 +3,27 @@
   python dev/add_interior.py Woodstock_2 7,9 Woodstock_House1            # dry run: show the plan
   python dev/add_interior.py Woodstock_2 7,9 Woodstock_House1 --apply
   python dev/add_interior.py HomeTown_0 27,9 HomeTown_House2 --like LittlerootTown_MaysHouse_1F
+  python dev/add_interior.py Town_0 6,16 Town_PokemonCenter --like OldaleTown_PokemonCenter_1F --kind pokemon_center
 
 The building is identified from its facade (mapkit/doors.py), and the interior vanilla puts
 behind that facade is cloned: the same layout (no new map.bin), with the warps rewired and
 every story event stripped. Multi-floor interiors are cloned whole; floors get the vanilla
 floor suffix (e.g. HomeTown_House2_1F, HomeTown_House2_2F). The new maps go in
 gMapGroup_IndoorMaritimes, and their scripts are included from data/event_scripts.s.
+--kind pokemon_center / mart makes the copy work (a nurse and the respawn point, a clerk with a
+stock list; mapkit/interiors.py). On maps built from a sketch, building stamps do all of this
+from `mapgen --apply` (mapkit/buildings.py); this tool is for hand-painted maps.
 Edits JSON and script includes only. Run check_maps.py and an in-game test afterwards.
 """
-import json, os, re, sys
+import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project
-from mapkit.doors import door_tiles, identify, map_const
-from mapkit.mapjson import dump_json, indoor_closure, add_to_group, add_script_includes
-
-GROUP = "gMapGroup_IndoorMaritimes"
-STRIP_KEYS = ("shared_events_map", "shared_scripts_map")
+from mapkit.doors import door_tiles, identify
+from mapkit.mapjson import dump_json
+from mapkit import interiors
 
 
-def load(p, name):
-    return json.load(open(p.path("data/maps", name, "map.json"), encoding="utf-8"))
-
-
-def dump(path, obj):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    dump_json(path, obj)
-
-
-def floors(p, first):
-    """`first` plus the vanilla interiors reachable from it without going back outside."""
-    return [first] + indoor_closure(p, [first])
-
-
-def plan(p, outdoor, x, y, base, like=None):
+def plan(p, outdoor, x, y, base, like=None, kind="plain"):
     m = p.load_map(outdoor)
     if (x, y) not in door_tiles(p, m):
         sys.exit(f"({x},{y}) on {outdoor} is not a door tile")
@@ -44,98 +32,54 @@ def plan(p, outdoor, x, y, base, like=None):
     if like:
         if like not in p.map_names:
             sys.exit(f"--like {like}: no such map")
-        vint = like
-        outs = [w["dest_map"] for w in load(p, like).get("warp_events") or []
-                if p.const_to_map.get(w["dest_map"])
-                and load(p, p.const_to_map[w["dest_map"]]).get("map_type") != "MAP_TYPE_INDOOR"]
-        if not outs:
-            sys.exit(f"--like {like}: none of its warps leads outdoors, so there is no exit to rewire")
-        vext = outs[0]
-        why = f"--like {like}"
+        template, why = like, f"--like {like}"
     else:
         hit = identify(p, m, x, y)
         if not hit:
             sys.exit(f"no vanilla building matches the door at ({x},{y}); pass --like <VanillaInterior>")
         score, vmap, vx, vy, dest = hit
-        vint, vext = p.const_to_map[dest], load(p, vmap)["id"]
-        why = f"facade matches {vmap} ({vx},{vy}) {score}/20"
-    fl = floors(p, vint)
-    if len(fl) == 1:
-        names = {fl[0]: base}
-    else:
-        names = {v: f"{base}_{v.rsplit('_', 1)[-1]}" for v in fl}
-        if len(set(names.values())) != len(fl):
-            names = {v: f"{base}_{i + 1}" for i, v in enumerate(fl)}
-    for n in names.values():
-        if n in p.map_names:
-            sys.exit(f"map {n} already exists")
-        if map_const(n) in p.const_to_map:
-            sys.exit(f"{n} would get id {map_const(n)}, which {p.const_to_map[map_const(n)]} already uses")
-    # Every warp on a cloned floor must lead outside (rewired to this door) or to another
-    # cloned floor; anything else (a second exit, MAP_DYNAMIC) would still point into Hoenn.
-    vconsts = {load(p, v)["id"] for v in fl}
-    for v in fl:
-        for w in load(p, v).get("warp_events") or []:
-            if w["dest_map"] != vext and w["dest_map"] not in vconsts:
-                sys.exit(f"{v} has a warp at ({w['x']},{w['y']}) to {w['dest_map']}, which this tool "
-                         "cannot rewire (a second exit?); clone this building by hand in Porymap")
-    return m, vint, vext, names, why
+        template, why = p.const_to_map[dest], f"facade matches {vmap} ({vx},{vy}) {score}/20"
+    try:
+        return m, interiors.Plan(p, template, base, kind), why
+    except interiors.InteriorError as ex:
+        sys.exit(str(ex))
 
 
-def apply(p, m, x, y, vint, vext, names):
-    ext = load(p, m.name)
-    vconst = {load(p, v)["id"]: n for v, n in names.items()}
-    ext_warps = ext.setdefault("warp_events", []) or []
-    new_ext_id = len(ext_warps)
-    # Which warp of the first floor leads outside: the exterior warp points at it.
-    first = load(p, vint)
-    exit_id = next(i for i, w in enumerate(first["warp_events"]) if w["dest_map"] == vext)
-    for v, n in names.items():
-        j = load(p, v)
-        j["id"], j["name"] = map_const(n), n
-        j["music"] = ext.get("music", j["music"])
-        j["region_map_section"] = ext.get("region_map_section", j["region_map_section"])
-        if "region" in j and "region" not in ext:
-            del j["region"]
-        for k in STRIP_KEYS:
-            j.pop(k, None)
-        j["object_events"], j["coord_events"], j["bg_events"] = [], [], []
-        for w in j.get("warp_events") or []:
-            if w["dest_map"] == vext:
-                w["dest_map"], w["dest_warp_id"] = ext["id"], str(new_ext_id)
-            elif w["dest_map"] in vconst:
-                w["dest_map"] = map_const(vconst[w["dest_map"]])
-        dump(p.path("data/maps", n, "map.json"), j)
-        with open(p.path("data/maps", n, "scripts.inc"), "w", encoding="utf-8", newline="\n") as f:
-            f.write(f"{n}_MapScripts::\n\t.byte 0\n")
+def apply(p, m, x, y, pl):
+    ext = interiors.load(p, m.name)
+    ext_warps = ext.get("warp_events") or []
+    new_id = len(ext_warps)
     ext_warps.append({"x": x, "y": y, "elevation": 0,
-                      "dest_map": map_const(names[vint]), "dest_warp_id": str(exit_id)})
+                      "dest_map": interiors.map_const(pl.first), "dest_warp_id": str(pl.exit_warp_id(p))})
     ext["warp_events"] = ext_warps
-    dump(p.path("data/maps", m.name, "map.json"), ext)
-
-    add_to_group(p, GROUP, list(names.values()))
-    add_script_includes(p, list(names.values()))
+    dump_json(p.path("data/maps", m.name, "map.json"), ext)
+    interiors.write(p, pl, m.name, ext["id"], new_id)
+    if pl.kind == "pokemon_center":
+        print("  heal location", interiors.heal_location_id(m.name),
+              interiors.set_heal_location(p, interiors.heal_location_id(m.name), ext["id"], x, y + 1,
+                                          interiors.map_const(pl.first), interiors.nurse_local_id(pl.first)))
 
 
 def main(argv):
     flags = [a for a in argv if a.startswith("--")]
     args = [a for a in argv if not a.startswith("--")]
-    like = None
-    if "--like" in argv:
-        like = argv[argv.index("--like") + 1]
-        args.remove(like)
+    opts = {}
+    for k in ("--like", "--kind"):
+        if k in argv:
+            opts[k] = argv[argv.index(k) + 1]
+            args.remove(opts[k])
     if len(args) != 3:
         print(__doc__); return 2
     outdoor, xy, base = args
     x, y = (int(v) for v in xy.split(","))
     p = Project()
-    m, vint, vext, names, why = plan(p, outdoor, x, y, base, like)
+    m, pl, why = plan(p, outdoor, x, y, base, opts.get("--like"), opts.get("--kind", "plain"))
     print(f"{outdoor} door ({x},{y}): {why}")
-    for v, n in names.items():
-        print(f"  {v}  ->  {n}  ({map_const(n)}, layout {load(p, v)['layout']})")
+    for line in pl.describe(p):
+        print("  " + line)
     if "--apply" not in flags:
         print("dry run; pass --apply to write"); return 0
-    apply(p, m, x, y, vint, vext, names)
+    apply(p, m, x, y, pl)
     print("written. Next: dev/check_maps.py, dev/fastbuild.py, then an in-game check (dev/shoot.py).")
     return 0
 
