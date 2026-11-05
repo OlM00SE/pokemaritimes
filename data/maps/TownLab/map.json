@@ -1,0 +1,91 @@
+{
+  "id": "MAP_TOWN_LAB",
+  "name": "TownLab",
+  "layout": "LAYOUT_TOWN_LAB",
+  "music": "MUS_LITTLEROOT",
+  "region_map_section": "MAPSEC_HOMETOWN",
+  "requires_flash": false,
+  "weather": "WEATHER_SUNNY",
+  "map_type": "MAP_TYPE_TOWN",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": null,
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 9,
+      "y": 9,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_LAB",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 16,
+      "y": 10,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_GYM",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 25,
+      "y": 10,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_POKEMON_CENTER_1F",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 34,
+      "y": 10,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_MART",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 7,
+      "y": 20,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_TWO_STOREY_1F",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 12,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_SMALL_HOUSE",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 26,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_WIDE_HOUSE",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 31,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_OLDALE_HOUSE",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 36,
+      "y": 20,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_TWO_STOREY_LEFT_1F",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 13,
+      "y": 29,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_LEAN_TO",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": []
+}

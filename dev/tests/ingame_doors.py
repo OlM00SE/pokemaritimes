@@ -18,6 +18,19 @@ def name_of(p, const):
     return p.const_to_map.get(const)
 
 
+def approach(L, x, y):
+    """A walkable neighbour of a step-on warp (stairs, a ladder, the Center's escalator) the
+    player can step from onto it, with the key to press: from below if possible (stairs), else
+    from a side. The engine lets a step change elevation only through 0 or 15 (transition and
+    multi-level tiles), so the escalator (elevation 4) is boarded from its elevation-0 side."""
+    ok = lambda a, b: a == b or a in (0, 15) or b in (0, 15)
+    for dx, dy, key in ((0, 1, "UP"), (1, 0, "LEFT"), (-1, 0, "RIGHT"), (0, -1, "DOWN")):
+        nx, ny = x + dx, y + dy
+        if L.inb(nx, ny) and L.coll(nx, ny) == 0 and ok(L.elev(nx, ny), L.elev(x, y)):
+            return nx, ny, key
+    return x, y + 1, "UP"
+
+
 def main(maps):
     p = Project()
     fails = []
@@ -47,8 +60,9 @@ def main(maps):
                     up = name_of(p, sw["dest_map"])
                     if not up or sw["dest_map"] == m.id:
                         continue
-                    e.warp(inside, sw["x"], sw["y"] + 1)
-                    e.press("UP", 16, 4)
+                    ax, ay, key = approach(p.load_map(inside).layout, sw["x"], sw["y"])
+                    e.warp(inside, ax, ay)
+                    e.press(key, 16, 4)
                     e.wait_for_control()
                     got = e.map_name()
                     e.shot(os.path.join(OUT, f"door_{up}.png"))

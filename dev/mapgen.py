@@ -8,6 +8,9 @@
       _preview_diff.png (before | after, cropped to the change, changed cells outlined).
       --apply writes map.bin only if the result has no NEW checker errors (errors the map
       already had don't block a rebuild); --force overrides.
+      Building stamps (`// stamp:` lines) are placed block for block, and --apply also wires
+      their doors (mapkit/buildings.py): a moved building's warp moves with it, a room the
+      sketch names that doesn't exist yet is created from the stamp's interior template.
       A sketch whose ledges can't be built (bad shape, or a jump landing on a tree, water, a
       solid tile, or off the map) is refused with the cells to fix.
   python dev/mapgen.py patch <Map> s@9,16 [*@4,20 ...] [--apply]
@@ -24,7 +27,7 @@ from mapkit.terrain import (Vocabulary, learn, vanilla_maps, class_adjacency, fo
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, CHAR_TO_CLASS
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
-from mapkit import landscape, routes
+from mapkit import landscape, routes, buildings
 
 
 def render_context_pair(p, m, old_blocks, margin=6):
@@ -117,7 +120,11 @@ def main():
     else:
         if a.pieces:
             ap.error("pieces are only for patch")
-        sk = Sketch.load(a.target)
+        try:
+            sk = Sketch.load(a.target)
+        except ValueError as ex:             # bad rows, unknown characters, a malformed stamp line
+            print(f"NOT BUILT: {ex}")
+            return 1
     m = p.load_map(sk.map_name)
     entries = vanilla_maps(corpus)
     rules = learn(p, vocab, entries)
@@ -144,6 +151,16 @@ def main():
     old_routes = routes.route_stats(p, m) if m.connections else None
     old_blocks = list(m.layout.blocks)
     m.layout.blocks = blocks          # in memory only; nothing is written without --apply
+    # buildings: where each placed door's warp goes (moved, kept, or a new room), in memory too
+    doors = buildings.plan(p, m, sk.stamps) if sk.stamps else None
+    if doors:
+        print("doors:")
+        for line in doors.lines():
+            print(line)
+        buildings.preview(m, doors)
+    # a door this build takes away while its warp stays: a building dropped from the sketch
+    door_problems = (doors.problems if doors else []) + buildings.removed_doors(p, m, old_blocks, doors)
+    created = doors.created_warps if doors else {}
     outdir = p.path("dev", "out")
     os.makedirs(outdir, exist_ok=True)
     # what this build changes in the existing map.bin, so an edit can be reviewed (and kept small)
@@ -214,20 +231,39 @@ def main():
     elif diff is not None:
         print("  (reach not compared: the walk exploration was truncated on this map)")
     new = [guard] if guard else []
+    for prob in door_problems:
+        new.append(prob)
+        print(f"  ERROR doors: {prob}   <- NEW")
+    # a room this build creates on --apply doesn't exist yet: the checker can't follow the warp
+    # the plan appends for it (only that warp: any other warp to the same name is still an error)
+    hidden = {f"warp {i} -> unknown map {const}" for i, const in created.items()}
+    to_create = lambda s, c, msg: s == "ERROR" and c == "warp" and msg in hidden
     for s, c, msg in issues:
+        if to_create(s, c, msg):
+            print(f"  (created on --apply) {c}: {msg}")
+            continue
         is_new = s == "ERROR" and (c, msg) not in before
         new += [msg] if is_new else []
         print(f"  {s} {c}: {msg}{'   <- NEW' if is_new else ''}")
+    issues = [i for i in issues if not to_create(*i)]
     errors = sum(1 for s, _, _ in issues if s == "ERROR")
     print(f"checker: {errors} errors ({len(new)} new from this sketch), {len(issues) - errors} other")
     if not a.apply:
         print("dry run: nothing written (pass --apply to write map.bin)")
         return 1 if new else 0
+    if door_problems:
+        print("NOT APPLIED: fix the door errors first (--force doesn't override them: they would "
+              "leave rooms or respawn points pointing at the wrong door)")
+        return 1
     if new and not a.force:
         print("NOT APPLIED: fix the errors marked NEW first (or pass --force)")
         return 1
     m.layout.save()
     print(f"applied: {m.layout.entry['blockdata_filepath']}")
+    if doors and (doors.moves or doors.creates or doors.heals):
+        for line in buildings.apply(p, m, doors):
+            print(line)
+        print(f"  doors written: data/maps/{m.name}/map.json")
     return 0
 
 

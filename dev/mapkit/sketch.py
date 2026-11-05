@@ -13,18 +13,21 @@ Legend (one character per metatile):
     r  rock standing in water (2x2)                                            (mapkit/shores.py)
     *  flowers    b  boulder    y  sapling (a vertical run of 2-3)              (mapkit/flora.py)
     s  sign post (its text is a sign event: dev/events.py)                     (mapkit/flora.py)
-    #  keep the map's current block unchanged (buildings, signs, ...)
+    B  a cell of a building stamp, placed by a `// stamp:` line               (mapkit/stamps.py)
+    #  keep the map's current block unchanged (hand-painted pieces, ...)
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
 by shape (mapkit/shores.py). Flora stands on plain grass only.
+Buildings: `// stamp: pokemon_center @ 10,4 -> Woodstock_PokemonCenter_1F` places a catalog
+building with its top-left at (10, 4); its cells are drawn `B`. Sketch.place() does both.
 """
 from .terrain import TREE, TREE_Q, Rules, autotile, Vocabulary, grid_labels, PRIMARY
 from .layout import pack
 from .project import TILE_FLAG_SURFABLE
-from . import ledges, shores, flora
+from . import ledges, shores, flora, stamps
 
 CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F",
                  "v": "LD", "<": "LD", ">": "LD", shores.ROCK_CHAR: shores.ROCK_CLS,
-                 **flora.CHAR_CLASS}
+                 stamps.CHAR: "F", **flora.CHAR_CLASS}
 CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
                  "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#",
                  shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR}   # LD: ledges.piece_char
@@ -42,8 +45,9 @@ class SketchError(ValueError):
 
 
 class Sketch:
-    def __init__(self, map_name, rows, comments=()):
+    def __init__(self, map_name, rows, comments=(), placements=()):
         self.map_name, self.rows, self.comments = map_name, [list(r) for r in rows], list(comments)
+        self.stamps = list(placements)          # [stamps.Placement]: the buildings
 
     @property
     def w(self): return len(self.rows[0])
@@ -52,11 +56,13 @@ class Sketch:
 
     @classmethod
     def load(cls, path):
-        name, rows, comments = None, [], []
+        name, rows, comments, placements = None, [], [], []
         for line in open(path, encoding="utf-8").read().splitlines():
             if line.startswith("//"):
                 if line[2:].strip().lower().startswith("map:"):
                     name = line.split(":", 1)[1].strip()
+                elif (pl := stamps.parse_line(line)) is not None:
+                    placements.append(pl)
                 else:
                     comments.append(line)
             elif line.strip():
@@ -67,15 +73,43 @@ class Sketch:
         bad = {ch for r in rows for ch in r} - set(CHAR_TO_CLASS)
         if bad:
             raise ValueError(f"{path}: unknown characters {sorted(bad)}")
-        return cls(name, rows, comments)
+        return cls(name, rows, comments, placements)
 
     def save(self, path):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(f"// map: {self.map_name}\n")
+            for pl in self.stamps:
+                f.write(pl.line() + "\n")
             for c in self.comments:
                 f.write(c + "\n")
             for r in self.rows:
                 f.write("".join(r) + "\n")
+
+    def place(self, project, name, x, y, interior=None):
+        """Put building stamp `name` with its top-left at (x, y): draws its cells `B` and adds
+        the `// stamp:` line. `interior` names the room behind the door (created by
+        `mapgen --apply` from the stamp's interior template if it doesn't exist). Returns the
+        stamp's door (x, y). ValueError if it's unknown, runs off the sketch, overlaps another
+        stamp or stands in water; compile checks the rest (tilesets, the ground in front of the
+        door). Over forest it clears a lot: trees it cuts in half are reported as dropped cells."""
+        st = stamps.catalog(project).get(name)
+        if st is None:
+            raise ValueError(f"unknown stamp {name!r}; known: {', '.join(stamps.catalog(project))}")
+        fp = st.footprint(x, y)
+        if any(not (0 <= cx < self.w and 0 <= cy < self.h) for cx, cy in fp):
+            raise ValueError(f"{name} at ({x},{y}) ({st.w}x{st.h}) runs off the {self.w}x{self.h} map")
+        cat = stamps.catalog(project)
+        for pl in self.stamps:
+            other = cat.get(pl.name)
+            if other and fp & other.footprint(pl.x, pl.y):
+                raise ValueError(f"{name} at ({x},{y}) overlaps {pl.name} at ({pl.x},{pl.y})")
+        wet = sorted((cx, cy) for cx, cy in fp if CHAR_TO_CLASS[self.rows[cy][cx]] in ("S", "W", shores.ROCK_CLS))
+        if wet:
+            raise ValueError(f"{name} at ({x},{y}) would stand in water at {wet[:4]}")
+        for cx, cy in fp:
+            self.rows[cy][cx] = stamps.CHAR
+        self.stamps.append(stamps.Placement(name, x, y, interior))
+        return st.door_at(x, y)
 
     # ---- editing helpers for procedural design scripts ----
     def fill(self, x0, y0, x1, y1, ch):
@@ -126,13 +160,28 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         for (x, y), ch in flora.extract_chars(lambda x, y: L.mid(x, y), L.width, L.height).items():
             rows[y][x] = ch
     keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
-    sk = Sketch(map_name, ["".join(r) for r in rows])
+    placements = recognise_stamps(project, m, rows)      # marks the stamps' cells in rows: first
+    sk = Sketch(map_name, ["".join(r) for r in rows], placements=placements)
     if L.primary == PRIMARY and rules:
         shores.keep_unrebuildable(sk.rows, L.width, L.height, lambda x, y: L.mid(x, y),
                                   lambda ch: CHAR_TO_CLASS[ch])
         if verify_shores:
             keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus)
     return sk
+
+
+def recognise_stamps(project, m, rows):
+    """Catalog buildings standing on map m become stamps in the extracted rows: their cells `B`,
+    except cells where the map blends the building with what stands behind it (kept `#`).
+    Each placement names the room its door's warp leads to. Returns the placements."""
+    warps = {(w["x"], w["y"]): w["dest_map"] for w in m.events("warp_events")}
+    out = []
+    for st, x, y, kept in stamps.recognise(project, m.layout):
+        for cx, cy in st.footprint(x, y):
+            rows[cy][cx] = "#" if (cx, cy) in kept else stamps.CHAR
+        dest = project.const_to_map.get(warps.get(st.door_at(x, y)))
+        out.append(stamps.Placement(st.name, x, y, dest))
+    return out
 
 
 def shore_owned(cls, x, y, w, h):
@@ -340,7 +389,13 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     w, h = sketch.w, sketch.h
     if (w, h) != (layout.width, layout.height):
         raise ValueError(f"sketch is {w}x{h} but layout is {layout.width}x{layout.height}")
-    pieces, problems = ledges.resolve(sketch.rows, w, h, ledges.runs_into_kept(sketch.rows, w, h, layout.mid))
+    # buildings: the stamps' blocks stand in for the layout's under their `B` cells
+    stamp_blocks, stamp_problems = stamps.resolve(project, sketch.rows, sketch.stamps, layout)
+    if stamp_problems:
+        raise SketchError(stamp_problems)
+    kept = lambda x, y: stamp_blocks.get((x, y), layout.get(x, y))     # the block of a kept cell
+    kept_mid = lambda x, y: kept(x, y) & 0x3FF
+    pieces, problems = ledges.resolve(sketch.rows, w, h, ledges.runs_into_kept(sketch.rows, w, h, kept_mid))
     if pieces and layout.primary != PRIMARY:
         raise SketchError([(0, 0, f"ledges need {PRIMARY} as the primary tileset, not {layout.primary}")])
     if problems:
@@ -360,8 +415,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         raise SketchError(flora_errors)
     # judged on the final classes: grammar repair and leftover forest can change a landing tile
     tp = layout.tiles
-    kept_walkable = lambda x, y: layout.coll(x, y) == 0 and not \
-        project.tile_flags.get(tp.behavior(layout.mid(x, y)), 0) & TILE_FLAG_SURFABLE
+    kept_walkable = lambda x, y: (kept(x, y) >> 10) & 3 == 0 and not \
+        project.tile_flags.get(tp.behavior(kept_mid(x, y)), 0) & TILE_FLAG_SURFABLE
     ledge_errors, ledge_warnings = ledges.design_issues(flora.walk_view(cls, fpieces), pieces, w, h,
                                                         kept_walkable)
     if ledge_errors:
@@ -378,8 +433,15 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if rock_errors or shore_errors:
         raise SketchError(sorted(set(rock_errors + shore_errors)))
     pieces = {**pieces, **rocks}
-    keep = [[pieces.get((x, y)) or layout.mid(x, y) for x in range(w)] for y in range(h)]
+    keep = [[pieces.get((x, y)) or kept_mid(x, y) for x in range(w)] for y in range(h)]
     learn_view = shores.learning_view(gview) if rocks else gview
+    if stamp_blocks:
+        # vanilla's buildings stand on plain grass: to the learned rules a stamp reads as grass,
+        # so its neighbours are tiled as if beside a lawn (as kept "F" they would copy whatever
+        # vanilla drew beside any object: steps, fences, ledges). The stamp's own blocks still
+        # come from `kept` below.
+        learn_view = [[("G" if (x, y) in stamp_blocks else c) for x, c in enumerate(row)]
+                      for y, row in enumerate(learn_view)]
     mids, levels = autotile(rules, learn_view, w, h, keep)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
@@ -397,7 +459,7 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         for x in range(w):
             c = cls[y][x]
             if c == "F":
-                blocks.append(layout.get(x, y))
+                blocks.append(kept(x, y))
                 continue
             mid = mids[y][x]
             if c in flora.CLASSES:
@@ -422,8 +484,14 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
             else:
                 attrs = corpus.default_attrs(layout.entry, mid) or CLASS_ATTRS[c]
             blocks.append(pack(mid, *attrs))
+    # every door must face walkable ground (judged on the final blocks)
+    door_errors = stamps.door_problems(project, sketch.stamps, lambda x, y: blocks[y * w + x], w, h, tp)
+    if door_errors:
+        raise SketchError(door_errors)
     report = {"dropped_tree_cells": dropped, "grammar_repairs": grammar, "rule_levels": dict(levels),
               "grammar_cells": repaired}
+    if sketch.stamps:
+        report["buildings"] = len(sketch.stamps)
     if len(pieces) > len(rocks):
         report["ledge_tiles"] = len(pieces) - len(rocks)
     if shore_tiles or rocks:

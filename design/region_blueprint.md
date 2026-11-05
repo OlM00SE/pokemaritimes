@@ -137,14 +137,18 @@ that area's turn.
 ## Build order (each a milestone)
 1. **M13: the plan of record and its tools** (this): plan, checks, underlays, tests. No game data
    changes.
-2. **M14: building stamps.** Towns need houses, a Pokémon Center, a Mart and landmark buildings
-   placed from design scripts with their doors wired (`add_interior.py` already clones interiors).
-   Today buildings are only *kept* from hand-painted maps (`#`), so no town can be rebuilt yet.
-   A TownLab dev map proves it, like LedgeLab, ShoreLab and GroveLab.
+2. **M14: building stamps** (done). Ten vanilla buildings (Pokémon Center, Mart, gym, five
+   houses, the lab) are placed from design scripts (`Sketch.place`), and `mapgen --apply` wires
+   their doors: a moved building keeps its room, a new one gets a copied room, and the Center and
+   Mart rooms work (the nurse heals and sets the respawn point; the clerk sells). Extract
+   recognises the buildings already on HomeTown and Woodstock with their rooms, so they can be
+   moved in the rebuilds. TownLab is the dev map. Rustboro's paved city buildings (Fredericton)
+   are not stamps yet: that's M20's research.
 3. **M15: Woodstock**, the anchor town. First a small `resize_map` step (a layout to the planned
    size, events kept or reported if they fall outside); every reused folder needs it. Then: the confluence, downtown, the creek bridge (which vanilla
    bridge pieces fit, and how their elevations work, is research for that milestone), the
-   station. Its seams move to the plan (Route 201's and Route 202's
+   station, and probably the corridor's first Pokémon Center and Mart (stamps; the station, its two
+   houses and their rooms carry over by moving their stamps). Its seams move to the plan (Route 201's and Route 202's
    connections are re-offset; until they're rebuilt, the creek meets an old seam, which is
    acceptable for one milestone).
 4. **M16: the start valley**: HomeTown and Route 201 together, along the Meduxnekeag (the starter

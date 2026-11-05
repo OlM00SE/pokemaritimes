@@ -1,0 +1,42 @@
+{
+  "id": "MAP_TOWN_LAB_TWO_STOREY_LEFT_1F",
+  "name": "TownLab_TwoStoreyLeft_1F",
+  "layout": "LAYOUT_LITTLEROOT_TOWN_MAYS_HOUSE_1F",
+  "music": "MUS_LITTLEROOT",
+  "region_map_section": "MAPSEC_HOMETOWN",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": null,
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 1,
+      "y": 8,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "elevation": 0,
+      "dest_map": "MAP_TOWN_LAB_TWO_STOREY_LEFT_2F",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": []
+}

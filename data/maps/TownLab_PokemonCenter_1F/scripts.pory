@@ -1,0 +1,19 @@
+// TownLab_PokemonCenter_1F: copied from OldaleTown_PokemonCenter_1F by dev/mapgen.py (pokemon_center).
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts TownLab_PokemonCenter_1F_MapScripts {
+    MAP_SCRIPT_ON_TRANSITION {
+        setrespawn(HEAL_LOCATION_TOWN_LAB)
+    }
+    MAP_SCRIPT_ON_RESUME: CableClub_OnResume
+}
+
+// ---- dev/mapgen.py: the pokemon center's workings. Edit freely; the tool writes this block once. ----
+script TownLab_PokemonCenter_1F_EventScript_Nurse {
+    setvar(VAR_0x800B, LOCALID_TOWN_LAB_POKEMON_CENTER_1F_NURSE)
+    call(Common_EventScript_PkmnCenterNurse)
+    waitmessage
+    waitbuttonpress
+    release
+    end
+}

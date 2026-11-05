@@ -36,14 +36,23 @@ def add_script_includes(p, names):
         f.write("\n".join(lines))
 
 
+def shared_room(p, name):
+    """A room every Pokémon Center links to (the Union Room, the Trade Center): each of its exits
+    is MAP_DYNAMIC ("back where you came from"). It belongs to no town."""
+    ws = p.load_map(name).events("warp_events")
+    return bool(ws) and all(w["dest_map"] == "MAP_DYNAMIC" for w in ws)
+
+
 def indoor_closure(p, starts):
     """Indoor maps reachable from `starts` through warps, never passing through a map that is
-    not MAP_TYPE_INDOOR (so a town's houses, and their upper floors, but not the next town).
-    Returned in breadth-first order, excluding `starts` themselves."""
+    not MAP_TYPE_INDOOR (so a town's houses, and their upper floors, but not the next town),
+    and never into a shared room (a Center's upstairs leads to the Union Room, which every
+    Center shares). Returned in breadth-first order, excluding `starts` themselves."""
     seen, out, queue = set(starts), [], list(starts)
     while queue:
         for w in p.load_map(queue.pop(0)).events("warp_events"):
             n = p.const_to_map.get(w["dest_map"])
-            if n and n not in seen and p.load_map(n).j.get("map_type") == "MAP_TYPE_INDOOR":
+            if n and n not in seen and p.load_map(n).j.get("map_type") == "MAP_TYPE_INDOOR" \
+                    and not shared_room(p, n):
                 seen.add(n); out.append(n); queue.append(n)
     return out

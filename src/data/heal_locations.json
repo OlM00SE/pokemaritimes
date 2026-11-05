@@ -355,6 +355,14 @@
       "map": "MAP_LITTLEROOT_TOWN_MY_HOUSE_2F_0",
       "x": 4,
       "y": 2
+    },
+    {
+      "id": "HEAL_LOCATION_TOWN_LAB",
+      "map": "MAP_TOWN_LAB",
+      "x": 25,
+      "y": 11,
+      "respawn_map": "MAP_TOWN_LAB_POKEMON_CENTER_1F",
+      "respawn_npc": "LOCALID_TOWN_LAB_POKEMON_CENTER_1F_NURSE"
     }
   ]
 }
