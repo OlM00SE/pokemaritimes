@@ -1,7 +1,7 @@
 // map: TownLab
 // stamp: lab @ 5,5 -> TownLab_Lab
 // stamp: gym @ 13,6 -> TownLab_Gym
-// stamp: pokemon_center @ 26,7 -> TownLab_PokemonCenter_1F
+// stamp: pokemon_center @ 24,7 -> TownLab_PokemonCenter_1F
 // stamp: mart @ 33,7 -> TownLab_Mart
 // stamp: house_two_storey @ 4,16 -> TownLab_TwoStorey_1F
 // stamp: house_small @ 11,18 -> TownLab_SmallHouse
@@ -15,13 +15,13 @@ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
-TTTT................TT.....bTT.....TT...TTTT
+TTTT................TTb.....TT....bTT...TTTT
 TTTT.BBBBBBB........TT......TT.....TT...TTTT
 TTTT.BBBBBBB.BBBBBB.....................TTTT
-TTTT.BBBBBBB.BBBBBB.......BBBB...BBBB...TTTT
-TTb..BBBBBBB.BBBBBB.......BBBB...BBBB...TTTT
-TT...BBBBBBB.BBBBBB.......BBBB...BBBB...TTTT
-TTy......B...BBBBBB.......BBBB...BBBB....TTT
+TTTT.BBBBBBB.BBBBBB.....BBBB.....BBBB...TTTT
+TTb..BBBBBBB.BBBBBB.....BBBB.....BBBB...TTTT
+TT...BBBBBBB.BBBBBB.....BBBB.....BBBB...TTTT
+TTy......B...BBBBBB.....BBBB.....BBBB....TTT
 TTy.====================================.TTT
 TT..====================================.TTT
 TT..................==...................TTT
@@ -39,7 +39,7 @@ TT..................==...................TTT
 TT.........BBBBBBBB.==......ooooooo......TTT
 TTTTTTTT...BBBBBBBB.==....oooooooooo....TTTT
 TTTTTTTT...BBBBBBBB.==....ooooooooooo...TTTT
-TTTTTTTT...BBBBBBBB.==....ooooooooooo...bTTT
+TTTTTTTT...BBBBBBBB.==....ooooooooooo....TTT
 TTTTTTTT....BBBB..B.==....oooooo.........TTT
 TTTT.....TT..=========...........TT....TTTTT
 TTTT.....TT..=========...........TT....TTTTT

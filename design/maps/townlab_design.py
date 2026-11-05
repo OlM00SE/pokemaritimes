@@ -36,7 +36,7 @@ STREETS = MAIN | SOUTH | CROSS | LANE
 BUILDINGS = [
     ("lab", (5, 5), "TownLab_Lab"),                          # door (9,9), mat (9,10)
     ("gym", (13, 6), "TownLab_Gym"),                         # door (16,10)
-    ("pokemon_center", (26, 7), "TownLab_PokemonCenter_1F"),  # door (27,10)
+    ("pokemon_center", (24, 7), "TownLab_PokemonCenter_1F"),  # door (25,10)
     ("mart", (33, 7), "TownLab_Mart"),                       # door (34,10)
     ("house_two_storey", (4, 16), "TownLab_TwoStorey_1F"),   # door (7,20), mat (7,21)
     ("house_small", (11, 18), "TownLab_SmallHouse"),         # door (12,21)
