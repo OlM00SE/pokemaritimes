@@ -1,6 +1,10 @@
 # PokéMaritimes dev tooling
 
-Run everything from the repo root with `C:\Python313\python.exe`; the commands below omit that prefix. Test output goes to `dev/out/`, which is gitignored. Engine background is in `design/mapping_reference.md`.
+Run everything from the repo root with `C:\Python313\python.exe`; the commands below omit that prefix. Test output goes to `dev/out/`, which is gitignored. Engine background is in `design/mapping_reference.md`. The latest merge, published phone build, save compatibility and next-session handoff are in `design/status.md`.
+
+After a phone publish, `dev/mobile.py --status` reports the current play file and upload state.
+If it lists no synced My Boy! save, matching save-layout versions establish format compatibility,
+but the publish workflow has not boot-tested a specific phone save.
 
 ## The loop
 | Step | Command |

@@ -1,11 +1,12 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-05 (foundation hardening awaiting merge). Read this first in a new session. The world's geography and
+> Updated 2026-11-05 (foundation hardening merged and phone build published). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Foundation hardening (2026-11-05), branch `foundation-hardening`, ready for Tom's merge approval; not merged or pushed.**
+**Foundation hardening complete (2026-11-05):** branch `foundation-hardening` merged into
+`develop` as `fb2b9673ff` and pushed to `origin/develop`. No other milestone has started.
 Tom requested fixes to the independent review's highest-priority findings before the Woodstock
 redesign. Scope: initial/legacy-zero respawn, shared-layout editing safety, generated floor/name
 collisions, and rollback for failed authoring commands. No world redesign or new gameplay content.
@@ -31,8 +32,24 @@ check, all 20 static regression commands and all 17 emulator regression commands
 (including conformance, real-play slice, four autowalks, doors/buildings, encounters, ledges,
 events, save, shores, flora and scratch mobile-publish test). Checker: 33 maps, 0 errors;
 baseline: 0 unexpected and 8 known. A separate read-only review found a detachment idempotence
-edge case, now fixed and tested, and no remaining actionable findings. The ROM has not been
-published; publish the phone build only after the approved merge into `develop`.
+edge case, now fixed and tested, and no remaining actionable findings. After the merge, the build,
+save-layout and var-macro checks, 20 authoring tests, both map checkers and the three real-loss
+respawn scenarios passed again on `develop`.
+
+**Phone build published:** `2026-11-05_fb2b9673ff`, ROM sha256
+`7df037fe82171ee3dbfbfdd768e24eb697fe03ccb83fc7e0302de93a2a336df3`, save line 2.
+`dev/mobile.py --full` verified 10/10 in mGBA: fresh game, save, CONTINUE, play ZIP boot/save/
+CONTINUE, slice playthrough and byte-identical ROM. Google Drive for Desktop confirmed upload of
+`PokeMaritimes_save2.zip` and `builds/PokeMaritimes_2026-11-05_fb2b9673ff_save2.zip` to the
+private **PokeMaritimes playtest** folder; a separate `dev/mobile.py --status` reported the latest
+play file uploaded. **Saves carry over:** same layout version and play filename. No My Boy! synced
+save was present, so a particular phone save was not boot-tested; use an in-game save rather than
+an old save state, and keep My Boy!'s Quick load on start off.
+
+**Next session:** the Woodstock redesign remains proposed and unstarted. Read
+`region_blueprint.md` before planning it. Detach a shared interior with `dev/unique_layout.py`
+before changing its terrain in Porymap, run one authoring command at a time, and keep git commits:
+rollback covers exceptions/Ctrl-C, not power loss, killed processes or concurrent edits.
 
 **Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves. **Phone build published** from `develop` after the merge: `2026-11-04_f9d2bbe2fb` (save line 2, sha256 `d22722f2…`), 9/9 in mGBA (new game, save, CONTINUE at the same spot, from the ZIP too), uploaded and confirmed by Drive; **saves carry over** (same play file, `PokeMaritimes_save2.zip`). TownLab isn't reachable in normal play (dev group, like LedgeLab).
 
