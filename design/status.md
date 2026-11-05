@@ -1,10 +1,53 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-04 (milestone 13). Read this first in a new session. The world's geography and
+> Updated 2026-11-04 (milestone 14). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves.
+
+**Starting the next session:** read `region_blueprint.md`, then "Next milestone" below (M15, Woodstock, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
+
+Tom asked (2026-11-04) for reusable building placement so towns can be built efficiently: houses, Pokémon Centers, Marts and larger buildings with working entrances and interiors, proved on a test map before the corridor.
+
+**What existed before:** `add_interior.py` could put a cloned vanilla interior behind a door already painted on a map (it recognises the facade, `mapkit/doors.py`), with every event stripped. `mapgen` could only *keep* a hand-painted building as `#`, so no town could be built or rebuilt from a design script, and no room it made worked as a Center or a Mart. Porymap places buildings by copy and paste, with doors wired by hand. Vanilla's own tiles were enough: no new art was needed.
+
+**What was built:**
+- **Stamps** (`dev/mapkit/stamps.py`, catalog `stamps.toml`): ten vanilla buildings cut from their source maps and copied block for block: `pokemon_center`, `mart`, `gym`, `house_small`, `house_small_wide` (all `gTileset_General`: any General map), `house_oldale`, `house_two_storey` (door right or left, with a doormat), `lab`, `house_wide` (Petalburg tileset: all our corridor maps except Fredericton). `dev/buildings.py list | sheet | find` shows them (`dev/out/stamps_sheet.png`).
+- **In sketches:** `sk.place(p, "mart", x, y, "Town_Mart")` draws the cells `B` and writes `// stamp: mart @ x,y -> Town_Mart`. The compiler places the blocks and refuses a stamp off the map, overlapping, on the wrong tileset, drawn wrongly, or whose door doesn't face walkable ground. To the learned rules a building reads as grass, so its neighbours are tiled as beside a lawn (as kept "F" they copied grey steps from vanilla's other objects).
+- **Doors and rooms** (`mapkit/buildings.py`, run by `mapgen build` / `--apply`): `-> <Room>` names the map behind the door. An existing room keeps its warp, which moves with the door (same index, so its exits stay right): **a building moved in a redesign keeps its room, people and warp ids**. A new room is copied from the stamp's interior template. Refused: two doors naming one room, a room belonging to another map, a two-floor room named without `_1F`, two Centers on a map, a warp left inside a building.
+- **Rooms that work** (`mapkit/interiors.py`, out of `add_interior.py`, which now uses it, byte-identical for plain rooms, and takes `--kind`):
+  - A **Pokémon Center** keeps its nurse (she heals and is the whiteout respawn NPC), sets the respawn point on entry (`setrespawn`, a heal location appended to `src/data/heal_locations.json`, moved with the door), and keeps vanilla's shared cable club upstairs. Copies skip the shared Union Room and Trade Center and keep their warps.
+  - A **Mart** keeps its clerk, with a stock list (`mart` block in its `scripts.pory`, the designer's to edit).
+  - Other rooms are empty, for `events.py` (it keeps the nurse and clerk as hand-placed and appends after them; checked with a dry run).
+- **Extract** recognises catalog buildings (solid cells exact; a roof row blended with a tree behind is kept as `#`): every building on Littleroot, Oldale and Petalburg, Hoenn's Centers and Marts (37 vanilla doors), and **HomeTown's two houses and Woodstock's three buildings, with their rooms**, so the M15 and M16 rebuilds can move them.
+- **TownLab** (`design/maps/townlab_design.py`; dev group, not linked; tests warp in): a 44×34 village with every stamp, ten doors, 13 rooms, `HEAL_LOCATION_TOWN_LAB`. Its Center was then moved two tiles in the design to prove the redesign path (warp 2 and the heal location moved, nothing else).
+
+Before/after and in-game: `dev/out/TownLab_preview.png`, `dev/out/stamps_sheet.png`, `dev/out/door_TownLab_*.png`, `dev/out/buildings_TownLab_*.png` (the nurse, the shop).
+
+How it was verified:
+| Area | Result |
+|---|---|
+| Catalog and vanilla | `tests/stamp_pieces.py` PASS: all 10 stamps load from their source and their interiors copy; every door on Littleroot (3), Oldale (4) and Petalburg (6) is a recognised stamp, 37 vanilla doors in all; each stamp is recognised where it was cut. |
+| Round trip | Extract → compile reproduces every stamp cell, drawn `B` (only blended roof cells `#`), and the whole map at least as well as keeping the cells: Littleroot 96.2%, Oldale 94.2%, Petalburg 95.9% (95.3% keeping), HomeTown 87.5%, Woodstock 95.8%, TownLab 100% (99.0%). `roundtrip.py` and `reconstruction.py` (87.8%) unchanged. |
+| Refusals | Off the map, overlapping, unknown, wrong tileset (a Petalburg stamp on Fredericton's Rustboro map; the Center builds there), drawn wrongly, an uncovered `B`, in water, a door facing a tree or water, a walled-in doormat; door plans: two doors one room, another map's room, two warps into one room, `_1F` missing, two Centers, a renamed Center, a warp inside a building, a dropped building's warp and heal location. |
+| `add_interior.py` | Old and new versions, run on the same dead Fredericton door (a three-floor Rustboro flat): byte-identical files and diffs. |
+| TownLab, static | `mapgen`: 0 checker errors; its 13 rooms check clean (the Center's upstairs warns exactly as vanilla's does: the attendants walk you into the link rooms). A re-apply finds every door unchanged. |
+| TownLab, in-game | `ingame_doors.py`: 10/10 doors in and out, 3 upper floors (the escalator boarded from its elevation-0 side). `ingame_buildings.py` 8/8 as real play (no test mode): entering the Center sets `lastHealLocation` to `HEAL_LOCATION_TOWN_LAB`, the nurse heals 1 HP → full, the Mart sells a Poké Ball (₽3000 → ₽2800). |
+| Redesign | The Center moved two tiles in the design: `mapgen` moved door warp 2 and the heal location, nothing else; in-game the door, escalator, respawn point and nurse work at the new spot. |
+| `events.py` on a copied Center | A dry run adding a person: the nurse is kept as hand-placed (local id 1), the person appended, 0 errors. |
+| Regression set | All pass on the final code (37 steps): checker (vanilla 0 unexpected, 8 known; 33 maps 0 errors), id budget, save layout, conformance 532/532, playthrough, doors (HomeTown, Woodstock, TownLab), buildings 8/8, encounters (with and without a party), all four autowalks, ledges, events 114/114, save, shores 624/624, flora 435/435, piece tests, corridor plan and check, reconstruction 87.8%, round trip unchanged, route numbers 53/54 and 37/37, every events spec 0 changed, mobile publish. In the first full run `ingame_events.py` failed once while CPU-heavy tests ran beside the emulator; it passed four times since, alone. |
+| Code review | `/code-review medium` raised 10 findings, all fixed: `name_area --interiors` would have renamed the shared Union Room and Trade Center (the closure now skips shared rooms); copied Centers and Marts played town music; a heal location clash moved the other Center's respawn point (`add_interior`, and `mapgen --force`); a building dropped from the sketch left its warp and heal location behind (now refused, `removed_doors`); two warps into one room moved only one; the checker's unknown-map errors were hidden by message suffix (now only the exact warps the plan appends); a malformed stamp line and an empty sheet crashed; the real-play test called `test_mode`. **Found while testing the fixes:** extract joined the sketch rows before marking the stamps, so every extracted building came out `#` (identical blocks, so nothing showed, and the round-trip A/B compared `#` with `#`); fixed, and the test now checks the cells are `B`. |
+
+Known limits:
+- **Tilesets:** Rustboro's city buildings (Fredericton) stand on paved ground with drop shadows drawn into neighbouring tiles; they aren't stamps (M20's research). A town's houses come from one secondary tileset (a map has one), plus the General ones.
+- **The gym's room** is Rustboro's gym hall, emptied: a placeholder until there's a gym design. The lab and houses are vanilla rooms, emptied.
+- **Hedges, fences, gardens, signs** beside a building aren't stamps (the wide house's hedge is part of its stamp). Hedges look like the next piece of town vocabulary.
+- **One Center per map** (its heal location is named for the map). A Center that moves leaves a save made at the old spot unmatched: its whiteout falls back to the old outdoor spot (dev only; worth a migration note before release).
+- **Fly:** a new Center's heal location isn't a Fly destination (no Town Map yet).
+- **Whiteout itself** isn't exercised in-game: the test checks the respawn data the whiteout reads (`lastHealLocation`) and the nurse; the lookup is vanilla's.
+
 **Milestone 13 done: the corridor plan of record** (branch `milestone13-corridor-plan`, which includes the earlier `region-blueprint` branch; merged into `develop` and pushed 2026-11-04). The phone build was re-verified after the merge: the ROM is byte-identical to the published build (sha256 `d8e0494b…`), so nothing was uploaded and saves carry over.
 
 **Starting the next session:** read `region_blueprint.md` (the geography rules, the corridor plan, the build order), then "Next milestone" below (M14, building stamps, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
@@ -570,12 +613,13 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 ```
 dev/fastbuild.py
 dev/check_maps.py --baseline          # 0 unexpected, 8 known
-dev/check_maps.py                     # 19 maps, 0 errors (the 1 WARN is Fredericton's 8 dead doors)
+dev/check_maps.py                     # 33 maps, 0 errors (3 WARN: Fredericton's 8 dead doors; TownLab's Center upstairs, as vanilla's)
 dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 766 block flags, 256 story vars, 148 save bytes)
 dev/save_layout.py                    # "matches include/save_layout.h" (after any save-related change)
 dev/tests/conformance.py              # 532/532 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
-dev/tests/ingame_doors.py HomeTown_0 Woodstock_2
+dev/tests/ingame_doors.py HomeTown_0 Woodstock_2 TownLab   # TownLab: 10 doors, 3 upper floors (the Center's escalator)
+dev/tests/ingame_buildings.py         # TownLab 8/8: entering the Center sets the respawn point, the nurse heals, the Mart sells
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0 Route203_1 Route203_1_2
@@ -589,6 +633,7 @@ dev/tests/ingame_shores.py            # ShoreLab + Route 203: 624/624 edge cases
 dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
+dev/tests/stamp_pieces.py             # no emulator; PASS (catalog, 37 vanilla doors recognised, round trips, refusals, door plans, room scripts)
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
 dev/tests/mobile_publish.py           # 53/53 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/corridor_plan.py            # no emulator; PASS (plan check, seams, cleanup, connection math vs the game, every underlay compiles)
@@ -602,14 +647,15 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-The build order is in `region_blueprint.md`, "Build order": M14 building stamps, M15 Woodstock, M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
+The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
 
-**Milestone 14 (proposed): building stamps.** Every corridor town is to be rebuilt, and `mapgen` can't place a building yet; buildings are only kept (`#`) from hand-painted maps.
-- **Stamps:** named building pieces cut from vanilla maps on the same tileset pair (a small house, a two-storey house, the Pokémon Center, the Mart, a lab or large building), each with its door cell. A stamp is placed in a design script at (x, y), compiles as fixed blocks, and its neighbours are tiled as grass/path around it.
-- **Doors:** each placed door gets its warp and interior through `add_interior.py`'s machinery (the facade already identifies the vanilla interior). A stamp moved in a redesign keeps its interior and warp ids.
-- **Checks:** a stamp is refused on water, on a tree or over the map edge, and its door must face a walkable tile; the checker's dead-door check covers the rest.
-- **Proof:** a TownLab dev map with every stamp (in-game: each door enters its interior and comes back out to the same tile), and a round trip on vanilla towns (cut stamps rebuild Littleroot and Oldale's buildings block for block).
-- **Done when:** the above, plus the regression set, `/code-review medium`, and the phone build if the ROM changed (TownLab ships, like LedgeLab).
+**Milestone 15 (proposed): Woodstock, the confluence town.** The first corridor map rebuilt from the plan, with the M14 stamps.
+- **Resize first** (every reused folder needs it): a small tool that resizes a layout to the plan's size (Woodstock 36×34 → 48×42) with an offset, moves the events and warps with it (or reports any that fall outside), and re-offsets the connections from the plan (`corridor.py check` derives them). A save standing on the old map lands at its old coordinates: say so in the handoff (a save break for that case only, or move the player).
+- **Design from the underlay** (`dev/corridor.py underlay "Woodstock"`): the Saint John and the Meduxnekeag meeting at downtown, main street along the big river, the road from Route 201 to Route 202.
+- **Buildings by stamp:** `dev/buildings.py find Woodstock_2` already shows the station (`lab @ 14,8 -> Woodstock_Lab`) and the two houses with their rooms: place them in the new design with the same room names and their rooms, people and warp ids carry over. Probably the corridor's first Pokémon Center and Mart (new rooms; `HEAL_LOCATION_WOODSTOCK_2`, which also gives the slice its first real respawn point). The outdoor events spec (`Woodstock_2.events.toml`) is re-placed for the new layout.
+- **The creek bridge:** bridge vocabulary (which vanilla bridge pieces fit, and how their elevations carry the player over the water): research inside the milestone, or a ford/culvert stand-in if it grows.
+- **Seams:** Route 201's and Route 202's connections are re-offset; until they're rebuilt (M16, M17) the creek meets an old seam (accepted for one milestone).
+- **Done when:** checker, renders and in-game (doors, buildings, events, autowalks) all pass, the regression set, `/code-review medium`, then the phone build.
 
 Still open from before:
 1. **Tom plays by hand:** the current slice's text is all provisional. Since the corridor will be rebuilt, reading it matters less now; the rebuilt maps carry their events specs over and are reread then.
@@ -618,7 +664,8 @@ Still open from before:
 4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too. Wanted for the valley terraces (Route 201, Route 202).
 5. **Shore follow-ups:** pond shores by shape; a bank-to-beach transition tile. (River shores in the rebuilt towns come from the kit.)
 6. **Bridges:** Woodstock's creek, Nackawic's long bridge and Fredericton's walking bridge all need bridge vocabulary (research which vanilla pieces and elevations work), probably inside M15.
-7. Later:
+7. **Town vocabulary after stamps:** hedges and fences (Petalburg's `24x` hedge pieces, by shape like ledges), garden beds, town signs on the Center and Mart; Rustboro's paved city buildings with their shadows for Fredericton (M20); a Maritimes gym room once there's a gym design.
+8. Later:
    - The player's own house as a Maritimes room (Mom's script is vanilla's), HomeTown's upstairs room, Route 203's people (a hiker in the notch, a fisher on the beach), a rematch-free double battle in the spec.
    - Porytiles for Maritime flora: spruce/fir for a boreal look, birch, log piles, a covered bridge.
    - A Maritimes Town Map.
@@ -631,6 +678,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Buildings:** place them with `Sketch.place` in the design script (or a `// stamp:` line with `B` cells), never by painting; `mapgen --apply` wires the doors. Name a room by its ground floor, `<Base>_1F` when the template has an upstairs (Centers, two-storey houses). Renaming a room in the sketch makes a new room; the old one stays, orphaned (the dry run shows "new room"). Never delete or reorder a map's warps by hand: rooms find their door by its warp's index (a new map's spawn point must go before the first doors are wired, as TownLab's did). Keep a Center's nurse its first object: the heal location names her local id. One Center per map.
 - **Phone builds:** publish from a clean `develop` after the merge (`dev/mobile.py`), not from a milestone branch: the build is named by its commit. Phone emulators find a save by the ROM's file name, which is why the play file is named for its save line and nothing else; never put a date or commit in that name. Save states don't carry across builds (a snapshot of the old build's memory), only in-game saves; in My Boy!, "Quick load on start" must stay off. Never write into `My Drive/MyBoy`: it's My Boy!'s live sync folder, and a change there reaches Tom's phone. The upload goes through Google Drive for Desktop: if it isn't running, the files wait in its cache and the tool says the upload isn't confirmed.
 - **Playing by hand:** use `RomHackDev/Play PokeMaritimes.bat` (`dev/play.py`), not `pokeemerald.gba` directly. On 2026-11-03 Tom got "The save file has been erased due to corruption or damage." from a March save sitting beside `pokeemerald.gba`. It had no layout stamp, and SaveBlock1 has grown since, so its last SaveBlock1 sector fails the checksum in both slots. The game calls that erased **before** the stamp check can say "older version": the outdated-save message only appears when a stale save's block sizes happen to match. The launcher reads the save first (`dev/savefile.py`, which agrees with the game in `ingame_save.py`) and sets stale saves aside in `playtest/old_saves/`. That save is kept there.
 - **Save layout:** trainer and flag ids are a budget (`dev/tests/id_budget.py`). Raising `MAX_TRAINERS_COUNT_EMERALD` or `MARITIMES_FLAGS_COUNT` moves SaveBlock1 and breaks old saves; do it rarely and generously. The build then stops on `SaveLayoutChanged_*`: run `dev/save_layout.py --update` (it bumps the version, so old saves are refused with a message), rebuild, then `tests/ingame_save.py`. Story state: vars and flags come from `dev/save_ids.py` (256 story vars in SaveBlock3, 766 block flags); keep the 23 unused vanilla vars for engine features. The story block must stay SaveBlock3's first field (a link save writes only sectors 0–4; `save.c` asserts it). `design/save_format.md` has the version history: add a row on every bump. Anything sized by `MAX_TRAINERS_COUNT` costs ROM per id: check `pokeemerald.map` (the trainer-slide table was one).
