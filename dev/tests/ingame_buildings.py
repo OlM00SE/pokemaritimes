@@ -2,7 +2,7 @@
 
   python dev/tests/ingame_buildings.py [Map ...]          (default: TownLab)
 
-For each outdoor map, from a new game (no wild battles):
+For each outdoor map, from a new game played as a player would (no test mode; text speed fast):
   - every Pokémon Center whose heal location is on the map (src/data/heal_locations.json):
       walking in through its door sets the respawn point: SaveBlock1.lastHealLocation becomes
       that heal location (this map, its x and y, no warp id), which is what a whiteout and
@@ -73,8 +73,7 @@ def main(argv):
 
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
-        e.test_mode()
-        fast_text(e)
+        fast_text(e)                    # real play: no test_mode (TownLab has no grass or trainers)
         e.give_mon("STARLY", 20)
         for outdoor in names:
             m = p.load_map(outdoor)

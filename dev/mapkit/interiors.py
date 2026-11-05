@@ -16,7 +16,7 @@ to the vanilla exterior or to another copied floor, or the copy is refused.
 """
 import json, os, re
 from .doors import map_const
-from .mapjson import dump_json, add_to_group, add_script_includes
+from .mapjson import dump_json, add_to_group, add_script_includes, indoor_closure, shared_room
 
 GROUP = "gMapGroup_IndoorMaritimes"
 STRIP_KEYS = ("shared_events_map", "shared_scripts_map")
@@ -40,22 +40,10 @@ def is_indoor(p, name):
     return load(p, name).get("map_type") == "MAP_TYPE_INDOOR"
 
 
-def shared_room(p, name):
-    """A room every Center links to (Union Room, Trade Center): each of its exits is MAP_DYNAMIC."""
-    ws = load(p, name).get("warp_events") or []
-    return bool(ws) and all(w["dest_map"] == "MAP_DYNAMIC" for w in ws)
-
-
 def floors(p, first):
     """`first` plus the vanilla indoor maps reachable from it without going outside, skipping
-    shared rooms. Breadth-first."""
-    seen, out, queue = {first}, [first], [first]
-    while queue:
-        for w in load(p, queue.pop(0)).get("warp_events") or []:
-            n = p.const_to_map.get(w["dest_map"])
-            if n and n not in seen and is_indoor(p, n) and not shared_room(p, n):
-                seen.add(n); out.append(n); queue.append(n)
-    return out
+    shared rooms (mapjson.indoor_closure). Breadth-first."""
+    return [first] + indoor_closure(p, [first])
 
 
 def exterior_of(p, template):
@@ -167,7 +155,8 @@ def write(p, plan, outdoor_name, outdoor_id, ext_warp_id, tool="dev/add_interior
     for v, n in plan.names.items():
         j = load(p, v)
         j["id"], j["name"] = map_const(n), n
-        j["music"] = ext.get("music", j["music"])
+        if plan.kind == "plain":                 # a house plays the town's music; a Center or
+            j["music"] = ext.get("music", j["music"])  # a Mart keeps its own (MUS_POKE_CENTER/MART)
         j["region_map_section"] = ext.get("region_map_section", j["region_map_section"])
         if "region" in j and "region" not in ext:
             del j["region"]

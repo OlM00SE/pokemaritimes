@@ -30,10 +30,7 @@ class DoorPlan:
         self.heals = []        # (heal id or None, room (ground floor) name, (x, y)): None = a new one
         self.problems = []
         self.dead = []         # placements without a room
-
-    def pending_consts(self):
-        """Map consts of rooms this plan creates (the checker can't know them yet)."""
-        return {map_const(pl.first) for _, pl, _ in self.creates}
+        self.created_warps = {}  # warp index -> room const, appended by preview() for new rooms
 
     def lines(self):
         out = []
@@ -85,6 +82,11 @@ def plan(p, m, placements):
                 dp.problems.append(f"{pl.interior} exists, but no warp on {m.name} leads into it (it belongs to "
                                    "another door or map); name a new room, or wire it by hand")
                 continue
+            if len(hits) > 1:
+                dp.problems.append(f"{len(hits)} warps on {m.name} lead into {pl.interior} (warps "
+                                   f"{', '.join(map(str, hits))}): a stamp has one door, so it can't tell which "
+                                   "to move; wire this building by hand")
+                continue
             i = hits[0]
             owned.add(i)
             old = (warps[i]["x"], warps[i]["y"])
@@ -107,12 +109,14 @@ def plan(p, m, placements):
             except interiors.InteriorError as ex:
                 dp.problems.append(f"{pl.name} at ({pl.x},{pl.y}) -> {pl.interior}: {ex}")
                 continue
-            dp.creates.append((pl, ip, door))
             if st.kind == "pokemon_center":
                 hid = interiors.heal_location_id(m.name)
                 if any(e["id"] == hid for e in interiors.heal_locations(p)["heal_locations"]):
-                    dp.problems.append(f"{hid} already exists: {m.name} has a Pokémon Center already")
+                    dp.problems.append(f"{hid} already exists: {m.name} has a Pokémon Center already "
+                                       f"(a renamed Center room? keep its old name to keep its room)")
+                    continue                    # neither the room nor the heal location is made
                 dp.heals.append((None, ip.first, (door[0], door[1] + 1)))
+            dp.creates.append((pl, ip, door))
     if len(centers) > 1:
         dp.problems.append(f"{len(centers)} Pokémon Centers on {m.name}: one per map (its heal location is "
                            "named for the map)")
@@ -126,14 +130,38 @@ def plan(p, m, placements):
     return dp
 
 
+def removed_doors(p, m, old_blocks, dp=None):
+    """Problems for doors this build takes away while their warps (or a Center's heal location)
+    stay: a building dropped from the sketch, or painted over. m holds the new blocks and the
+    warps after preview(). Deleting a warp renumbers the ones after it (rooms find their door by
+    index), so this is left to the designer: keep the building, or remove the warp (and its room)
+    by hand and re-check the rooms that pointed past it."""
+    door = p.behavior_set("WarpDoor")
+    L = m.layout
+    was_door = lambda x, y: L.inb(x, y) and L.tiles.behavior(old_blocks[y * L.width + x] & 0x3FF) in door
+    is_door = lambda x, y: L.inb(x, y) and L.tiles.behavior(L.mid(x, y)) in door
+    out = []
+    for i, w in enumerate(m.events("warp_events")):
+        if was_door(w["x"], w["y"]) and not is_door(w["x"], w["y"]):
+            out.append(f"warp {i} (to {w['dest_map']}) stands on a door at ({w['x']},{w['y']}) that this build "
+                       "removes; keep the building, or delete the warp and its room by hand")
+    moving = {hid for hid, _, _ in dp.heals} if dp else set()
+    for e in interiors.heal_locations(p)["heal_locations"]:
+        if e["map"] == m.id and e["id"] not in moving and was_door(e["x"], e["y"] - 1) \
+                and not is_door(e["x"], e["y"] - 1):
+            out.append(f"{e['id']} is outside a door at ({e['x']},{e['y'] - 1}) that this build removes")
+    return out
+
+
 def preview(m, dp):
     """Apply the plan's warp changes to m's map.json in memory (for the checker): moves, and
-    a warp for each room to be created (its map doesn't exist yet: see pending_consts)."""
+    a warp for each room to be created (its map doesn't exist yet: dp.created_warps)."""
     warps = m.j.setdefault("warp_events", []) or []
     m.j["warp_events"] = warps
     for i, _, (x, y), _ in dp.moves:
         warps[i]["x"], warps[i]["y"] = x, y
     for pl, ip, (x, y) in dp.creates:
+        dp.created_warps[len(warps)] = map_const(ip.first)
         warps.append({"x": x, "y": y, "elevation": 0, "dest_map": map_const(ip.first),
                       "dest_warp_id": str(ip.exit_id)})
 

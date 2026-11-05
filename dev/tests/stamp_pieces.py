@@ -19,6 +19,10 @@
    building.
 6. Interior scripts: a Center gets the respawn and the nurse, its upstairs the cable club's map
    scripts; a Mart gets the clerk and the stock; a plain room gets the empty stub.
+7. Guards (from the milestone 14 review): a town's interiors stop at the shared link rooms; a
+   Center and a Mart keep their music; two warps into one room, and a renamed Center, are
+   refused; a building dropped from the sketch leaves its warp (and a Center's heal location)
+   caught, a moved one doesn't; a malformed `// stamp:` line is refused.
 
   python dev/tests/stamp_pieces.py [-v]
 """
@@ -100,6 +104,13 @@ def round_trip(p, c, v, rules, forb, verbose):
         cells = set().union(*(stamps.catalog(p)[pl.name].footprint(pl.x, pl.y) for pl in sk.stamps)) \
             if sk.stamps else set()
         same_cells = all(blocks[y * L.width + x] == L.get(x, y) for x, y in cells)
+        # the stamps are really stamps: B, except a blended walk-behind cell (collision 0) kept as '#'
+        cat = stamps.catalog(p)
+        soft = {(q.x + dx, q.y + dy) for q in sk.stamps for (dx, dy), b in cat[q.name].cells.items()
+                if not (b >> 10) & 3}
+        drawn = all(sk.rows[y][x] == stamps.CHAR or (sk.rows[y][x] == "#" and (x, y) in soft) for x, y in cells)
+        check(drawn, f"{n}: extracted stamps are drawn B ({sum(sk.rows[y][x] == stamps.CHAR for x, y in cells)}"
+              f"/{len(cells)}; the rest blended roof cells)")
         kept = Sketch(n, ["".join("#" if ch == stamps.CHAR else ch for ch in row) for row in sk.rows])
         kblocks, _ = compile_sketch(p, c, rules, kept, L, v, forb)
         a = sum(x == y for x, y in zip(blocks, L.blocks))
@@ -169,9 +180,10 @@ def refused(p, c, rules, forb):
     check(ex is not None and "Petalburg" in str(ex), f"refused: a Petalburg stamp on a Rustboro map: {str(ex).strip()[:90]}")
     check(build(rows([P("pokemon_center", 4, 4)]), [P("pokemon_center", 4, 4)], R) is None,
           "a General stamp (the Center) builds on a Rustboro map")
-    sk = Sketch("X", ["." * w] * h)
+    sk = Sketch("X", ["." * w] * (h - 4) + ["~" * w] * 4)
     sk.place(p, "mart", 4, 4)
-    for args, needle in (((p, "mart", 5, 5), "overlaps"), ((p, "mart", w - 1, 4), "runs off"), ((p, "spire", 1, 1), "unknown")):
+    for args, needle in (((p, "mart", 5, 5), "overlaps"), ((p, "mart", w - 1, 4), "runs off"), ((p, "spire", 1, 1), "unknown"),
+                         ((p, "mart", 10, h - 5), "in water")):
         try:
             sk.place(*args)
             check(False, f"place() refuses {needle}")
@@ -210,6 +222,61 @@ def doors(p, c, v, rules, forb):
         check(any(needle in s for s in dp.problems), f"refused: {what}: {(dp.problems or ['(none)'])[0][:100]}")
 
 
+def guards(p, c, v, rules, forb):
+    """The review's cases (milestone 14): shared rooms, music, ambiguous and stale doors."""
+    print("7. guards")
+    from mapkit.mapjson import indoor_closure
+    near = indoor_closure(p, ["TownLab"])
+    check(not {"UnionRoom", "TradeCenter"} & set(near) and "TownLab_PokemonCenter_2F" in near,
+          f"a town's interiors stop at the shared link rooms ({len(near)} rooms; name_area --interiors uses this)")
+    music = {r: interiors.load(p, r)["music"] for r in ("TownLab_PokemonCenter_1F", "TownLab_PokemonCenter_2F",
+                                                         "TownLab_Mart", "TownLab_SmallHouse")}
+    check(music["TownLab_PokemonCenter_1F"] == music["TownLab_PokemonCenter_2F"] == "MUS_POKE_CENTER"
+          and music["TownLab_Mart"] == "MUS_POKE_MART" and music["TownLab_SmallHouse"] == p.load_map("TownLab").j["music"],
+          f"a Center and a Mart keep their music, a house plays the town's: {music}")
+    m = p.load_map("TownLab")
+    sk = extract(p, v, "TownLab", rules, forb, c)
+    dup = copy.deepcopy(m)
+    mart_w = next(w for w in dup.j["warp_events"] if w["dest_map"] == "MAP_TOWN_LAB_MART")
+    dup.j["warp_events"].append(dict(mart_w, x=mart_w["x"] + 1))
+    dp = buildings.plan(p, dup, sk.stamps)
+    check(any("lead into TownLab_Mart" in s for s in dp.problems) and not any(r == "TownLab_Mart" for *_, r in dp.moves),
+          f"two warps into one room: refused, neither moved: {[s for s in dp.problems if 'Mart' in s][:1]}")
+    renamed = [stamps.Placement(q.name, q.x, q.y, "TownLab_NewCenter_1F" if q.name == "pokemon_center" else q.interior)
+               for q in sk.stamps]
+    dp = buildings.plan(p, m, renamed)
+    check(any("already exists" in s for s in dp.problems) and not dp.creates and not dp.heals,
+          "a renamed Center: refused, and neither a room nor a heal location is planned")
+
+    def rebuilt(placements):
+        """TownLab compiled with these placements (the removed ones drawn as grass), in memory."""
+        rows = [["." if ch == stamps.CHAR else ch for ch in row] for row in sk.rows]
+        for q in placements:
+            for x, y in stamps.catalog(p)[q.name].footprint(q.x, q.y):
+                rows[y][x] = stamps.CHAR
+        mm = copy.deepcopy(m)
+        blocks, _ = compile_sketch(p, c, rules, Sketch("TownLab", ["".join(r) for r in rows], placements=placements),
+                                   mm.layout, v, forb)
+        old, mm.layout.blocks = list(mm.layout.blocks), blocks
+        dp = buildings.plan(p, mm, placements)
+        buildings.preview(mm, dp)
+        return buildings.removed_doors(p, mm, old, dp)
+    probs = rebuilt([q for q in sk.stamps if q.name != "mart"])
+    check(len(probs) == 1 and "MAP_TOWN_LAB_MART" in probs[0], f"the Mart dropped from the sketch: its warp is "
+          f"caught: {probs[:1]}")
+    probs = rebuilt([q for q in sk.stamps if q.name != "pokemon_center"])
+    check(len(probs) == 2 and any("HEAL_LOCATION_TOWN_LAB" in s for s in probs),
+          "the Center dropped: its warp and its heal location are caught")
+    moved = [stamps.Placement(q.name, q.x - 2 if q.name == "pokemon_center" else q.x, q.y, q.interior) for q in sk.stamps]
+    probs = rebuilt(moved)
+    check(not probs, f"the Center moved 2 tiles: nothing stale (its warp and heal location move) {probs}")
+    try:
+        stamps.parse_line("// stamp: mart 12,6")
+        check(False, "a malformed stamp line is refused")
+    except ValueError as ex:
+        check("bad stamp line" in str(ex), f"a malformed stamp line is refused: {ex}")
+
+
 def scripts(p):
     print("6. interior scripts")
     cat = stamps.catalog(p)
@@ -243,6 +310,7 @@ def main(argv):
     refused(p, c, rules, forb)
     doors(p, c, v, rules, forb)
     scripts(p)
+    guards(p, c, v, rules, forb)
     print(f"RESULT: {'PASS' if not FAILS else f'{len(FAILS)} failures'}")
     return 1 if FAILS else 0
 

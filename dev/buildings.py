@@ -33,6 +33,9 @@ def cmd_sheet(p, map_name=None):
     if map_name:
         L = p.load_map(map_name).layout
         cat = [st for st in cat if st.fits(L.primary, L.secondary)]
+        if not cat:
+            print(f"no stamp fits {map_name}'s tilesets ({L.primary}/{L.secondary})")
+            return
     pad, scale, label = 1, 2, 26
     tiles = []
     for st in cat:

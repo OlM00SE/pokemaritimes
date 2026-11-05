@@ -89,8 +89,9 @@ class Sketch:
         """Put building stamp `name` with its top-left at (x, y): draws its cells `B` and adds
         the `// stamp:` line. `interior` names the room behind the door (created by
         `mapgen --apply` from the stamp's interior template if it doesn't exist). Returns the
-        stamp's door (x, y). ValueError if it's unknown, runs off the sketch or overlaps
-        another stamp; compile checks the rest (tilesets, the ground in front of the door)."""
+        stamp's door (x, y). ValueError if it's unknown, runs off the sketch, overlaps another
+        stamp or stands in water; compile checks the rest (tilesets, the ground in front of the
+        door). Over forest it clears a lot: trees it cuts in half are reported as dropped cells."""
         st = stamps.catalog(project).get(name)
         if st is None:
             raise ValueError(f"unknown stamp {name!r}; known: {', '.join(stamps.catalog(project))}")
@@ -102,6 +103,9 @@ class Sketch:
             other = cat.get(pl.name)
             if other and fp & other.footprint(pl.x, pl.y):
                 raise ValueError(f"{name} at ({x},{y}) overlaps {pl.name} at ({pl.x},{pl.y})")
+        wet = sorted((cx, cy) for cx, cy in fp if CHAR_TO_CLASS[self.rows[cy][cx]] in ("S", "W", shores.ROCK_CLS))
+        if wet:
+            raise ValueError(f"{name} at ({x},{y}) would stand in water at {wet[:4]}")
         for cx, cy in fp:
             self.rows[cy][cx] = stamps.CHAR
         self.stamps.append(stamps.Placement(name, x, y, interior))
@@ -156,7 +160,8 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         for (x, y), ch in flora.extract_chars(lambda x, y: L.mid(x, y), L.width, L.height).items():
             rows[y][x] = ch
     keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
-    sk = Sketch(map_name, ["".join(r) for r in rows], placements=recognise_stamps(project, m, rows))
+    placements = recognise_stamps(project, m, rows)      # marks the stamps' cells in rows: first
+    sk = Sketch(map_name, ["".join(r) for r in rows], placements=placements)
     if L.primary == PRIMARY and rules:
         shores.keep_unrebuildable(sk.rows, L.width, L.height, lambda x, y: L.mid(x, y),
                                   lambda ch: CHAR_TO_CLASS[ch])

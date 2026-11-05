@@ -120,7 +120,11 @@ def main():
     else:
         if a.pieces:
             ap.error("pieces are only for patch")
-        sk = Sketch.load(a.target)
+        try:
+            sk = Sketch.load(a.target)
+        except ValueError as ex:             # bad rows, unknown characters, a malformed stamp line
+            print(f"NOT BUILT: {ex}")
+            return 1
     m = p.load_map(sk.map_name)
     entries = vanilla_maps(corpus)
     rules = learn(p, vocab, entries)
@@ -154,7 +158,9 @@ def main():
         for line in doors.lines():
             print(line)
         buildings.preview(m, doors)
-    pending = doors.pending_consts() if doors else set()
+    # a door this build takes away while its warp stays: a building dropped from the sketch
+    door_problems = (doors.problems if doors else []) + buildings.removed_doors(p, m, old_blocks, doors)
+    created = doors.created_warps if doors else {}
     outdir = p.path("dev", "out")
     os.makedirs(outdir, exist_ok=True)
     # what this build changes in the existing map.bin, so an edit can be reviewed (and kept small)
@@ -225,12 +231,13 @@ def main():
     elif diff is not None:
         print("  (reach not compared: the walk exploration was truncated on this map)")
     new = [guard] if guard else []
-    for prob in (doors.problems if doors else []):
+    for prob in door_problems:
         new.append(prob)
         print(f"  ERROR doors: {prob}   <- NEW")
-    # a room this build creates on --apply doesn't exist yet: the checker can't follow its warp
-    to_create = lambda s, c, msg: s == "ERROR" and c == "warp" and any(msg.endswith(f"unknown map {k}")
-                                                                        for k in pending)
+    # a room this build creates on --apply doesn't exist yet: the checker can't follow the warp
+    # the plan appends for it (only that warp: any other warp to the same name is still an error)
+    hidden = {f"warp {i} -> unknown map {const}" for i, const in created.items()}
+    to_create = lambda s, c, msg: s == "ERROR" and c == "warp" and msg in hidden
     for s, c, msg in issues:
         if to_create(s, c, msg):
             print(f"  (created on --apply) {c}: {msg}")
@@ -244,6 +251,10 @@ def main():
     if not a.apply:
         print("dry run: nothing written (pass --apply to write map.bin)")
         return 1 if new else 0
+    if door_problems:
+        print("NOT APPLIED: fix the door errors first (--force doesn't override them: they would "
+              "leave rooms or respawn points pointing at the wrong door)")
+        return 1
     if new and not a.force:
         print("NOT APPLIED: fix the errors marked NEW first (or pass --force)")
         return 1

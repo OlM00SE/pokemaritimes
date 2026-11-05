@@ -39,6 +39,10 @@ def plan(p, outdoor, x, y, base, like=None, kind="plain"):
             sys.exit(f"no vanilla building matches the door at ({x},{y}); pass --like <VanillaInterior>")
         score, vmap, vx, vy, dest = hit
         template, why = p.const_to_map[dest], f"facade matches {vmap} ({vx},{vy}) {score}/20"
+    if kind == "pokemon_center":
+        hid = interiors.heal_location_id(outdoor)
+        if any(e["id"] == hid for e in interiors.heal_locations(p)["heal_locations"]):
+            sys.exit(f"{hid} already exists: {outdoor} has a Pokémon Center already (one per map)")
     try:
         return m, interiors.Plan(p, template, base, kind), why
     except interiors.InteriorError as ex:
