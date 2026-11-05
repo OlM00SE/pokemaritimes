@@ -1179,11 +1179,25 @@
     "HomeTown_House2_2F",
     "Woodstock_House1",
     "Woodstock_Lab",
-    "Woodstock_House2"
+    "Woodstock_House2",
+    "TownLab_Lab",
+    "TownLab_Gym",
+    "TownLab_PokemonCenter_1F",
+    "TownLab_PokemonCenter_2F",
+    "TownLab_Mart",
+    "TownLab_TwoStorey_1F",
+    "TownLab_TwoStorey_2F",
+    "TownLab_SmallHouse",
+    "TownLab_WideHouse",
+    "TownLab_OldaleHouse",
+    "TownLab_TwoStoreyLeft_1F",
+    "TownLab_TwoStoreyLeft_2F",
+    "TownLab_LeanTo"
   ],
   "gMapGroup_DevMaritimes": [
     "LedgeLab",
     "ShoreLab",
-    "GroveLab"
+    "GroveLab",
+    "TownLab"
   ]
 }
