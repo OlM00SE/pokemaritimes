@@ -1,15 +1,25 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-06 (test infrastructure reliability). Read this first in a new session. The world's geography and
+> Updated 2026-11-06 (test infrastructure reliability merged and pushed). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Test infrastructure reliability (2026-11-06, branch `test-infrastructure-reliability`):** the
-last foundation item from the independent audit before Woodstock. Tooling only: the ROM is
-byte-identical to the published phone build (`7df037fe…`), **no save break**.
-Codex drafted most of it uncommitted on the branch; Claude verified it, closed the gaps below,
-and documented it.
+**Next session: Milestone 15, Woodstock** (Tom agreed 2026-11-06 that the foundation is ready;
+not started). Read `region_blueprint.md`, then "Next milestone" below. Before any map work:
+`dev/corridor.py check` (0 errors, 0 warnings). The merge gate is `dev/regression.py` (must end
+`0 failed`; quote its evidence lines). Detach a shared interior with `dev/unique_layout.py`
+before editing its terrain in Porymap.
+
+**Test infrastructure reliability (2026-11-06):** branch `test-infrastructure-reliability`
+merged into `develop` as `3abcbb3b8b` and pushed to `origin/develop` (Tom okayed). The last
+foundation item from the independent audit before Woodstock. Tooling only: the ROM is
+byte-identical to the published phone build (`7df037fe…`), **no save break**. After the merge,
+`dev/mobile.py` verified 9/9 in mGBA (new game, save, CONTINUE, the play ZIP, byte-identical ROM)
+and uploaded nothing: the phone build `2026-11-05_fb2b9673ff` is already this ROM, so saves carry
+over. Codex drafted most of the work uncommitted on the branch; Claude verified it, closed the
+gaps below, and documented it. Codex's audit report itself isn't in the repo (only the summaries
+here); if it lists findings beyond these, they haven't been assessed.
 - **One gate:** `dev/regression.py` runs the whole regression set serially with per-step logs, an
   evidence line per step (its counts), and a JSON report (commit, dirty tree, ROM sha256).
   OBSERVED metrics (reconstruction, route numbers) are never counted as passes.
@@ -84,14 +94,14 @@ play file uploaded. **Saves carry over:** same layout version and play filename.
 save was present, so a particular phone save was not boot-tested; use an in-game save rather than
 an old save state, and keep My Boy!'s Quick load on start off.
 
-**Next session:** the Woodstock redesign remains proposed and unstarted. Read
+*(Historical; the current pointer is at the top.)* **Next session:** the Woodstock redesign remains proposed and unstarted. Read
 `region_blueprint.md` before planning it. Detach a shared interior with `dev/unique_layout.py`
 before changing its terrain in Porymap, run one authoring command at a time, and keep git commits:
 rollback covers exceptions/Ctrl-C, not power loss, killed processes or concurrent edits.
 
 **Milestone 14 done: building stamps** (branch `milestone14-building-stamps`, merged into `develop` and pushed 2026-11-04). **No save break:** the save layout is unchanged (`save_layout.py` matches version 2); TownLab and its rooms are appended maps and its heal location is appended, so no id moves. **Phone build published** from `develop` after the merge: `2026-11-04_f9d2bbe2fb` (save line 2, sha256 `d22722f2…`), 9/9 in mGBA (new game, save, CONTINUE at the same spot, from the ZIP too), uploaded and confirmed by Drive; **saves carry over** (same play file, `PokeMaritimes_save2.zip`). TownLab isn't reachable in normal play (dev group, like LedgeLab).
 
-**Starting the next session:** read `region_blueprint.md`, then "Next milestone" below (M15, Woodstock, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
+*(Historical.)* **Starting the next session:** read `region_blueprint.md`, then "Next milestone" below (M15, Woodstock, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
 
 Tom asked (2026-11-04) for reusable building placement so towns can be built efficiently: houses, Pokémon Centers, Marts and larger buildings with working entrances and interiors, proved on a test map before the corridor.
 
@@ -134,7 +144,7 @@ Known limits:
 
 **Milestone 13 done: the corridor plan of record** (branch `milestone13-corridor-plan`, which includes the earlier `region-blueprint` branch; merged into `develop` and pushed 2026-11-04). The phone build was re-verified after the merge: the ROM is byte-identical to the published build (sha256 `d8e0494b…`), so nothing was uploaded and saves carry over.
 
-**Starting the next session:** read `region_blueprint.md` (the geography rules, the corridor plan, the build order), then "Next milestone" below (M14, building stamps, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
+*(Historical.)* **Starting the next session:** read `region_blueprint.md` (the geography rules, the corridor plan, the build order), then "Next milestone" below (M14, building stamps, proposed and not started). `dev/corridor.py check` should print 0 errors and 0 warnings before any map work.
 
 Tom's direction (2026-11-04):
 - Follow the real geography of the Maritimes as closely as practical.
