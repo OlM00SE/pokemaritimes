@@ -31,8 +31,8 @@ against the corpus). Mined from 238 vanilla layouts: walls are collision 1, elev
 modal attributes of every piece); stairs 0AF/0CF are walkable at elevation 3.
 
 The rules level_issues() enforces: walkable ground changes level only through a wall, a ledge,
-stairs, or along a road (a graded road: two path cells may differ in level, which is how a road
-climbs through a cutting in a wall). A wall never touches water (a tile of ground at its foot:
+stairs, or along a road through a cutting (a graded road: two path cells one level apart, one
+of them beside a wall). A wall never touches water (a tile of ground at its foot:
 cliffs straight into water aren't vocabulary yet).
 """
 WALL, STAIRS = "^", "%"
@@ -176,8 +176,14 @@ def resolve(chars, levels, w, h):
 
 def level_issues(cls, levels, w, h):
     """Errors [(x, y, msg)] where the terrain contradicts the levels: walkable cells side by side
-    at different levels (unless both are road: a graded road), or a wall touching water.
+    at different levels, or a wall touching water. The one exception is a graded road climbing
+    through a cutting: two road cells one level apart, one of them beside a wall (the cut).
     cls: the final class grid (after grammar repair, trees and flora)."""
+    walled = lambda x, y: any(0 <= x + dx < w and 0 <= y + dy < h and cls[y + dy][x + dx] == "CL"
+                              for dx, dy in DIRS.values())
+    graded = lambda x, y, nx, ny: (cls[y][x] == "P" and cls[ny][nx] == "P"
+                                   and abs(levels[y][x] - levels[ny][nx]) == 1
+                                   and (walled(x, y) or walled(nx, ny)))
     errors = []
     for y in range(h):
         for x in range(w):
@@ -188,10 +194,11 @@ def level_issues(cls, levels, w, h):
                     continue
                 o = cls[ny][nx]
                 if c in WALKABLE and o in WALKABLE and levels[y][x] != levels[ny][nx] \
-                        and not (c == "P" and o == "P"):
+                        and not graded(x, y, nx, ny):
                     errors.append((x, y, f"level {levels[y][x]} meets level {levels[ny][nx]} at "
                                          f"({nx},{ny}) on open ground: put a wall (^), a ledge or "
-                                         "stairs between them, or a road through a cutting"))
+                                         "stairs between them, or a road through a cutting (a "
+                                         "road climbs one level at a time, beside a wall)"))
             if c in CLASSES:
                 for dx, dy in DIRS.values():
                     nx, ny = x + dx, y + dy

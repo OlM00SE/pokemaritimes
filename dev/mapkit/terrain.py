@@ -210,21 +210,24 @@ class Rules:
         """exclude: metatiles never to choose (vanilla labels its cliff stairs as grass, so the
         rules could otherwise draw stairs in a lawn beside a kept cliff); the next most common
         tile at that level is taken instead. Empty, the choice is the plain lookup."""
-        top = lambda c: next((m for m, _ in c.most_common() if m not in exclude), None)
+        def top(c):
+            if not exclude:
+                return c.most_common(1)[0][0]
+            return next((m for m, _ in c.most_common() if m not in exclude), None)
         keys = self.keys(cls, sig)
         c = self.t[8][cls].get(keys[8])
-        if c and sum(c.values()) >= self.MIN_SUPPORT and top(c) is not None:
-            return top(c), 8
+        if c and sum(c.values()) >= self.MIN_SUPPORT and (t := top(c)) is not None:
+            return t, 8
         if self.fallback == "nb":
             t = self.pick_nb(cls, sig, exclude=exclude)
             if t is not None:
                 return t, 5
         for lvl in (7, 4, 3):
             c = self.t[lvl][cls].get(keys[lvl])
-            if c and (sum(c.values()) >= self.MIN_SUPPORT or lvl == 3) and top(c) is not None:
-                return top(c), lvl
-        if self.base[cls] and top(self.base[cls]) is not None:
-            return top(self.base[cls]), 0
+            if c and (sum(c.values()) >= self.MIN_SUPPORT or lvl == 3) and (t := top(c)) is not None:
+                return t, lvl
+        if self.base[cls] and (t := top(self.base[cls])) is not None:
+            return t, 0
         return None, -1
 
 
