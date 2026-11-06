@@ -168,6 +168,20 @@ class HarnessGuards(unittest.TestCase):
                 code, output = quietly(ingame_cliffs.main, ["Empty"])
             self.assertEqual(code, 1)
             self.assertIn("NOT TESTED", output)
+        # a wall the model and the game both walk through (a wall piece made walkable) fails
+        walk_through = {"bump": [(1, 2, ["N"], (1, 1))], "climb": [(1, 5, ["N"], (1, 3))], "cut": []}
+        with mock.patch.object(ingame_cliffs, "Project"), \
+             mock.patch.object(ingame_cliffs, "Emu", FakeEmu), \
+             mock.patch.object(ingame_cliffs, "prepare_rom", return_value="unused"), \
+             mock.patch.object(ingame_cliffs, "cases_for", return_value=walk_through), \
+             mock.patch.object(ingame_cliffs, "walk", side_effect=lambda e, x, y, dirs:
+                               {(1, 2): (1, 1), (1, 5): (1, 3)}[(x, y)]), \
+             mock.patch.object(FakeEmu, "warp", side_effect=lambda name, x, y: (0, 0, x, y), create=True), \
+             mock.patch.object(FakeEmu, "shot", create=True):
+            code, output = quietly(ingame_cliffs.main, ["Lab"])
+        self.assertEqual(code, 1)
+        self.assertIn("a wall must block", output)
+        self.assertIn("climb 1/1", output)
         steps = {s.id: s for s in regression.manifest()}
         self.assertEqual(regression.evaluate(steps["cliffs"], 0,
             "TOTAL: 0/0 cliff cases behave as the model says")[0], "FAILED")

@@ -2,7 +2,8 @@
 
 For each map (default: CliffLab and Route 202), from the map's blocks (cliff pieces: mapkit/cliffs.py):
   bump    on every walkable tile beside a wall piece, press toward the wall: the player must not move
-          (walls are solid from every side: faces, rims, flanks, corners).
+          (walls are solid from every side: faces, rims, flanks, corners), and the model must say
+          so too.
   climb   every stair column: from the tile below its foot, walk north the stairs' height + 1 steps
           and arrive on the tile above its top; then walk back south to the start.
   cut     every graded road through a wall (a road tile beside a wall tile on both sides, west and
@@ -127,6 +128,10 @@ def main(argv):
                         continue
                     got = walk(e, x, y, dirs)
                     good = got == exp
+                    if kind == "bump" and (exp != (x, y) or got != (x, y)):
+                        # a wall blocks: the model and the game must both keep the player in place
+                        # (a wall piece made walkable would otherwise pass as model == game)
+                        good, got = False, f"{got} (a wall must block; the model says {exp})"
                     if kind != "bump" and good and got == (x, y):
                         good, got = False, f"{got} (never moved: the model and the game agree the way is shut)"
                     if good and kind != "bump" and shots < 3:

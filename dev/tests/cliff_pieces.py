@@ -210,7 +210,19 @@ def shapes(verbose):
     bad += not pinched
     if not pinched or verbose:
         print(f"  {'ok  ' if pinched else 'FAIL'} a pinched wall: {why}")
-    print(f"shapes: {len(CASES) + 1 - bad}/{len(CASES) + 1} behave as expected")
+    # a graded road climbs one level at a time beside a wall (a cutting); asked directly too
+    road = lambda cls, lv: cliffs.level_issues(cls, lv, len(cls[0]), len(cls))
+    roads = [("road one level beside a wall", [["CL", "P"], ["CL", "P"]], [[1, 1], [1, 0]], False),
+             ("road one level in the open (trees beside it, no wall)", [["T", "P"], ["T", "P"]],
+              [[1, 1], [1, 0]], True),
+             ("road two levels beside a wall", [["CL", "P"], ["CL", "P"]], [[2, 2], [2, 0]], True)]
+    for name, cls, lv, refused in roads:
+        good = bool(road(cls, lv)) == refused
+        bad += not good
+        if not good or verbose:
+            print(f"  {'ok  ' if good else 'FAIL'} {name}: {'refused' if road(cls, lv) else 'built'}")
+    n = len(CASES) + 1 + len(roads)
+    print(f"shapes: {n - bad}/{n} behave as expected")
     return bad == 0, made
 
 
@@ -267,6 +279,49 @@ def level_lines():
 ROUNDTRIP_MAPS = ["CliffLab", "Route202_1"]
 
 
+def learned(p, _cache={}):
+    if not _cache:
+        from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
+        corpus = Corpus(p)
+        vocab = Vocabulary(p, corpus)
+        entries = vanilla_maps(corpus)
+        _cache.update(corpus=corpus, vocab=vocab, rules=learn(p, vocab, entries),
+                      forbidden=forbidden_pairs(class_adjacency(p, vocab, entries)))
+    return _cache
+
+
+def built_maps(p):
+    """Maps whose design sketch draws cliffs: [(name, sketch)]."""
+    out = []
+    for name in ROUNDTRIP_MAPS:
+        path = p.path("design", "maps", f"{name}.txt")
+        if name in p.map_names and os.path.exists(path):
+            sk = Sketch.load(path)
+            if any(ch in cliffs.CHARS for row in sk.rows for ch in row):
+                out.append((name, sk))
+    return out
+
+
+def sketch_agreement(p):
+    """Each map built from a sketch with cliffs holds exactly the cliff blocks the resolver gives
+    its sketch today (compiled fresh, as mapgen builds it): the committed map is the resolver's
+    output, so a change to the resolver that would alter a built cliff shows here. The extract
+    round trip below can't show it: extract keeps cliffs as '#'."""
+    from mapkit.sketch import compile_sketch
+    L = learned(p)
+    ok, checked = True, []
+    for name, sk in built_maps(p):
+        m = p.load_map(name)
+        blocks, _ = compile_sketch(p, L["corpus"], L["rules"], sk, m.layout, L["vocab"], L["forbidden"],
+                                   fresh=True)
+        cells = [i for i, b in enumerate(blocks) if (b & 0x3FF) in C.PIECES]
+        differ = sum(1 for i in cells if blocks[i] != m.layout.blocks[i])
+        ok &= differ == 0 and bool(cells)
+        checked.append(f"{name} {len(cells)} cliff cells, {differ} differ")
+    print("sketch agreement: " + ("; ".join(checked) if checked else "NO SKETCH WITH CLIFFS"))
+    return ok and bool(checked)
+
+
 def roundtrip(p):
     """extract -> compile leaves every cliff and stair block unchanged (they're kept '#') and
     draws no cliff or stair piece anywhere else (vanilla labels its stairs as grass: the rules
@@ -274,12 +329,8 @@ def roundtrip(p):
     fresh build reads a wall as grass, an extract keeps it as a solid tile, so e.g. a tree right
     under a wall can take another top variant."""
     from mapkit.sketch import extract, compile_sketch
-    from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
-    corpus = Corpus(p)
-    vocab = Vocabulary(p, corpus)
-    entries = vanilla_maps(corpus)
-    rules = learn(p, vocab, entries)
-    forbidden = forbidden_pairs(class_adjacency(p, vocab, entries))
+    L = learned(p)
+    corpus, vocab, rules, forbidden = L["corpus"], L["vocab"], L["rules"], L["forbidden"]
     ok, checked = True, []
     for name in (n for n in ROUNDTRIP_MAPS if n in p.map_names):
         m = p.load_map(name)
@@ -302,13 +353,14 @@ def main(argv):
     verbose = "-v" in argv
     p = Project()
     ok, made = shapes(verbose)
-    # CliffLab's own pieces join the adjacency check
-    if "CliffLab" in p.map_names:
-        L = p.load_map("CliffLab").layout
+    # every built map's cliffs (CliffLab, Route 202) join the adjacency check
+    for name, _ in built_maps(p):
+        L = p.load_map(name).layout
         made.append((None, {(x, y): L.mid(x, y) for y in range(L.height) for x in range(L.width)
                             if L.mid(x, y) in C.PIECES or L.mid(x, y) in ledges.PIECES}))
     ok = vanilla_agreement(p, made, verbose) and ok
     ok = level_lines() and ok
+    ok = sketch_agreement(p) and ok
     ok = roundtrip(p) and ok
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
