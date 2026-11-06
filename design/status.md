@@ -5,7 +5,8 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Next session: Milestone 16, the start valley** (proposed below, not started). Read
+**Next session: Milestone 16, the start valley** (proposed below, not started; Tom asked to hold it
+until he says go). M15 is merged, pushed and on the phone. Read
 `region_blueprint.md`, then "Next milestone" below. Before any map work: `dev/corridor.py check`
 (0 errors, 0 warnings). The merge gate is `dev/regression.py` (must end `0 failed`; quote its
 evidence lines). Detach a shared interior with `dev/unique_layout.py` before editing its terrain
@@ -68,12 +69,23 @@ Before/after and in-game: `dev/out/m15/before_after.png`, `ingame_sheet.png` (ni
 **Save compatibility: SAVES CARRY OVER** (save line 2, no layout change). A phone save standing
 in Woodstock continues once in front of the new Pokémon Center; a save anywhere else, or inside
 a Woodstock house, continues where it was made (the houses' doors lead out to their new spots).
-**Merged** into `develop` as `3a43be36ca` (not pushed: waiting for Tom's okay). **Phone build
+**Merged** into `develop` as `3a43be36ca` and pushed to `origin/develop` (Tom okayed, 2026-11-06). **Phone build
 published:** `2026-11-06_3a43be36ca`, ROM sha256 `c6300120dba7ed45…`, save line 2;
 `dev/mobile.py --full` 10/10 in mGBA (new game, save, CONTINUE, the play ZIP, the slice
 playthrough, byte-identical ROM); Google Drive confirmed the upload of `PokeMaritimes_save2.zip`
 and `builds/PokeMaritimes_2026-11-06_3a43be36ca_save2.zip`. Same play file name, so My Boy! keeps
 the save.
+
+**The previous playable build stays recoverable** (the last one before M15, `2026-11-05_fb2b9673ff`,
+ROM sha256 `7df037fe…`):
+- on Drive: `PokeMaritimes playtest/builds/PokeMaritimes_2026-11-05_fb2b9673ff_save2.zip` (the ROM
+  under its play name plus `build.txt`); to play it on the phone, unzip it and load that ROM (a save
+  made on the M15 build stays with the M15 play file);
+- in git: commit `fb2b9673ff` on `develop` (the foundation-hardening merge); building it reproduces
+  the ROM byte for byte (done in this milestone);
+- locally (gitignored): `dev/out/m15/oldrom/PokeMaritimes_save2.gba` with its rebuilt `.map`, which
+  `tests/ingame_world_revision.py --old-rom` needs. WSL `~/maritimes-oldbuild` is the mirror that
+  rebuilt it (disposable; delete it to free space).
 
 **Code review** (`/code-review medium`): 10 findings, all fixed.
 - **Saves beside the seam:** an old save on Route 201 or 202 near Woodstock's seam would paste
