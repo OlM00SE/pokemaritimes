@@ -1652,6 +1652,8 @@
 // ---- dev/events.py: Maritimes flags (appended here) ----
 #define FLAG_WOODSTOCK_2_GARDENER_GIFT              (MARITIMES_FLAGS_START + 0x0)  // Maritimes: dev/events.py
 #define FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL       (MARITIMES_FLAGS_START + 0x1)  // Maritimes: dev/events.py
+#define FLAG_ITEM_ROUTE202_1_UPLAND_BALL            (MARITIMES_FLAGS_START + 0x2)  // Maritimes: dev/events.py
+#define FLAG_HIDDEN_ITEM_ROUTE202_1_BROOK_MOUTH_POTION (MARITIMES_FLAGS_START + 0x3)  // Maritimes: dev/events.py
 // ---- end of Maritimes flags ----
 
 #define FLAGS_COUNT (MARITIMES_FLAGS_END + 1)

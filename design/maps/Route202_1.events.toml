@@ -1,0 +1,101 @@
+# Route 202, the river road to the Meductic bend: its people, signs and items (provisional text).
+#   dev/events.py build design/maps/Route202_1.events.toml [--apply]
+# Positions are map tiles [x, y]. Keep the road clear: route numbers must show no trainer a
+# crossing can't avoid (the build prints them).
+map = "Route202_1"
+
+# The sign posts are terrain: `s` in route202_design.py. The route sign stands by the road out of
+# Woodstock and points down the river, as vanilla's route signs point to the far end.
+[[sign]]
+name = "RouteSign"
+at = [8, 2]
+text = """
+ROUTE 202
+{DOWN_ARROW} MEDUCTIC
+"""
+
+# By the farm lane at the bend, where the road turns east along the south bank.
+[[sign]]
+name = "MeducticSign"
+at = [28, 21]
+text = """
+MEDUCTIC
+Where the old portage trail left the river for the Eel River lakes.
+"""
+
+# On the north terrace above the riverside meadow, looking down at the river.
+[[person]]
+name = "RiverWatcher"
+at = [14, 8]
+gfx = "OLD_WOMAN"
+facing = "right"
+text = """
+Before the dam went in downriver, the Saint John ran fast and shallow here.
+
+Now it's wide and slow all the way to Meductic. The islands used to be hilltops, you know.
+"""
+
+# On the brook's north bank, east of the stairs, facing along the bank toward the river: the
+# bank is a side way down to the meadow, so the battle is optional.
+[[trainer]]
+name = "FishermanMurray"
+at = [20, 12]
+gfx = "FISHERMAN"
+facing = "left"
+sight = 3
+class = "Fisherman"
+trainer_name = "MURRAY"
+party = ["Magikarp 5", "Goldeen 6"]
+intro = "Shh! The trout are biting in the brook today."
+defeat = "You scared them all off..."
+after = """
+This brook comes down out of the hills and cuts right through the terraces.
+
+It's a short walk down to the big river from here.
+"""
+
+# In the intervale's hay field below the bend, facing into it.
+[[trainer]]
+name = "PicnickerAnne"
+at = [31, 19]
+gfx = "PICNICKER"
+facing = "up"
+sight = 3
+class = "Picnicker"
+trainer_name = "ANNE"
+party = ["Mareep 6", "Skiddo 6"]
+intro = "The hay's taller than me this year! Want to battle?"
+defeat = "My Pokémon got lost in the hay..."
+after = """
+The flats down here flood every spring. That's why the soil grows such good hay.
+"""
+
+# Up the logging trail, in the upland clearing.
+[[trainer]]
+name = "HikerGordon"
+at = [39, 32]
+gfx = "HIKER"
+facing = "left"
+sight = 3
+class = "Hiker"
+trainer_name = "GORDON"
+party = ["Geodude 6", "Machop 7"]
+intro = "You climbed all the way up here? Let's see what you've got!"
+defeat = "Whew! You're tougher than this hill."
+after = """
+From the top of the valley wall you can see the river swing east at Meductic.
+
+The cliffs across the water are the far bank. Nobody gets over there without a boat.
+"""
+
+[[item]]
+name = "UplandBall"
+at = [35, 33]
+item = "ITEM_POKE_BALL"
+
+# Where the brook meets the river, on its south bank (the island in the river waits for Surf:
+# ingame_events.py can only reach events on foot).
+[[hidden_item]]
+name = "BrookMouthPotion"
+at = [29, 15]
+item = "ITEM_POTION"
