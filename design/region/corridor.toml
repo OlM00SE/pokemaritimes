@@ -38,6 +38,10 @@ map = "Woodstock_2"
 rect = [-34, -22, 48, 42]
 role = "town"
 idea = "The confluence town on the Saint John's west bank: the Meduxnekeag comes in from the west and joins the big river at downtown. Main street along the river, a bridge over the creek, the wildlife station. North edge: the way to Hartland (later)."
+# Built in M15 (design/maps/woodstock_design.py). Until Route 201 (M16) and Route 202 (M17) are
+# rebuilt on the plan, the game joins Woodstock to today's prototypes at interim offsets that line
+# up their roads: Route 201 at 22 (the plan: 14), Route 202 at 7 (the plan: 16). `check` lists
+# them under "changes the plan asks for".
 
 [[map]]
 name = "Route 202"

@@ -144,13 +144,16 @@ that area's turn.
    recognises the buildings already on HomeTown and Woodstock with their rooms, so they can be
    moved in the rebuilds. TownLab is the dev map. Rustboro's paved city buildings (Fredericton)
    are not stamps yet: that's M20's research.
-3. **M15: Woodstock**, the anchor town. First a small `resize_map` step (a layout to the planned
-   size, events kept or reported if they fall outside); every reused folder needs it. Then: the confluence, downtown, the creek bridge (which vanilla
-   bridge pieces fit, and how their elevations work, is research for that milestone), the
-   station, and probably the corridor's first Pokémon Center and Mart (stamps; the station, its two
-   houses and their rooms carry over by moving their stamps). Its seams move to the plan (Route 201's and Route 202's
-   connections are re-offset; until they're rebuilt, the creek meets an old seam, which is
-   acceptable for one milestone).
+3. **M15: Woodstock** (done), the anchor town. `dev/resize_map.py` resized the folder to the
+   plan (every reused folder starts with it). `design/maps/woodstock_design.py` builds the
+   confluence from the underlay: the Saint John from real data, the Meduxnekeag widening into its
+   mouth at downtown, the highway on the creek's south bank, Main Street over the creek on a plank
+   bridge (Route 104's deck, copied into Petalburg by `dev/tile_import.py`), Water Street with the
+   corridor's first Pokémon Center and Mart, King Street with the station and two houses (their
+   rooms carried over) and a new two-storey house. Saves standing on the old map continue at the
+   Center's door (a world revision). Seams: interim offsets line up today's Route 201 and Route
+   202 until M16 and M17 rebuild them on the plan; the creek meets Route 201's woods and the wider
+   river meets Route 202's narrow one behind woods until then.
 4. **M16: the start valley**: HomeTown and Route 201 together, along the Meduxnekeag (the starter
    scene and the events specs move with them).
 5. **M17: Route 202**, **M18: Nackawic** (a long bridge), **M19: Route 203**,
