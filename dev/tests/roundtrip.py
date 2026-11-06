@@ -51,20 +51,24 @@ for name in maps:
 print("PASS: no extracted cell is repaired by the grammar" if not damaged else
       f"FAIL: {damaged} maps would be changed by the grammar on a rebuild")
 
-# the guard: an extract as it was before joins were kept (HomeTown's lane-side trees read as
-# forest beside the sand) must be refused by mapgen build's terrain guard
+# the guard: trees drawn against terrain the map already has, in a join the grammar forbids
+# (trees outrank sand, so the sand would be cleared), must be refused by mapgen build's terrain
+# guard. Route 201's gravel bar: a whole tree drawn right below its lowest-left sand cell.
 from mapgen import terrain_guard
 m = p.load_map("Route201_1")
 sk = extract(p, v, "Route201_1", rules, forbidden, c)
-for y in (0, 1):
-    for x in (8, 9, 12, 13):
-        sk.rows[y][x] = "T"
-    for x in (10, 11):
-        sk.rows[y][x] = ":"
+sand = sorted(((y, x) for y in range(sk.h - 2) for x in range(sk.w - 1) if sk.rows[y][x] == ":"),
+              key=lambda t: (-t[0], t[1]))        # room for a whole tree below it
+if not sand:
+    print("FAIL: Route 201 has no sand with room for a tree below it to test the guard on")
+    sys.exit(1)
+y, x = sand[0]
+for dx in (0, 1):
+    for dy in (1, 2):
+        sk.rows[y + dy][x + dx] = "T"
 _, rep = compile_sketch(p, c, rules, sk, m.layout, v, forbidden)
 msg = terrain_guard(v, m.layout, rep["grammar_cells"])
-lane = {(10, 0), (11, 0), (10, 1), (11, 1)}
-guard_ok = bool(msg) and lane <= set(rep["grammar_cells"])
-print(("PASS" if guard_ok else "FAIL") + ": the terrain guard refuses a build that clears HomeTown's lane"
+guard_ok = bool(msg) and (x, y) in set(rep["grammar_cells"])
+print(("PASS" if guard_ok else "FAIL") + f": the terrain guard refuses a build that clears Route 201's gravel bar at {(x, y)}"
       + (f" ({msg[:60]}...)" if msg else ""))
 sys.exit(1 if damaged or not guard_ok else 0)
