@@ -85,6 +85,8 @@ def main(argv):
     n_edges = 60
     if "--edges" in argv:
         i = argv.index("--edges"); n_edges = int(argv[i + 1]); argv = argv[:i] + argv[i + 2:]
+    if n_edges < 0:
+        raise SystemExit("--edges must be nonnegative")
     maps = argv or DEFAULT_MAPS
     p, rng = Project(), random.Random(2027)
     total = bad = 0
@@ -93,6 +95,9 @@ def main(argv):
         e.test_mode()                       # no wild battles, no trainer sight
         for name in maps:
             pieces, edges = cases_for(p, name, n_edges, rng)
+            if not pieces and not edges:
+                bad += 1
+                print(f"{name}: FAIL, no testable flora pieces or forest edges (NOT TESTED)")
             fails, crown_shot = [], False
             for label, todo in (("piece", pieces), ("edge", edges)):
                 ok = 0
@@ -110,7 +115,8 @@ def main(argv):
                     if not good:
                         fails.append(f"{label} ({x},{y}) {d} into {mid:03X}: model {model}->{exp}, game ->{got}")
                 total += len(todo); bad += len(todo) - ok
-                print(f"{name}: {label:5} {ok}/{len(todo)} as the model says")
+                print(f"{name}: {label:5} {ok}/{len(todo)} as the model says"
+                      + (" (NOT APPLICABLE: no cases)" if not todo else ""))
             L = p.load_map(name).layout
             for i, (vx, vy) in enumerate(VIEWS.get(name, [])):
                 # the dev warp ignores collision: stand on the nearest walkable tile instead

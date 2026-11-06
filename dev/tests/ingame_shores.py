@@ -72,6 +72,8 @@ def main(argv):
             return v
         return default
     cap, n_surf = opt("--max", 0), opt("--surf", 6)
+    if cap < 0 or n_surf < 0:
+        raise SystemExit("--max and --surf must be nonnegative")
     maps = argv or DEFAULT_MAPS
     p, rng = Project(), random.Random(2026)
     total = bad = 0
@@ -84,6 +86,7 @@ def main(argv):
         for name in maps:
             cases = cases_for(p, name)
             fails, shots = [], 0
+            map_total = 0
             for kind in ("bump", "land", "rock"):
                 todo = cases[kind]
                 if cap and len(todo) > cap:
@@ -107,8 +110,9 @@ def main(argv):
                     ok += good
                     if not good:
                         fails.append(f"{kind} ({x},{y}) {d}: model {model}->{exp}, game ->{got}")
-                total += len(todo); bad += len(todo) - ok
-                print(f"{name}: {kind:4} {ok}/{len(todo)} as the model says")
+                total += len(todo); map_total += len(todo); bad += len(todo) - ok
+                print(f"{name}: {kind:4} {ok}/{len(todo)} as the model says"
+                      + (" (NOT APPLICABLE: no cases)" if not todo else ""))
             # real play: surf off the shore through the field-move prompt
             layout = p.load_map(name).layout
             edges = [(x, y, d) for x, y, d, _, _ in cases["bump"]
@@ -130,8 +134,15 @@ def main(argv):
                     for _ in range(10):
                         e.press("B", 3, 10)
                 ok += good
-            total += len(sample); bad += len(sample) - ok
-            print(f"{name}: surf {ok}/{len(sample)} surfed off the shore through the Surf prompt")
+            total += len(sample); map_total += len(sample); bad += len(sample) - ok
+            print(f"{name}: surf {ok}/{len(sample)} surfed off the shore through the Surf prompt"
+                  + (" (SKIPPED by --surf 0)" if n_surf == 0 else
+                     " (NOT TESTED: no eligible edge)" if not sample else ""))
+            if n_surf and not sample:
+                bad += 1
+            if not map_total:
+                bad += 1
+                print(f"{name}: FAIL, no shore cases selected (NOT TESTED)")
             for f in fails[:10]:
                 print("    " + f)
     print(f"\nTOTAL: {total - bad}/{total} shore cases behave as the model says")

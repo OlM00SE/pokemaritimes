@@ -246,8 +246,10 @@ class Run:
         for i, o in enumerate(objs):              # last: a battle changes the party's state
             if ev.is_trainer(o) and not ev.hidden_by_flag(o):
                 self.trainer(i, o, (o.get("local_id") or f"trainer{i}").replace("LOCALID_", "").lower())
-        print(f"{self.name}: {self.passed}/{self.passed + self.failed} checks pass")
-        return self.failed == 0
+        count = self.passed + self.failed
+        print(f"{self.name}: {self.passed}/{count} checks pass"
+              + (" (NOT TESTED: no applicable events)" if not count else ""))
+        return count > 0 and self.failed == 0
 
 
 def spec_gifts(p, name):
@@ -266,6 +268,9 @@ def main(argv):
     p = Project()
     names = argv or sorted({tomllib.load(open(f, "rb"))["map"]          # each spec says its map
                             for f in glob.glob(p.path("design", "maps", "*.events.toml"))})
+    if not names:
+        print("FAIL: no event specs or maps selected; nothing to test")
+        return 1
     rom = prepare_rom(fresh=True)
     ok = True
     with Emu(rom, extra_args=UNTHROTTLED) as e:

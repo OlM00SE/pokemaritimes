@@ -77,12 +77,23 @@ def main(argv):
         e.give_mon("STARLY", 20)
         for outdoor in names:
             m = p.load_map(outdoor)
-            e.warp(outdoor, *next((w["x"], w["y"] + 1) for w, _ in rooms(p, outdoor)))
+            door_rooms = rooms(p, outdoor)
+            if not door_rooms:
+                check(False, f"{outdoor}: no rooms behind doors; NOT TESTED")
+                continue
+            e.warp(outdoor, door_rooms[0][0]["x"], door_rooms[0][0]["y"] + 1)
             group, num = e.player()[:2]
-            for w, room in rooms(p, outdoor):
+            centers = marts = 0
+            for w, room in door_rooms:
                 rm = interiors.load(p, room)
                 heal = next((h for h in heals if h.get("respawn_map") == rm["id"] and h["map"] == m.id), None)
-                if heal:
+                nurse = next((i for i, o in enumerate(rm["object_events"])
+                              if o["graphics_id"] == interiors.NURSE_GFX), None)
+                is_center = heal is not None or nurse is not None or "POKEMON_CENTER" in rm["id"]
+                if is_center:
+                    centers += 1
+                    if not check(heal is not None, f"{room}: a Center has a heal location"):
+                        continue
                     print(f"{outdoor}: Pokémon Center {room} ({heal['id']})")
                     pos = enter(e, outdoor, w)
                     check(e.map_name(pos) == rm["id"][4:], f"the door at ({w['x']},{w['y']}) leads into {room}")
@@ -96,7 +107,8 @@ def main(argv):
                     hp, mx = e.mon0()
                     check(hp == 1, f"party slot 0 hurt to 1/{mx} HP")
                     r = Run(e, p, room)
-                    nurse = next(i for i, o in enumerate(rm["object_events"]) if o["graphics_id"] == interiors.NURSE_GFX)
+                    if not check(nurse is not None, f"{room}: a Center has a nurse"):
+                        continue
                     spot = r.spot_for(("object_events", nurse))
                     if check(spot is not None and r.stand(*spot), f"stand at the counter facing the nurse {spot}"):
                         e.press("A", 3, 60)
@@ -108,7 +120,12 @@ def main(argv):
                 item = stock(p, room)
                 clerk = next((i for i, o in enumerate(rm["object_events"])
                               if o["script"] == f"{room}_EventScript_Clerk"), None)
-                if clerk is not None and item:
+                is_mart = clerk is not None or item is not None or rm["id"].endswith("_MART")
+                if is_mart:
+                    marts += 1
+                    if not check(clerk is not None and item is not None,
+                                 f"{room}: a Mart has a clerk and stock"):
+                        continue
                     print(f"{outdoor}: Mart {room}")
                     pos = enter(e, outdoor, w)
                     check(e.map_name(pos) == rm["id"][4:], f"the door at ({w['x']},{w['y']}) leads into {room}")
@@ -131,6 +148,12 @@ def main(argv):
                         e.advance_text("B")              # close the list, leave the menu, "Please come again"
                         after = e.bag_count(item)
                         check(after == before + 1, f"buying one {item}: {before} -> {after}")
+            if not centers and not marts:
+                check(False, f"{outdoor}: no Centers or Marts found; NOT TESTED")
+            if outdoor == "TownLab":
+                check(centers >= 1 and marts >= 1,
+                      f"{outdoor}: expected both a Center and a Mart ({centers}, {marts})")
+            print(f"{outdoor}: {centers} Centers, {marts} Marts selected")
     print(f"RESULT: {passed} passed, {failed} failed")
     return 1 if failed else 0
 

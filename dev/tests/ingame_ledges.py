@@ -91,7 +91,7 @@ def approaches(e, p, name):
     """Returns the number of failures. A warp that errors, or lands somewhere else, is a
     failure: every case counted as run was really run in the game."""
     cases = cases_for(p, name)
-    bad, done, jumps = [], 0, 0
+    bad, done, jumps, mismatches = [], 0, 0, 0
     for ledge, (sx, sy), d, exp, kind, elev in cases:
         try:
             landed = e.warp(name, sx, sy)[2:]
@@ -112,9 +112,11 @@ def approaches(e, p, name):
             got = (got, elevations(e))
             exp = (exp, elev)
         if not ok:
+            mismatches += 1
             bad.append(f"    ledge {ledge} from {(sx, sy)} press {d}: model {kind}->{exp}, game ->{got}")
-    print(f"{name}: {done - len(bad)}/{done} ledge approaches agree ({jumps} jumps, "
-          f"{done - jumps} refusals expected; {len(cases) - done} not run)")
+    print(f"{name}: {done - mismatches}/{done} executed ledge approaches agree "
+          f"({jumps} jumps, {done - jumps} refusals expected; "
+          f"{len(cases) - done} not run, {len(bad)} failed)")
     for line in bad[:8]:
         print(line)
     if not done:
@@ -167,6 +169,7 @@ def round_trip(e, p, name):
     w = World(p, m)
     spawn = spawn_point(m)
     if not spawn:
+        print(f"{name}: round trip NOT APPLICABLE (no spawn point)")
         return 0
     start = w.arrival_state(*w.to_grid(*spawn))
     seen = w.explore([start])
@@ -300,15 +303,18 @@ def tour(e, p, name):
 def main(argv):
     maps = argv or DEFAULT_MAPS
     p = Project()
-    bad = 0
+    bad = tour_skips = 0
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
         e.test_mode()
         for name in maps:
             bad += approaches(e, p, name)
             bad += round_trip(e, p, name)
+            if any(events.moves(o) for o in p.load_map(name).events("object_events")):
+                tour_skips += 1
             bad += tour(e, p, name)
-    print("PASS" if not bad else f"FAIL ({bad})")
+    print(("PASS" if not bad else f"FAIL ({bad})") +
+          f"; {len(maps) - tour_skips} tours attempted, {tour_skips} explicitly skipped")
     return 1 if bad else 0
 
 
