@@ -420,8 +420,22 @@ def _tile_trees(cls_grid, w, h, hint, box=None):
     for y in range(y0, y1 + 1):     # pass 1: whole trees inside the map
         for x in range(x0, x1 + 1):
             place(x, y, False)
-    for y in range(y0 - 1, y1 + 1):  # pass 2: leftovers at the edges become trees cut by the border
-        for x in range(x0 - 1, x1 + 1):
+    # pass 2: leftovers at the edges become trees cut by the border, the least-cut first. A tree
+    # cut by one border must not be taken as one cut by two: a half tree in the top band at the
+    # right edge read as cut by the top border (from row -1) orphans its lower cell, and a row of
+    # tree tops along the bottom read from x = -1 pairs every top with the wrong neighbour.
+    # Only a tree whose top-left is at x = -1 or w - 1 (or y = -1 or h - 1) can be cut, so only
+    # those lines are visited.
+    xs = [x for x in (-1, w - 1) if x0 - 1 <= x <= x1]
+    ys = [y for y in (-1, h - 1) if y0 - 1 <= y <= y1]
+    for x in xs:                                     # cut by the left or right border
+        for y in range(y0, min(y1, h - 2) + 1):
+            place(x, y, True)
+    for y in ys:                                     # cut by the top or bottom border
+        for x in range(max(x0, 0), min(x1, w - 2) + 1):
+            place(x, y, True)
+    for y in ys:                                     # the corners
+        for x in xs:
             place(x, y, True)
     dropped = 0
     for y in range(y0, y1 + 1):

@@ -12,6 +12,11 @@
                                              # nothing is written. A reused folder of another
                                              # size must be resized before building in place:
                                              # `check` lists the sizes.)
+  python dev/corridor.py join "Route 201" [--apply]
+                                             # make the game's connections between this map and
+                                             # its built neighbours the plan's (both sides; a
+                                             # direction may change). Refused until each map's
+                                             # folder has the plan's size (dev/resize_map.py).
 
 The plan is design/region/corridor.toml (world tiles at one km-per-tile scale, origin on an anchor
 place). Connections are derived from the rectangles: two maps join where their edges touch.
@@ -82,6 +87,22 @@ def seam_mismatches(ra, rb):
                 out.append(f"on {side}'s side at {span} doesn't line up with steps "
                            f"{hits[0][0]}..{hits[0][1]} across the seam")
     return list(dict.fromkeys(out))
+
+
+def folders(plan):
+    """{planned map name: game folder} for the maps that have one."""
+    return {m["name"]: m["map"] for m in plan.maps if m.get("map", "new") != "new"}
+
+
+def edge_joins(project, folder, among):
+    """The game's edge connections (not dive/emerge) from `folder` to folders in `among`:
+    [(other folder, direction, offset)]."""
+    out = []
+    for c in project.load_map(folder).connections:
+        other = project.const_to_map.get(c["map"])
+        if other in among and c["direction"] in EDGES:
+            out.append((other, c["direction"], int(c["offset"])))
+    return out
 
 
 def check(plan, project=None):
@@ -194,15 +215,11 @@ def check(plan, project=None):
     # against the game as it is
     if project is not None:
         lines.append("Changes to the game's connections the plan asks for:")
-        folder = {m["name"]: m["map"] for m in plan.maps if m.get("map", "new") != "new"}
+        folder = folders(plan)
         planned = {(folder[a], d, folder[b], off) for a, d, b, off, _ in conns
                    if a in folder and b in folder}
-        current = set()
-        for f in folder.values():
-            for c in project.load_map(f).connections:
-                other = project.const_to_map.get(c["map"])
-                if other in folder.values() and c["direction"] in EDGES:   # not dive/emerge
-                    current.add((f, c["direction"], other, c["offset"]))
+        current = {(f, d, other, off) for f in folder.values()
+                   for other, d, off in edge_joins(project, f, set(folder.values()))}
         for a, d, b, off in sorted(planned - current):
             lines.append(f"  add    {a} -{d}-> {b} offset {off}")
         for a, d, b, off in sorted(current - planned):
@@ -220,6 +237,66 @@ def check(plan, project=None):
                          + ("  matches the plan" if (L.width, L.height) == (w, h)
                             else f"  -> {w}x{h} (resize before building the underlay in place)"))
     return errors, warns, lines
+
+
+def join_plan(plan, name, project):
+    """The game's connections between a planned map and the other built maps of the plan, made as
+    the plan derives them. Returns (changes, new map.json dicts by folder, problems). Between the
+    map and each built planned map, every edge connection is replaced by the plan's join, or
+    removed when the plan doesn't put the two side by side (a direction can change, as HomeTown's
+    did from down to right); dive/emerge links and connections to maps outside the plan are kept."""
+    import json
+    from mapkit.geo import OPPOSITE
+    folder = folders(plan)
+    if name not in folder:
+        return [], {}, [f"{name} has no game folder yet"]
+    problems, changes, jsons = [], [], {}
+    joins = {b: (d, off) for a, d, b, off, _ in plan.connections() if a == name and b in folder}
+
+    def load(f):
+        if f not in jsons:
+            with open(project.path("data/maps", f, "map.json"), encoding="utf-8") as fh:
+                jsons[f] = json.load(fh)
+        return jsons[f]
+
+    for n in [name] + list(joins):
+        L = project.load_map(folder[n]).layout
+        w, h = plan.rect(plan.by_name[n])[2:]
+        if (L.width, L.height) != (w, h):
+            problems.append(f"{folder[n]} is {L.width}x{L.height}, the plan's {n} is {w}x{h}: "
+                            f"resize it first (dev/resize_map.py {folder[n]} {w}x{h})")
+    me = folder[name]
+    built = set(folder.values())
+    linked = {other for other, _, _ in edge_joins(project, me, built)}
+    others = [folder[b] for b in joins] + sorted(linked - {folder[b] for b in joins} - {me})
+    for fb in others:
+        b = next(n for n, f in folder.items() if f == fb)
+        want = joins.get(b)                        # None: the plan doesn't join them
+        sides = [(me, fb, want)] + [(fb, me, (OPPOSITE[want[0]], -want[1]) if want else None)]
+        for f, other, w in sides:
+            j = load(f)
+            const = project.load_map(other).id
+            conns = j.get("connections") or []
+            old = [c for c in conns if c["map"] == const and c["direction"] in EDGES]
+            if [(c["direction"], int(c["offset"])) for c in old] == ([w] if w else []):
+                continue
+            at = conns.index(old[0]) if old else len(conns)
+            keep = [c for c in conns if c not in old]
+            if w:
+                keep.insert(min(at, len(keep)), {"map": const, "offset": w[1], "direction": w[0]})
+            j["connections"] = keep
+            was = ", ".join(f"{c['direction']} {c['offset']}" for c in old) or "none"
+            changes.append(f"{f} -> {other}: {was}  =>  " + (f"{w[0]} {w[1]}" if w else "removed"))
+    return changes, {f: j for f, j in jsons.items()
+                     if any(c.startswith(f + " ->") for c in changes)}, problems
+
+
+def join_apply(project, jsons):
+    from mapkit.mapjson import dump_json
+    from mapkit.transaction import edit
+    with edit(project, [f"data/maps/{f}/map.json" for f in jsons]):
+        for f, j in jsons.items():
+            dump_json(project.path("data/maps", f, "map.json"), j)
 
 
 BLANK_LIKE = "Route201_1"               # a General + Petalburg outdoor layout to compile against
@@ -299,10 +376,11 @@ def render(plan, path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("cmd", choices=("check", "render", "underlay", "compile"))
+    ap.add_argument("cmd", choices=("check", "render", "underlay", "compile", "join"))
     ap.add_argument("name", nargs="?")
     ap.add_argument("-o", "--out")
     ap.add_argument("--no-game", action="store_true", help="check: skip the game comparison")
+    ap.add_argument("--apply", action="store_true", help="join: write the map.json files")
     a = ap.parse_args()
     plan = Plan()
     os.makedirs(OUT, exist_ok=True)
@@ -327,6 +405,28 @@ def main():
     if a.name is not None and a.name not in plan.by_name:
         ap.error(f"{a.name!r} isn't a planned map; the plan has: "
                  + ", ".join(f'"{n}"' for n in plan.by_name))
+    if a.cmd == "join":
+        if a.name is None:
+            ap.error('join needs a planned map, e.g. join "Route 201"')
+        from mapkit.project import Project
+        project = Project()
+        changes, jsons, problems = join_plan(plan, a.name, project)
+        for c in changes:
+            print("  " + c)
+        for pr in problems:
+            print("  REFUSED: " + pr)
+        if problems:
+            print("NOT APPLIED")
+            return 1
+        if not changes:
+            print(f"{a.name}: the game's joins already match the plan")
+            return 0
+        if a.apply:
+            join_apply(project, jsons)
+            print(f"applied {len(changes)} change(s); rebuild, and re-render the seams")
+        else:
+            print("dry run; pass --apply to write")
+        return 0
     if a.cmd == "compile":
         from mapkit.project import Project
         project = Project()
