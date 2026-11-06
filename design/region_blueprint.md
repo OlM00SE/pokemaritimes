@@ -51,7 +51,10 @@ Data: `design/region/geo/` (Natural Earth 1:10m, public domain, clipped by `dev/
    south banks.
 6. **Exaggerate terrain, don't invent against the grain.** NB's rolling hills become ledges and
    terraces; Mount Carleton, the Chic-Chocs and the Cape Breton Highlands become real mountains;
-   the Fundy cliffs become cliffs.
+   the Fundy cliffs become cliffs. Levels and cliff walls (`mapkit/cliffs.py`, since M17) carry
+   it: river flats, terraces, uplands. The camera looks north, so faces show only where the land
+   rises northward (a far bank, a ravine's north wall, a knoll); land rising to the south shows a
+   rim, so forest on the crest and stepped scarps make it read.
 7. **Borders are the edge of the world.** Maine and Québec west of the Gaspé are outside the
    region: forest or hills close the map there, never a road.
 8. **Scale varies between sections.** Hoenn's own Town Map runs from 20 to 40 tiles per square
@@ -160,9 +163,15 @@ that area's turn.
    Meduxnekeag east the whole way, the road on its south bank past a farm on the intervale, a
    riverside trail on the north bank (meadow ledge, terraced glade, cutblock, beaver pond), a
    bridge joining them. Saves on either continue at a safe tile (world revision 2).
-5. **M17: Route 202**, **M18: Nackawic** (a long bridge), **M19: Route 203**,
-   **M20: Fredericton.** The dam and the giant axe need custom tiles (Porytiles), so they get
-   stand-ins first.
+5. **M17: Route 202** (done): the first terrain with real elevation. A cliff vocabulary
+   (`mapkit/cliffs.py`: levels, walls, stairs, graded roads through cuttings; CliffLab is the dev
+   map) and the river road rebuilt on it: the flats along the river, the road's terrace, the
+   wooded upland in the south-west; the far bank's bluffs face the road across the river; a brook
+   cuts a ravine through the terraces and the road crosses it on a bridge; the Meductic bend, an
+   island. Saves on it continue on the road out of Woodstock (world revision 3). Its east edge
+   joins the Fredericton prototype at an interim offset until Nackawic exists.
+6. **M18: Nackawic** (a long bridge), **M19: Route 203**, **M20: Fredericton.** The dam and the
+   giant axe need custom tiles (Porytiles), so they get stand-ins first.
 
 Every map milestone: start from the underlay, design with the kit, keep the plan's seams,
 `corridor.py check`, the usual three-way verification (checker, renders, in-game), the
