@@ -69,6 +69,27 @@ Before/after and in-game: `dev/out/m15/before_after.png`, `ingame_sheet.png` (ni
 in Woodstock continues once in front of the new Pokémon Center; a save anywhere else, or inside
 a Woodstock house, continues where it was made (the houses' doors lead out to their new spots).
 
+**Code review** (`/code-review medium`): 10 findings, all fixed.
+- **Saves beside the seam:** an old save on Route 201 or 202 near Woodstock's seam would paste
+  its saved view of the old town into the connection strip (the view reaches past the map's
+  edge). Every save made before the current revision now drops its view. Negative control with
+  the published build's save: 64 cells of old Woodstock pasted over the new one; with the fix, none.
+- **Extract and bridges:** an end cell's error (tall grass at a deck's end) was dropped, so a strip
+  a compile refuses stayed `H`; later extract passes could leave half a strip. Errors now blame
+  their strip, and the strips are re-checked after every pass.
+- **Tile import:** a palette slot counted as free if the secondary didn't use it, ignoring primary
+  metatiles drawn with slots 6-12; a copied tile could reuse one an animation overwrites inside
+  the PNG (destinations now parsed from `tileset_anims.c`); the PNG was assumed 128 wide.
+- **resize_map:** `--connect` applied to every connection to a neighbour (now `NEIGHBOUR:DIR` when
+  it joins on two sides); `--apply` didn't compare with the preview (now refuses a changed plan);
+  the reference scan ran twice and called `samefile` on every file; `OPPOSITE` and a flood fill were
+  duplicated.
+- **Found while fixing:** `LoadSavedMapView` clears the view after pasting it, so the first test's
+  "view dropped" check passed regardless (vacuous); it now compares the strip the game holds with
+  the new town's blocks. And the gate's mobile publish test rewrites `dev/out/mobile/check.gba`, so
+  the "old ROM" there became the new one mid-session: the old build now lives in
+  `dev/out/m15/oldrom/` with its `.map` rebuilt from `fb2b9673ff` (byte-identical ROM, `7df037fe…`).
+
 How it was verified (filled in from the gate below).
 
 **Test infrastructure reliability (2026-11-06):** branch `test-infrastructure-reliability`
