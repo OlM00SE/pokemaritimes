@@ -1,0 +1,25 @@
+// Woodstock_Mart: copied from OldaleTown_Mart by dev/mapgen.py (mart).
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_Mart_MapScripts {
+}
+
+// ---- dev/mapgen.py: the mart's workings. Edit freely; the tool writes this block once. ----
+script Woodstock_Mart_EventScript_Clerk {
+    lock
+    faceplayer
+    message(gText_HowMayIServeYou)
+    waitmessage
+    pokemart(Woodstock_Mart_Stock)
+    msgbox(gText_PleaseComeAgain, MSGBOX_DEFAULT)
+    release
+    end
+}
+
+mart Woodstock_Mart_Stock {
+    ITEM_POKE_BALL
+    ITEM_POTION
+    ITEM_ANTIDOTE
+    ITEM_PARALYZE_HEAL
+    ITEM_AWAKENING
+}

@@ -14,6 +14,7 @@ Legend (one character per metatile):
     *  flowers    b  boulder    y  sapling (a vertical run of 2-3)              (mapkit/flora.py)
     s  sign post (its text is a sign event: dev/events.py)                     (mapkit/flora.py)
     B  a cell of a building stamp, placed by a `// stamp:` line               (mapkit/stamps.py)
+    H  a plank bridge's deck over water, a strip two columns wide             (mapkit/bridges.py)
     #  keep the map's current block unchanged (hand-painted pieces, ...)
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
 by shape (mapkit/shores.py). Flora stands on plain grass only.
@@ -23,11 +24,12 @@ building with its top-left at (10, 4); its cells are drawn `B`. Sketch.place() d
 from .terrain import TREE, TREE_Q, Rules, autotile, Vocabulary, grid_labels, PRIMARY
 from .layout import pack
 from .project import TILE_FLAG_SURFABLE
-from . import ledges, shores, flora, stamps
+from . import ledges, shores, flora, stamps, bridges
 
+# a bridge's deck reads as water to everything but the bridge resolver (the banks run under it)
 CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F",
                  "v": "LD", "<": "LD", ">": "LD", shores.ROCK_CHAR: shores.ROCK_CLS,
-                 stamps.CHAR: "F", **flora.CHAR_CLASS}
+                 stamps.CHAR: "F", bridges.CHAR: "S", **flora.CHAR_CLASS}
 CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
                  "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#",
                  shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR}   # LD: ledges.piece_char
@@ -159,6 +161,7 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         # that a compile wouldn't put back exactly (e.g. flowers under a canopy overhang)
         for (x, y), ch in flora.extract_chars(lambda x, y: L.mid(x, y), L.width, L.height).items():
             rows[y][x] = ch
+        extract_bridges(project, L, rows)
     keep_unrebuildable_ledges(rows, L.width, L.height, lambda x, y: L.mid(x, y))
     placements = recognise_stamps(project, m, rows)      # marks the stamps' cells in rows: first
     sk = Sketch(map_name, ["".join(r) for r in rows], placements=placements)
@@ -167,7 +170,56 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
                                   lambda ch: CHAR_TO_CLASS[ch])
         if verify_shores:
             keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus)
+    if L.primary == PRIMARY:
+        recheck_bridges(project, L, sk.rows)       # the passes above may have kept a deck's neighbours
     return sk
+
+
+def recheck_bridges(project, layout, rows):
+    """keep_valid_bridges against the layout's own bridge pieces (nothing if it has none)."""
+    ids, _ = bridges.piece_ids(project, layout)
+    if ids and any(bridges.CHAR in row for row in rows):
+        want = {v: k for k, v in ids.items()}
+        keep_valid_bridges(rows, layout.width, layout.height, lambda x, y: want.get(layout.mid(x, y)))
+
+
+def extract_bridges(project, layout, rows):
+    """Bridge decks (mapkit/bridges.py) become 'H', where the strip resolves exactly (deck
+    pieces where the shape asks for them, grass or kept cells at its ends); any other deck cell
+    stays '#' (Route 104's turning bridge over pond water, Fredericton's hand-painted ones)."""
+    ids, _ = bridges.piece_ids(project, layout)
+    if not ids:
+        return
+    want = {v: k for k, v in ids.items()}
+    for y in range(layout.height):
+        for x in range(layout.width):
+            if layout.mid(x, y) in want:
+                rows[y][x] = bridges.CHAR
+    keep_valid_bridges(rows, layout.width, layout.height, lambda x, y: want.get(layout.mid(x, y)))
+
+
+def keep_valid_bridges(rows, w, h, piece_at):
+    """Turn every 'H' strip that doesn't resolve to the pieces standing there into '#', whole
+    (half a deck can't be rebuilt). piece_at(x, y): the bridge piece (bridges.SOURCE numbering)
+    the layout holds there, or None. Extract runs it again after its later passes, which can
+    keep a deck's neighbours or ends as '#'. Returns the number of cells kept."""
+    kept = 0
+    while True:
+        cells = {(x, y) for y in range(h) for x in range(w) if rows[y][x] == bridges.CHAR}
+        if not cells:
+            return kept
+        cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in rows]
+        pieces, _, errors = bridges.resolve(cls, cells, w, h)
+        bad = {c for c, m in pieces.items() if m != piece_at(*c)}
+        for x, y, _ in errors:          # an end's error names the cell beyond the deck: its strip
+            bad |= {(x, y), (x, y - 1), (x, y + 1)} & cells
+        if not bad:
+            return kept
+        for group in bridges.strips(cells):
+            if group & bad:
+                for x, y in group:
+                    rows[y][x] = "#"
+                    kept += 1
 
 
 def recognise_stamps(project, m, rows):
@@ -265,6 +317,7 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
             sk.rows[y][x] = "#"
         keep_unrebuildable_ledges(sk.rows, w, h, lambda x, y: layout.mid(x, y))
         shores.keep_unrebuildable(sk.rows, w, h, lambda x, y: layout.mid(x, y), lambda ch: CHAR_TO_CLASS[ch])
+        recheck_bridges(project, layout, sk.rows)
 
 
 def keep_unrebuildable_ledges(rows, w, h, mid_at):
@@ -422,6 +475,20 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     if ledge_errors:
         raise SketchError(ledge_errors)
     gview = flora.grass_view(cls) if fpieces else cls
+    # bridges: the deck's pieces by shape; the deck reads as water for the shores below
+    bridge_cells = {(x, y) for y, row in enumerate(sketch.rows) for x, ch in enumerate(row)
+                    if ch == bridges.CHAR}
+    bridge_mids, bridge_below = {}, {}
+    if bridge_cells:
+        if layout.primary != PRIMARY:
+            raise SketchError([(*min(bridge_cells), f"bridges need {PRIMARY} as the primary tileset")])
+        ids, why = bridges.piece_ids(project, layout)
+        if why:
+            raise SketchError([(*min(bridge_cells), why)])
+        bp, bridge_below, bridge_errors = bridges.resolve(gview, bridge_cells, w, h, ends=cls)
+        if bridge_errors:
+            raise SketchError(bridge_errors)
+        bridge_mids = {c: ids[m] for c, m in bp.items()}
     # shores: rocks in the water, then the shapes of banks and beaches (on the final classes)
     rocks, rock_errors = shores.place_rocks(gview, w, h)
     _, _, _, shore_errors = shores.resolve(gview, w, h)
@@ -454,6 +521,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
             raise SketchError(bad_spots)
         for (x, y), mid in fpieces.items():
             mids[y][x] = mid
+    for (x, y), mid in {**bridge_mids, **bridge_below}.items():
+        mids[y][x] = mid
     blocks = []
     for y in range(h):
         for x in range(w):
@@ -462,6 +531,9 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
                 blocks.append(kept(x, y))
                 continue
             mid = mids[y][x]
+            if (x, y) in bridge_mids:
+                blocks.append(pack(mid, *bridges.ATTRS))
+                continue
             if c in flora.CLASSES:
                 blocks.append(pack(mid, *flora.ATTRS[mid]))
                 continue
@@ -492,6 +564,8 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
               "grammar_cells": repaired}
     if sketch.stamps:
         report["buildings"] = len(sketch.stamps)
+    if bridge_mids:
+        report["bridge_tiles"] = len(bridge_mids)
     if len(pieces) > len(rocks):
         report["ledge_tiles"] = len(pieces) - len(rocks)
     if shore_tiles or rocks:

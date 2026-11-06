@@ -1773,3 +1773,8 @@ EventScript_PalletTown_PlayersHouse_2F_TurnOnPC::
 	.include "data/maps/TownLab_TwoStoreyLeft_1F/scripts.inc"
 	.include "data/maps/TownLab_TwoStoreyLeft_2F/scripts.inc"
 	.include "data/maps/TownLab_LeanTo/scripts.inc"
+	.include "data/maps/Woodstock_PokemonCenter_1F/scripts.inc"
+	.include "data/maps/Woodstock_PokemonCenter_2F/scripts.inc"
+	.include "data/maps/Woodstock_Mart/scripts.inc"
+	.include "data/maps/Woodstock_House3_1F/scripts.inc"
+	.include "data/maps/Woodstock_House3_2F/scripts.inc"

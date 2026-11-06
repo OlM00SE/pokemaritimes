@@ -9367,8 +9367,8 @@
     {
       "id": "LAYOUT_WOODSTOCK_2",
       "name": "Woodstock_2_Layout",
-      "width": 36,
-      "height": 34,
+      "width": 48,
+      "height": 42,
       "primary_tileset": "gTileset_General",
       "secondary_tileset": "gTileset_Petalburg",
       "border_filepath": "data/layouts/Woodstock_2/border.bin",

@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import regression
 import conformance
+import ingame_bridges
 import ingame_buildings
 import ingame_doors
 import ingame_encounters
@@ -154,6 +155,30 @@ class HarnessGuards(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("NOT TESTED", output)
             self.assertNotIn("TOTAL: -", output)      # coverage failures don't skew the ratio
+
+    def test_bridges_without_decks_fail(self):
+        with mock.patch.object(ingame_bridges, "Project"), \
+             mock.patch.object(ingame_bridges, "bridge_maps", return_value=[]):
+            self.assertEqual(quietly(ingame_bridges.main, [])[0], 1)
+        with mock.patch.object(ingame_bridges, "Project"), \
+             mock.patch.object(ingame_bridges, "Emu", FakeEmu), \
+             mock.patch.object(ingame_bridges, "prepare_rom", return_value="unused"), \
+             mock.patch.object(ingame_bridges, "cases_for", return_value=(set(), [], [])):
+            code, output = quietly(ingame_bridges.main, ["Empty"])
+        self.assertEqual(code, 1)
+        self.assertIn("NOT TESTED", output)
+
+    def test_runner_needs_every_named_map_and_full_ratios(self):
+        steps = {s.id: s for s in regression.manifest()}
+        townlab_only = "TownLab: 1 Centers, 1 Marts selected\nRESULT: 8 passed, 0 failed\n"
+        self.assertEqual(regression.evaluate(steps["buildings"], 0, townlab_only)[0], "FAILED")
+        both = townlab_only + "Woodstock_2: 1 Centers, 1 Marts selected\n"
+        self.assertEqual(regression.evaluate(steps["buildings"], 0, both)[0], "PASSED")
+        self.assertEqual(regression.evaluate(steps["bridges"], 0,
+            "TOTAL: 0/0 bridge cases behave as the model says")[0], "FAILED")
+        for out in ("RESULT: 0/0 world revision checks pass", "RESULT: 4/5 world revision checks pass", ""):
+            self.assertEqual(regression.evaluate(steps["world_revision"], 0, out)[0], "FAILED")
+        self.assertEqual(regression.evaluate(steps["resize_map"], 0, "RESULT: 5/5 resize tests pass")[0], "PASSED")
 
     def test_zero_requested_battles_fail(self):
         self.assertEqual(quietly(ingame_encounters.main, ["Route201_1", "--battles", "0"])[0], 1)

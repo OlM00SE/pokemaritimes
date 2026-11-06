@@ -1,15 +1,104 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-06 (test infrastructure reliability merged and pushed). Read this first in a new session. The world's geography and
+> Updated 2026-11-06 (Milestone 15, Woodstock). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Next session: Milestone 15, Woodstock** (Tom agreed 2026-11-06 that the foundation is ready;
-not started). Read `region_blueprint.md`, then "Next milestone" below. Before any map work:
-`dev/corridor.py check` (0 errors, 0 warnings). The merge gate is `dev/regression.py` (must end
-`0 failed`; quote its evidence lines). Detach a shared interior with `dev/unique_layout.py`
-before editing its terrain in Porymap.
+**Next session: Milestone 16, the start valley** (proposed below, not started). Read
+`region_blueprint.md`, then "Next milestone" below. Before any map work: `dev/corridor.py check`
+(0 errors, 0 warnings). The merge gate is `dev/regression.py` (must end `0 failed`; quote its
+evidence lines). Detach a shared interior with `dev/unique_layout.py` before editing its terrain
+in Porymap. A redesign of a map saves may stand on needs a world revision (below).
+
+**Milestone 15 done: Woodstock, the confluence town** (branch `milestone15-woodstock`). The first
+corridor map rebuilt from the plan of record: 48x42 at 0.5 km a tile, Woodstock at world (0, 0).
+Before/after and in-game: `dev/out/m15/before_after.png`, `ingame_sheet.png` (nine spots),
+`before_Woodstock_context.png` / `after_Woodstock_context.png` (the seams), `bridge_Woodstock_2_0.png`
+(on the deck), `migrated_old_save.png` vs `negative_control_no_migration.png`.
+
+**The town** (`design/maps/woodstock_design.py`, from `corridor.py underlay "Woodstock"`):
+- **Geography:** the Saint John down the east side from real data (the underlay's river, two
+  rocks); the Meduxnekeag in from Route 201's seam (rows 30-33), east along the valley floor and
+  widening into its mouth at downtown, as the real one does; downtown on the point between them,
+  on the west bank; the far bank wooded; north, woods toward Hartland (later).
+- **Streets:** the highway keeps to the creek's south bank (Route 201's seam at rows 36-37, Route
+  202's at columns 25-26). Main Street runs north from the junction over the Meduxnekeag on a
+  plank bridge (the real Main Street crosses at the mouth) into downtown and ends at the north
+  edge, where a sign says the trail to Hartland is closed. Water Street is the first street over
+  the bridge, King Street the one uphill.
+- **Buildings (stamps):** Water Street: the Pokémon Center by the river (the corridor's first:
+  `HEAL_LOCATION_WOODSTOCK_2`, so the slice has a real respawn point) and the Mart, the wide house
+  beyond. King Street: the wildlife station by the river, the garden house and its community
+  garden, a new two-storey house (`Woodstock_House3_1F`/`2F`; a farmer from up past Hartland).
+  The station and both houses kept their rooms, people and warp ids (0-2); the Center, Mart and
+  house are warps 3-5. Groves on both banks, flower beds, the riverside green.
+- **Events** (`Woodstock_2.events.toml`, re-placed): the town's five people and the item ball at
+  new spots, the town, station and garden signs, and two new ones: the Meduxnekeag at the bridge
+  ("It joins the Saint John right here.") and the closed trail north. Text provisional.
+- **Seams:** interim offsets line up today's prototypes: Route 201 at 22 (the plan: 14), Route
+  202 at 7 (the plan: 16), until M16 and M17 rebuild them on the plan (`corridor.toml` notes it;
+  `corridor.py check` lists them as plan changes). Accepted until then: the creek meets Route 201's
+  woods; the 6-wide Saint John meets Route 202's 2-wide river behind woods, out of reach and view;
+  Route 201's sand road becomes Woodstock's light path at the seam.
+
+**Tooling added:**
+- **`dev/resize_map.py`:** resizes a layout, moves people, warps, signs, triggers and heal
+  locations with the terrain (refused if one would fall off), re-offsets both sides of each
+  connection (or `--connect` sets one), reports scripts and tests that name the map and the save
+  question; rolls back on failure. `tests/resize_map.py` (5 fixture tests).
+- **Bridges** (`mapkit/bridges.py`, sketch `H`): Route 104's plank deck over river water, for a
+  road crossing north-south; the deck reads as water to the shores. Refusals name the cells.
+  Research: no bridge exists in General or Petalburg; vanilla's are in Mauville, Fortree and
+  Rustboro (`mapping_reference.md` §15).
+- **`dev/tile_import.py` / `mapkit/tileimport.py`:** copies vanilla metatiles between secondary
+  tilesets (tiles deduplicated, palettes into an empty or identical slot, layers and attributes
+  as they are; appends only). Petalburg gained the deck: 3 tiles, palette 11, metatiles 290-293;
+  every existing map on it draws as before. `tests/bridge_pieces.py` (31 checks, from a fixture
+  copy of vanilla Petalburg).
+- **World revisions** (engine, `src/overworld.c` `sWorldRevisions`; `VAR_MARITIMES_WORLD_REVISION`,
+  was `VAR_UNUSED_0x4083`): a save made on a map since redesigned continues once at the map's safe
+  tile (its heal location) through vanilla's continue-game warp, with a full map load. Measured
+  first: the published phone build's save on old Woodstock's green, CONTINUEd without it, lands
+  inside the new wide house, with the people where the old save had them (the angler on the old
+  pond's shore) and the old town's cliff and steps pasted around the player from the saved view.
+  With it: in front of the Center, people at their new homes. Also fixes M14's limit "a Center
+  that moves leaves a save made at the old spot unmatched" (the respawn point is re-pointed).
+
+**Save compatibility: SAVES CARRY OVER** (save line 2, no layout change). A phone save standing
+in Woodstock continues once in front of the new Pokémon Center; a save anywhere else, or inside
+a Woodstock house, continues where it was made (the houses' doors lead out to their new spots).
+
+**Code review** (`/code-review medium`): 10 findings, all fixed.
+- **Saves beside the seam:** an old save on Route 201 or 202 near Woodstock's seam would paste
+  its saved view of the old town into the connection strip (the view reaches past the map's
+  edge). Every save made before the current revision now drops its view. Negative control with
+  the published build's save: 64 cells of old Woodstock pasted over the new one; with the fix, none.
+- **Extract and bridges:** an end cell's error (tall grass at a deck's end) was dropped, so a strip
+  a compile refuses stayed `H`; later extract passes could leave half a strip. Errors now blame
+  their strip, and the strips are re-checked after every pass.
+- **Tile import:** a palette slot counted as free if the secondary didn't use it, ignoring primary
+  metatiles drawn with slots 6-12; a copied tile could reuse one an animation overwrites inside
+  the PNG (destinations now parsed from `tileset_anims.c`); the PNG was assumed 128 wide.
+- **resize_map:** `--connect` applied to every connection to a neighbour (now `NEIGHBOUR:DIR` when
+  it joins on two sides); `--apply` didn't compare with the preview (now refuses a changed plan);
+  the reference scan ran twice and called `samefile` on every file; `OPPOSITE` and a flood fill were
+  duplicated.
+- **Found while fixing:** `LoadSavedMapView` clears the view after pasting it, so the first test's
+  "view dropped" check passed regardless (vacuous); it now compares the strip the game holds with
+  the new town's blocks. And the gate's mobile publish test rewrites `dev/out/mobile/check.gba`, so
+  the "old ROM" there became the new one mid-session: the old build now lives in
+  `dev/out/m15/oldrom/` with its `.map` rebuilt from `fb2b9673ff` (byte-identical ROM, `7df037fe…`).
+
+How it was verified (the gate: `milestone15-woodstock @ f1c21fc2be`, clean tree, ROM `c6300120…`,
+**45 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261106_144337_719700/`):
+| Area | Result |
+|---|---|
+| Static | checker 38 maps, 0 errors (5 warnings: Fredericton's dead doors, the Centers' upstairs as vanilla's); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings; id budget 17/17; save layout matches (no layout change) |
+| Pieces | bridge_pieces 37/37; resize_map 7 tests; stamp, shore, flora, ledge pieces PASS; round trip 87.5-100% (Woodstock 100%: 2016/2016 blocks, its 562 shore blocks unchanged, its 6 stamps and doors recognised); reconstruction 87.8% (observed) |
+| Routes | crossings 52, 51, 30, 30 steps, 0 forced tall grass (Woodstock: Route 201 ↔ Route 202 in 30 steps either way) |
+| In-game | conformance 545/545; doors 18 round trips (Woodstock 6 with 2 upstairs); buildings 22/22 (Woodstock's Center sets `HEAL_LOCATION_WOODSTOCK_2`, the nurse heals, the Mart sells); bridges 38/38; world revision 13/13 (35/35 with `--old-rom dev/out/m15/oldrom/PokeMaritimes_save2.gba`); events 126/126 on 8 maps; respawn 3 real losses; save 45/45; playthrough; four autowalks; ledges 490/490; shores 624/624; flora 435/435; encounters 12 battles |
+| Negative controls | the migration disabled: an old Woodstock save lands inside the wide house with the old people and terrain (21/29); the view clear disabled: 64 cells of old Woodstock in Route 201's strip; 15 harness guards |
 
 **Test infrastructure reliability (2026-11-06):** branch `test-infrastructure-reliability`
 merged into `develop` as `3abcbb3b8b` and pushed to `origin/develop` (Tom okayed). The last
@@ -681,7 +770,8 @@ The first slice, **HomeTown → Route 201 → Woodstock** (milestone 2), is a sm
 Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woodstock; starter received in HomeTown before Route 201. Names and story details stay provisional.
 
 ## Still missing in the slice (`dev/section_status.py HomeTown_0 Route201_1 Woodstock_2`)
-- HomeTown, Route 201, Woodstock and Woodstock's three interiors are populated (milestone 10). All text is provisional and hasn't been read by Tom in-game yet.
+- HomeTown, Route 201, Woodstock and Woodstock's interiors are populated (milestones 10 and 15; the Center and Mart work, the two-storey house has one resident and an empty upstairs). All text is provisional and hasn't been read by Tom in-game yet.
+- Woodstock's Center is the slice's only Pokémon Center (and a Fly destination only once there's a Town Map).
 - HomeTown's upstairs room (House2 2F) is empty; the player's house is still vanilla Littleroot's.
 - Starters are still Treecko/Torchic/Mudkip (`GRASS/FIRE/WATER_STARTER` in `src/starter_choose.c`).
 - No Town Map squares for the new map sections (there's no Maritimes region map image yet).
@@ -720,8 +810,10 @@ dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 766 
 dev/save_layout.py                    # "matches include/save_layout.h" (after any save-related change)
 dev/tests/conformance.py              # 532/532 (seeded samples; the count moves when a map changes)
 dev/tests/playthrough_slice1.py       # end to end, wild battles on
-dev/tests/ingame_doors.py HomeTown_0 Woodstock_2 TownLab   # TownLab: 10 doors, 3 upper floors (the Center's escalator)
-dev/tests/ingame_buildings.py         # TownLab 8/8: entering the Center sets the respawn point, the nurse heals, the Mart sells
+dev/tests/ingame_doors.py HomeTown_0 Woodstock_2 TownLab   # Woodstock: 6 doors, 2 upper floors; TownLab: 10 doors, 3 upper floors
+dev/tests/ingame_buildings.py TownLab Woodstock_2   # entering each Center sets the respawn point, the nurse heals, the Mart sells
+dev/tests/ingame_world_revision.py    # a save on a redesigned map continues at its safe tile (--old-rom <rom> for real old saves)
+dev/tests/ingame_bridges.py          # every map whose sketch draws H: presses on and beside the deck, on foot and surfing; the crossing
 dev/tests/ingame_respawn.py           # three real losses: fresh home, repaired legacy save, saved Center
 dev/tests/ingame_encounters.py Route201_1 [--no-party]
 dev/autowalk.py LittlerootTown_MyHouse_1F_0 HomeTown_0 Route201_1 Woodstock_2 Route202_1 Fredericton_0
@@ -737,6 +829,8 @@ dev/tests/ledge_pieces.py             # no emulator; PASS
 dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 shapes, shore round trip)
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/stamp_pieces.py             # no emulator; PASS (catalog, 37 vanilla doors recognised, round trips, refusals, door plans, room scripts)
+dev/tests/bridge_pieces.py            # no emulator; 31 checks (import from vanilla Petalburg in a fixture, shapes, extract)
+dev/tests/resize_map.py               # no emulator; 5 fixture tests
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
 dev/tests/mobile_publish.py           # 53/53 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
 dev/tests/corridor_plan.py            # no emulator; PASS (plan check, seams, cleanup, connection math vs the game, every underlay compiles)
@@ -745,28 +839,27 @@ dev/tests/reconstruction.py           # 87.8%; only when mapgen/terrain code cha
 dev/tests/roundtrip.py                # 87.5-100% with the build's grammar, no repaired cell, guard PASS; when mapgen/terrain code changes
 dev/route_stats.py Route201_1         # after a route edit: crossings 53/54 steps, grass avoidable, no trainer forced, 137 tall grass
 dev/events.py build design/maps/Route201_1.events.toml   # after an events or map edit: 0 changed, 0 errors
-dev/events.py build design/maps/Woodstock_2.events.toml  # 0 changed, 0 errors, crossings 37/37
-dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown_0, HomeTown_House2_1F, Woodstock_Lab/House1/House2
+dev/events.py build design/maps/Woodstock_2.events.toml  # 0 changed, 0 errors, crossings 30/30
+dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown_0, HomeTown_House2_1F, Woodstock_Lab/House1/House2/House3_1F
 ```
 
 ## Next milestone (proposed, not started)
-The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
+The build order is in `region_blueprint.md`, "Build order": M15 Woodstock (done), M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
 
-**Milestone 15 (proposed): Woodstock, the confluence town.** The first corridor map rebuilt from the plan, with the M14 stamps.
-- **Resize first** (every reused folder needs it): a small tool that resizes a layout to the plan's size (Woodstock 36×34 → 48×42) with an offset, moves the events and warps with it (or reports any that fall outside), and re-offsets the connections from the plan (`corridor.py check` derives them). A save standing on the old map lands at its old coordinates: say so in the handoff (a save break for that case only, or move the player).
-- **Design from the underlay** (`dev/corridor.py underlay "Woodstock"`): the Saint John and the Meduxnekeag meeting at downtown, main street along the big river, the road from Route 201 to Route 202.
-- **Buildings by stamp:** `dev/buildings.py find Woodstock_2` already shows the station (`lab @ 14,8 -> Woodstock_Lab`) and the two houses with their rooms: place them in the new design with the same room names and their rooms, people and warp ids carry over. Probably the corridor's first Pokémon Center and Mart (new rooms; `HEAL_LOCATION_WOODSTOCK_2`, which also gives the slice its first real respawn point). The outdoor events spec (`Woodstock_2.events.toml`) is re-placed for the new layout.
-- **The creek bridge:** bridge vocabulary (which vanilla bridge pieces fit, and how their elevations carry the player over the water): research inside the milestone, or a ford/culvert stand-in if it grows.
-- **Seams:** Route 201's and Route 202's connections are re-offset; until they're rebuilt (M16, M17) the creek meets an old seam (accepted for one milestone).
-- **Done when:** checker, renders and in-game (doors, buildings, events, autowalks) all pass, the regression set, `/code-review medium`, then the phone build.
-
+**Milestone 16 (proposed): the start valley, HomeTown and Route 201 along the Meduxnekeag.** The plan's inset: the creek comes down from the border hills through the hamlet and runs east the whole length of Route 201 into Woodstock's seam (rows 30-33), the road on its south bank.
+- **Resize both** with `dev/resize_map.py` (HomeTown 36x26 → 34x28, Route 201 50x20 → 52x28) and set the plan's offsets: HomeTown → Route 201 at 2, Route 201 → Woodstock at 14 (Woodstock's side changes from today's interim 22 to the plan's −14 counterpart, and the creek and road then meet Woodstock's seam exactly; `corridor.py check` derives both).
+- **World revision 2:** both maps hold saves (HomeTown is where every game starts). Rows for HomeTown_0 and Route201_1 with safe tiles (no Center: explicit x, y; HomeTown's in front of the player's house), `MARITIMES_WORLD_REVISION` 2, and `ingame_world_revision.py` extended (its `--old-rom` against the M15 phone build).
+- **HomeTown's story gate and starter scene** move with the design: its coord events (the exit gate) and the events specs (HomeTown 22 checks, the kitchen, Route 201's forester, Bug Catcher Ross and the hidden Potion) are re-placed; the resize reports them.
+- **One road material for the corridor:** Route 201's logging road is sand, Woodstock's highway light path; pick one (or a deliberate change at the town line) in the rebuild.
+- **Design:** the hamlet's brook and sawmill yard, Route 201's hardwood valley (the preserve), a farm clearing, a ledge terrace down to the creek flats, the beaver pond; cliffs (item 4 below) would make the valley's terraces read as hills, and may belong in this milestone.
+- **Done when:** checker, renders and in-game (doors, events, ledges, flora, autowalks, the playthrough, world revisions) pass, the regression set, `/code-review medium`, then the phone build.
 Still open from before:
 1. **Tom plays by hand:** the current slice's text is all provisional. Since the corridor will be rebuilt, reading it matters less now; the rebuilt maps carry their events specs over and are reread then.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
 3. ~~The woods around HomeTown and Woodstock~~: superseded; both are rebuilt from the plan (M15, M16).
 4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too. Wanted for the valley terraces (Route 201, Route 202).
 5. **Shore follow-ups:** pond shores by shape; a bank-to-beach transition tile. (River shores in the rebuilt towns come from the kit.)
-6. **Bridges:** Woodstock's creek, Nackawic's long bridge and Fredericton's walking bridge all need bridge vocabulary (research which vanilla pieces and elevations work), probably inside M15.
+6. **Bridges:** the north-south plank deck is done (M15, `H`). Still to come: an east-west deck over a river running north-south (Route 104 has the pieces), Nackawic's long bridge (north-south over the headpond: the plank deck may do; a covered bridge is a Porytiles job), Fredericton's walking bridge (Rustboro has the pieces natively), and a bridge a surfer passes under (Route 110's elevation-15 pieces).
 7. **Town vocabulary after stamps:** hedges and fences (Petalburg's `24x` hedge pieces, by shape like ledges), garden beds, town signs on the Center and Mart; Rustboro's paved city buildings with their shadows for Fredericton (M20); a Maritimes gym room once there's a gym design.
 8. Later:
    - The player's own house as a Maritimes room (Mom's script is vanilla's), HomeTown's upstairs room, Route 203's people (a hiker in the notch, a fisher on the beach), a rematch-free double battle in the spec.
@@ -781,6 +874,9 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Redesigning a map saves may stand on:** resize with `dev/resize_map.py` first (a reused folder must match the plan's size), then add a world revision (`sWorldRevisions`, raise `MARITIMES_WORLD_REVISION`) in the same milestone, and prove it with `tests/ingame_world_revision.py --old-rom` against the last phone build (Drive's `builds/` holds it; `dev/out/mobile/check.map` is that build's symbol map while `mobile.py` hasn't run since). Without it a phone save lands at its old coordinates, inside whatever stands there now, with the old people and the old terrain's saved view around it.
+- **Bridges:** draw `H` two columns wide over every water row where the river runs east-west, with grass at both ends; the road keeps its one-tile grass margin from the deck as from water. A map on a tileset without the pieces is refused with the import command (`dev/tile_import.py bridge <tileset> --apply`). Tree bands: where a street's margin and a creek's leave an odd pair of rows, plant that area on the odd grid (`parity=(0, 1)`) or it stays bare (Woodstock's design does both).
+- **Copying tiles:** `dev/tile_import.py` only appends; check a tileset's animation frames (indices past its `tiles.png` that metatiles use) before copying many tiles: the tool refuses to land on them.
 - **Regression runs:** use `dev/regression.py`, not the commands by hand, and don't run CPU-heavy work beside it (M14's one `ingame_events` failure came from that). A test that can pass without exercising anything is a bug: when adding a test, make it fail on zero cases and give the runner a `check` for its counts; add a negative control to `tests/harness_guards.py`.
 - **Buildings:** place them with `Sketch.place` in the design script (or a `// stamp:` line with `B` cells), never by painting; `mapgen --apply` wires the doors. Name a room by its ground floor, `<Base>_1F` when the template has an upstairs (Centers, two-storey houses). Renaming a room in the sketch makes a new room; the old one stays, orphaned (the dry run shows "new room"). Never delete or reorder a map's warps by hand: rooms find their door by its warp's index (a new map's spawn point must go before the first doors are wired, as TownLab's did). Keep a Center's nurse its first object: the heal location names her local id. One Center per map.
 - **Phone builds:** publish from a clean `develop` after the merge (`dev/mobile.py`), not from a milestone branch: the build is named by its commit. Phone emulators find a save by the ROM's file name, which is why the play file is named for its save line and nothing else; never put a date or commit in that name. Save states don't carry across builds (a snapshot of the old build's memory), only in-game saves; in My Boy!, "Quick load on start" must stay off. Never write into `My Drive/MyBoy`: it's My Boy!'s live sync folder, and a change there reaches Tom's phone. The upload goes through Google Drive for Desktop: if it isn't running, the files wait in its cache and the tool says the upload isn't confirmed.

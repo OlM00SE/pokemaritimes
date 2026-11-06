@@ -13,7 +13,7 @@
 | Item balls, hidden items, gifts | a flag in the same block | `dev/events.py` (automatic, from the map's spec) | |
 | A trainer beaten | its trainer flag (one per trainer id) | `dev/events.py` | 520 trainer ids |
 | Scratch within one map visit | `VAR_TEMP_0`–`F`, `FLAG_TEMP_1`–`1F` | none | cleared on every map load |
-| An engine or expansion feature that needs a var (`B_VAR_*`, `OW_*_VAR` configs) | one of the 23 `VAR_UNUSED_*` in SaveBlock1 | rename it in `vars.h` | 23 (a reserve; e.g. expansion's debug menu only toggles `B_VAR_NO_BAG_USE` when it lies in `0x4000–0x40FF`) |
+| An engine or expansion feature that needs a var (`B_VAR_*`, `OW_*_VAR` configs) | one of the 23 `VAR_UNUSED_*` in SaveBlock1 | rename it in `vars.h` | 22 (M15 took `0x4083` as `VAR_MARITIMES_WORLD_REVISION`: zero in every older save, which is what makes it a marker; a reserve; e.g. expansion's debug menu only toggles `B_VAR_NO_BAG_USE` when it lies in `0x4000–0x40FF`) |
 
 **Conventions:**
 - One var per storyline, counting up: `VAR_HOMETOWN_STATE` 0 = just arrived, 1 = has a starter, 2 = ... (vanilla's `VAR_LITTLEROOT_TOWN_STATE` works this way). Put the meaning of each value in the note; `save_ids.py` writes it beside the id. A var is 16 bits, so one var can carry a whole storyline.
@@ -80,6 +80,16 @@ and any later need.
 
 **Doesn't change the layout** (saves keep loading): allocating vars and flags inside their blocks
 (`save_ids.py`, `events.py`), adding trainers within the ceiling, any map, script or text change.
+
+**Redesigning a map saves may stand on** doesn't change the layout either, but a save standing on
+it would continue at its old coordinates, with the old people and the old terrain's saved view
+(`design/mapping_reference.md` §15). Add a world revision (`src/overworld.c`, `sWorldRevisions`;
+`dev/README.md`, "Saves and redesigns"): such a save then continues once at the map's safe tile.
+`VAR_MARITIMES_WORLD_REVISION` (was `VAR_UNUSED_0x4083`) records the revision a save was made on.
+
+| Revision | Milestone | Map | Safe tile |
+|---|---|---|---|
+| 1 | 15 | Woodstock_2 (36x34 → 48x42, rebuilt on the corridor plan) | `HEAL_LOCATION_WOODSTOCK_2`, outside the Center's door (29,22) |
 
 **Changes the layout:** raising a block (`MARITIMES_VARS_COUNT`, `MARITIMES_FLAGS_COUNT`,
 `MAX_TRAINERS_COUNT_EMERALD`), adding or resizing a SaveBlock field, or an expansion config that does

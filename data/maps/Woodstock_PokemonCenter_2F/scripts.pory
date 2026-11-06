@@ -1,0 +1,9 @@
+// Woodstock_PokemonCenter_2F: copied from OldaleTown_PokemonCenter_2F by dev/mapgen.py (pokemon_center).
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_PokemonCenter_2F_MapScripts {
+    MAP_SCRIPT_ON_FRAME_TABLE: CableClub_OnFrame
+    MAP_SCRIPT_ON_WARP_INTO_MAP_TABLE: CableClub_OnWarp
+    MAP_SCRIPT_ON_LOAD: CableClub_OnLoad
+    MAP_SCRIPT_ON_TRANSITION: CableClub_OnTransition
+}
