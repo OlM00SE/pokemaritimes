@@ -216,6 +216,7 @@ void NewGameInitData(void)
     ResetFanClub();
     ResetLotteryCorner();
     UpdateDailySeed();
+    VarSet(VAR_MARITIMES_WORLD_REVISION, MARITIMES_WORLD_REVISION); // Maritimes: made on today's maps
     WarpToTruck();
     if (IS_FRLG)
         RunScriptImmediately(EventScript_ResetAllMapFlagsFrlg);

@@ -2111,6 +2111,78 @@ static void FieldCB_FadeTryShowMapPopup(void)
     FieldCB_WarpExitFadeFromBlack();
 }
 
+// Maritimes: world revisions. A milestone that redesigns a map saves may stand on (new size,
+// new layout) adds a row here and raises MARITIMES_WORLD_REVISION (include/constants/vars.h).
+// A save made before it (VAR_MARITIMES_WORLD_REVISION below the row's revision) would CONTINUE
+// at its old coordinates, with the map's people where it saved them and its saved view of the
+// old terrain pasted around the player. Instead, once, it continues through vanilla's
+// continue-game warp (a full map load: people from the map, the new terrain, the avatar state
+// fitted to the tile) to the row's safe tile: the map's heal location if it has one (it follows
+// a moved Center), else (x, y). Warps by id stay valid (redesigns keep warp indices); a
+// coordinate warp on the map is moved to the safe tile, and a respawn point on the map is
+// re-pointed at the map's current heal location (the whiteout matches it by coordinates).
+struct WorldRevision
+{
+    u8 revision;
+    u8 mapGroup;
+    u8 mapNum;
+    u8 healLocation;    // HEAL_LOCATION_NONE: use x, y
+    s16 x, y;
+};
+
+static const struct WorldRevision sWorldRevisions[] =
+{
+    // M15: Woodstock rebuilt on the corridor plan (36x34 -> 48x42): in front of its Center
+    { 1, MAP_GROUP(MAP_WOODSTOCK_2), MAP_NUM(MAP_WOODSTOCK_2), HEAL_LOCATION_WOODSTOCK_2 },
+};
+
+static bool32 WarpIsOnMap(const struct WarpData *warp, const struct WorldRevision *row)
+{
+    return warp->mapGroup == row->mapGroup && warp->mapNum == row->mapNum;
+}
+
+static void MoveCoordWarp(struct WarpData *warp, const struct WorldRevision *row, s16 x, s16 y)
+{
+    if (WarpIsOnMap(warp, row) && warp->warpId == WARP_ID_NONE && warp->x >= 0 && warp->y >= 0)
+    {
+        warp->x = x;
+        warp->y = y;
+    }
+}
+
+static void ApplyWorldRevisions(void)
+{
+    u16 saved = VarGet(VAR_MARITIMES_WORLD_REVISION);
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sWorldRevisions); i++)
+    {
+        const struct WorldRevision *row = &sWorldRevisions[i];
+        const struct HealLocation *heal = GetHealLocation(row->healLocation);
+        u32 mapHeal = GetHealLocationIndexByMap(row->mapGroup, row->mapNum);
+        s16 x = heal ? heal->x : row->x;
+        s16 y = heal ? heal->y : row->y;
+
+        if (row->revision <= saved)
+            continue;
+        if (!UseContinueGameWarp() && WarpIsOnMap(&gSaveBlock1Ptr->location, row))
+        {
+            SetWarpData(&gSaveBlock1Ptr->continueGameWarp, row->mapGroup, row->mapNum, WARP_ID_NONE, x, y);
+            SetContinueGameWarpStatus();
+        }
+        else
+        {
+            MoveCoordWarp(&gSaveBlock1Ptr->continueGameWarp, row, x, y);
+        }
+        MoveCoordWarp(&gSaveBlock1Ptr->escapeWarp, row, x, y);
+        MoveCoordWarp(&gSaveBlock1Ptr->dynamicWarp, row, x, y);
+        if (WarpIsOnMap(&gSaveBlock1Ptr->lastHealLocation, row) && mapHeal != HEAL_LOCATION_NONE)
+            SetLastHealLocationWarp(mapHeal);
+    }
+    if (saved < MARITIMES_WORLD_REVISION)
+        VarSet(VAR_MARITIMES_WORLD_REVISION, MARITIMES_WORLD_REVISION);
+}
+
 void CB2_ContinueSavedGame(void)
 {
     u8 trainerHillMapId;
@@ -2121,6 +2193,8 @@ void CB2_ContinueSavedGame(void)
     if (!IS_FRLG && heal->mapGroup == 0 && heal->mapNum == 0 && heal->warpId == 0
      && heal->x == 0 && heal->y == 0)
         SetLastHealLocationWarp(HEAL_LOCATION_LITTLEROOT_TOWN_MY_HOUSE_2F);
+    if (!IS_FRLG)
+        ApplyWorldRevisions();  // Maritimes: a save made on a map since redesigned
 
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
