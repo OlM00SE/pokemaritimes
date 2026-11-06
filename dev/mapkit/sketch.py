@@ -15,7 +15,10 @@ Legend (one character per metatile):
     s  sign post (its text is a sign event: dev/events.py)                     (mapkit/flora.py)
     B  a cell of a building stamp, placed by a `// stamp:` line               (mapkit/stamps.py)
     H  a plank bridge's deck over water, a strip two columns wide             (mapkit/bridges.py)
+    ^  a cliff wall    %  stairs up a cliff's south face                       (mapkit/cliffs.py)
     #  keep the map's current block unchanged (hand-painted pieces, ...)
+Levels: `// level: 0001112...` lines, one per row, give each cell a terrace level (0-9; all 0
+when there are none). Cliff walls separate the levels; see mapkit/cliffs.py.
 Sand (':') that touches river/sea water ('~') becomes a beach; grass banks and beaches are built
 by shape (mapkit/shores.py). Flora stands on plain grass only.
 Buildings: `// stamp: pokemon_center @ 10,4 -> Woodstock_PokemonCenter_1F` places a catalog
@@ -24,15 +27,17 @@ building with its top-left at (10, 4); its cells are drawn `B`. Sketch.place() d
 from .terrain import TREE, TREE_Q, Rules, autotile, Vocabulary, grid_labels, PRIMARY
 from .layout import pack
 from .project import TILE_FLAG_SURFABLE
-from . import ledges, shores, flora, stamps, bridges
+from . import ledges, shores, flora, stamps, bridges, cliffs
 
 # a bridge's deck reads as water to everything but the bridge resolver (the banks run under it)
 CHAR_TO_CLASS = {".": "G", ",": "TG", "=": "P", ":": "SA", "~": "S", "o": "W", "T": "T", "#": "F",
                  "v": "LD", "<": "LD", ">": "LD", shores.ROCK_CHAR: shores.ROCK_CLS,
-                 stamps.CHAR: "F", bridges.CHAR: "S", **flora.CHAR_CLASS}
+                 stamps.CHAR: "F", bridges.CHAR: "S", **flora.CHAR_CLASS, **cliffs.CLS}
 CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
                  "TL": "T", "TR": "T", "BL": "T", "BR": "T", "F": "#",
-                 shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR}   # LD: ledges.piece_char
+                 shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR,
+                 **{c: ch for ch, c in cliffs.CLS.items()}}   # LD: ledges.piece_char
+LEVEL_PREFIX = "// level:"
 CLASS_ATTRS = {"G": (0, 3), "TG": (0, 3), "P": (0, 3), "SA": (0, 3), "S": (0, 1), "W": (0, 1),
                "TL": (1, 0), "TR": (1, 0), "BL": (1, 0), "BR": (1, 0), "LD": ledges.LEDGE_ATTRS,
                shores.ROCK_CLS: (1, 0)}
@@ -47,9 +52,13 @@ class SketchError(ValueError):
 
 
 class Sketch:
-    def __init__(self, map_name, rows, comments=(), placements=()):
+    def __init__(self, map_name, rows, comments=(), placements=(), levels=None):
         self.map_name, self.rows, self.comments = map_name, [list(r) for r in rows], list(comments)
         self.stamps = list(placements)          # [stamps.Placement]: the buildings
+        # terrace levels (mapkit/cliffs.py), one int per cell; all 0 for a map without cliffs
+        self.levels = [list(r) for r in levels] if levels else cliffs.zero_levels(self.w, self.h)
+        if (len(self.levels[0]), len(self.levels)) != (self.w, self.h):
+            raise ValueError(f"levels are {len(self.levels[0])}x{len(self.levels)}, the sketch {self.w}x{self.h}")
 
     @property
     def w(self): return len(self.rows[0])
@@ -58,9 +67,14 @@ class Sketch:
 
     @classmethod
     def load(cls, path):
-        name, rows, comments, placements = None, [], [], []
+        name, rows, comments, placements, levels = None, [], [], [], []
         for line in open(path, encoding="utf-8").read().splitlines():
-            if line.startswith("//"):
+            if line.startswith(LEVEL_PREFIX):
+                digits = line[len(LEVEL_PREFIX):].strip()
+                if not digits.isdigit():
+                    raise ValueError(f"{path}: a level line holds digits only: {line!r}")
+                levels.append([int(c) for c in digits])
+            elif line.startswith("//"):
                 if line[2:].strip().lower().startswith("map:"):
                     name = line.split(":", 1)[1].strip()
                 elif (pl := stamps.parse_line(line)) is not None:
@@ -75,7 +89,10 @@ class Sketch:
         bad = {ch for r in rows for ch in r} - set(CHAR_TO_CLASS)
         if bad:
             raise ValueError(f"{path}: unknown characters {sorted(bad)}")
-        return cls(name, rows, comments, placements)
+        if levels and (len(levels) != len(rows) or {len(r) for r in levels} != widths):
+            raise ValueError(f"{path}: {len(levels)} level lines for {len(rows)} rows (one per row, "
+                             "as wide as the rows)")
+        return cls(name, rows, comments, placements, levels or None)
 
     def save(self, path):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
@@ -86,6 +103,20 @@ class Sketch:
                 f.write(c + "\n")
             for r in self.rows:
                 f.write("".join(r) + "\n")
+            if any(v for r in self.levels for v in r):
+                for r in self.levels:
+                    f.write(f"{LEVEL_PREFIX} {''.join(str(v) for v in r)}\n")
+
+    def level(self, x, y): return self.levels[y][x]
+
+    def set_level(self, cells, v):
+        """Give every cell of `cells` (a set of (x, y)) terrace level v (0-9); cells off the
+        sketch are ignored."""
+        if not 0 <= v <= 9:
+            raise ValueError(f"levels are 0-9, not {v}")
+        for x, y in cells:
+            if 0 <= x < self.w and 0 <= y < self.h:
+                self.levels[y][x] = v
 
     def place(self, project, name, x, y, interior=None):
         """Put building stamp `name` with its top-left at (x, y): draws its cells `B` and adds
@@ -144,6 +175,9 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         out = []
         for x, c in enumerate(row):
             mid = L.mid(x, y)
+            if L.primary == PRIMARY and mid in cliffs.PIECES:
+                out.append("#")         # cliffs are kept: their levels aren't recovered (yet)
+                continue
             if c == "LD":
                 out.append(ledges.piece_char(mid))
                 continue
@@ -462,7 +496,17 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         raise SketchError(stamp_problems)
     kept = lambda x, y: stamp_blocks.get((x, y), layout.get(x, y))     # the block of a kept cell
     kept_mid = lambda x, y: kept(x, y) & 0x3FF
-    pieces, problems = ledges.resolve(sketch.rows, w, h, ledges.runs_into_kept(sketch.rows, w, h, kept_mid))
+    # cliffs: walls and stairs by shape and level (a ledge's end runs under a wall)
+    cliff_pieces, cliff_problems = cliffs.resolve(sketch.rows, sketch.levels, w, h)
+    if cliff_pieces and layout.primary != PRIMARY:
+        raise SketchError([(*min(cliff_pieces), f"cliffs need {PRIMARY} as the primary tileset, "
+                                                f"not {layout.primary}")])
+    if cliff_problems:
+        raise SketchError(cliff_problems)
+    if cliff_pieces:
+        cliffs.verify_tileset(project, layout.tiles)
+    runs_into = cliffs.runs_into(sketch.rows, w, h, ledges.runs_into_kept(sketch.rows, w, h, kept_mid))
+    pieces, problems = ledges.resolve(sketch.rows, w, h, runs_into)
     if pieces and layout.primary != PRIMARY:
         raise SketchError([(0, 0, f"ledges need {PRIMARY} as the primary tileset, not {layout.primary}")])
     if problems:
@@ -488,7 +532,16 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
                                                         kept_walkable)
     if ledge_errors:
         raise SketchError(ledge_errors)
+    # levels: walkable ground changes level only through a wall, a ledge, stairs or a graded road
+    level_errors = cliffs.level_issues(flora.walk_view(cls, fpieces), sketch.levels, w, h)
+    if level_errors:
+        raise SketchError(level_errors)
     gview = flora.grass_view(cls) if fpieces else cls
+    # to the learned rules, banks and bridges a wall is land, like grass: vanilla's ground beside
+    # these walls is plain grass (069 N, 070 W, 072 E: 001 in nearly every case), and a wall never
+    # touches water
+    if cliff_pieces:
+        gview = [[("G" if c in cliffs.CLASSES else c) for c in row] for row in gview]
     # bridges: the deck's pieces by shape; the deck reads as water for the shores below
     bridge_cells = {(x, y) for y, row in enumerate(sketch.rows) for x, ch in enumerate(row)
                     if ch == bridges.CHAR}
@@ -523,11 +576,13 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         # come from `kept` below.
         learn_view = [[("G" if (x, y) in stamp_blocks else c) for x, c in enumerate(row)]
                       for y, row in enumerate(learn_view)]
-    mids, levels = autotile(rules, learn_view, w, h, keep)
+    # vanilla labels its cliff stairs as grass; the rules must never draw them in open ground
+    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
         view = shores.sand_view(learn_view, w, h)
-        sand_mids = autotile(rules, view, w, h, keep)[0] if view != learn_view else None
+        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES)[0] \
+            if view != learn_view else None
         shore_tiles = shores.apply(gview, mids, w, h, sand_mids)
     if fpieces:
         bad_spots = flora.placement_errors(fpieces, mids)
@@ -543,6 +598,10 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
             c = cls[y][x]
             if c == "F":
                 blocks.append(kept(x, y))
+                continue
+            if c in cliffs.CLASSES:
+                blocks.append(pack(cliff_pieces[(x, y)],
+                                   *(cliffs.WALL_ATTRS if c == "CL" else cliffs.STAIR_ATTRS)))
                 continue
             mid = mids[y][x]
             if (x, y) in bridge_mids:
@@ -580,6 +639,9 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         report["buildings"] = len(sketch.stamps)
     if bridge_mids:
         report["bridge_tiles"] = len(bridge_mids)
+    if cliff_pieces:
+        report["cliff_tiles"] = sum(m in cliffs.WALL_PIECES for m in cliff_pieces.values())
+        report["stair_tiles"] = sum(m in cliffs.STAIR_PIECES for m in cliff_pieces.values())
     if len(pieces) > len(rocks):
         report["ledge_tiles"] = len(pieces) - len(rocks)
     if shore_tiles or rocks:
