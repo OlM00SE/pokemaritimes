@@ -1,10 +1,29 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-05 (foundation hardening merged and phone build published). Read this first in a new session. The world's geography and
+> Updated 2026-11-06 (test infrastructure reliability). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Test infrastructure reliability (2026-11-06, branch `test-infrastructure-reliability`):** the
+last foundation item from the independent audit before Woodstock. Tooling only: the ROM is
+byte-identical to the published phone build (`7df037fe…`), **no save break**.
+Codex drafted most of it uncommitted on the branch; Claude verified it, closed the gaps below,
+and documented it.
+- **One gate:** `dev/regression.py` runs the whole regression set serially with per-step logs, an
+  evidence line per step (its counts), and a JSON report (commit, dirty tree, ROM sha256).
+  OBSERVED metrics (reconstruction, route numbers) are never counted as passes.
+- **No silent passes:** tests fail on zero coverage; conformance had been counting a warp that
+  landed elsewhere as agreeing (now a failure); the runner checks the claimed counts, not only
+  exit codes.
+- **No emulator interference:** each emulator gets a private bridge script, port and session
+  token, and each test its own ROM/save folder. Added here: a step that times out or is
+  interrupted is killed with its process tree (the old runner left mGBA running, shown by a
+  negative control), one run at a time (OS lock), a warning when other mGBA processes are
+  open, and a sweep of scratch folders from killed runs.
+- `tests/harness_guards.py` (13 negative controls) and `tests/emulator_isolation.py` (two live
+  emulators side by side) prove these.
+
 **Foundation hardening complete (2026-11-05):** branch `foundation-hardening` merged into
 `develop` as `fb2b9673ff` and pushed to `origin/develop`. No other milestone has started.
 Tom requested fixes to the independent review's highest-priority findings before the Woodstock
@@ -656,9 +675,16 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | Script macros, the debug var editor and the test framework's script header know the story vars | `asm/macros/event.inc`, `src/debug.c`, `include/test/overworld_script.h` |
 
 ## Regression set (run before merging anything)
+**`dev/regression.py`** runs all of it, serially, and is the merge gate: 42 steps (build, 23 static, 18 in mGBA), about 13 minutes. It must end `0 failed`; quote its evidence lines in the handoff (the report is `dev/out/regression/<run>/report.json`, and says if the tree was dirty). `--only <id>...` for a subset while working (the build always runs). How it guards against silent passes and emulator interference: `dev/README.md`, "Test suites".
+
+Last full run (test-infrastructure-reliability, ROM `7df037fe…`, unchanged from the published build): 40 gates passed, 2 observed, 0 failed. Conformance 537/537 (108 source tiles beyond the warp's signed 8-bit range, reported as untestable), doors 15 round trips, buildings 12/12, respawn 3 real losses, encounters 12 wild battles, ledges 490/490 on 7 maps (4 tours, 3 skipped for wandering people), events 114/114 on 7 maps, save 45/45, shores 624/624, flora 435/435, mobile publish 53/53, authoring 20 tests, harness guards, checker 33 maps 0 errors and vanilla 0 unexpected, reconstruction 87.8% (observed), round trip 87.5–100%.
+
+Add a step to `manifest()` in `dev/regression.py` when a new test or spec'd map joins the set (and a `check` when the test claims coverage its exit code can't prove). The commands it runs, for running one by hand:
 ```
 dev/fastbuild.py
 dev/tests/authoring_safety.py         # 20 fixture tests: shared terrain, room collisions, rollback and fault injection
+dev/tests/harness_guards.py           # no emulator; 13 negative controls: empty/skipped tests fail, runner timeouts kill the tree, the lock holds
+dev/tests/emulator_isolation.py       # two live mGBA sessions stay independent
 dev/check_maps.py --baseline          # 0 unexpected, 8 known
 dev/check_maps.py                     # 33 maps, 0 errors (3 WARN: Fredericton's 8 dead doors; TownLab's Center upstairs, as vanilla's)
 dev/tests/id_budget.py                # no emulator; PASS (520 trainer ids, 766 block flags, 256 story vars, 148 save bytes)
@@ -726,6 +752,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Regression runs:** use `dev/regression.py`, not the commands by hand, and don't run CPU-heavy work beside it (M14's one `ingame_events` failure came from that). A test that can pass without exercising anything is a bug: when adding a test, make it fail on zero cases and give the runner a `check` for its counts; add a negative control to `tests/harness_guards.py`.
 - **Buildings:** place them with `Sketch.place` in the design script (or a `// stamp:` line with `B` cells), never by painting; `mapgen --apply` wires the doors. Name a room by its ground floor, `<Base>_1F` when the template has an upstairs (Centers, two-storey houses). Renaming a room in the sketch makes a new room; the old one stays, orphaned (the dry run shows "new room"). Never delete or reorder a map's warps by hand: rooms find their door by its warp's index (a new map's spawn point must go before the first doors are wired, as TownLab's did). Keep a Center's nurse its first object: the heal location names her local id. One Center per map.
 - **Phone builds:** publish from a clean `develop` after the merge (`dev/mobile.py`), not from a milestone branch: the build is named by its commit. Phone emulators find a save by the ROM's file name, which is why the play file is named for its save line and nothing else; never put a date or commit in that name. Save states don't carry across builds (a snapshot of the old build's memory), only in-game saves; in My Boy!, "Quick load on start" must stay off. Never write into `My Drive/MyBoy`: it's My Boy!'s live sync folder, and a change there reaches Tom's phone. The upload goes through Google Drive for Desktop: if it isn't running, the files wait in its cache and the tool says the upload isn't confirmed.
 - **Playing by hand:** use `RomHackDev/Play PokeMaritimes.bat` (`dev/play.py`), not `pokeemerald.gba` directly. On 2026-11-03 Tom got "The save file has been erased due to corruption or damage." from a March save sitting beside `pokeemerald.gba`. It had no layout stamp, and SaveBlock1 has grown since, so its last SaveBlock1 sector fails the checksum in both slots. The game calls that erased **before** the stamp check can say "older version": the outdated-save message only appears when a stale save's block sizes happen to match. The launcher reads the save first (`dev/savefile.py`, which agrees with the game in `ingame_save.py`) and sets stale saves aside in `playtest/old_saves/`. That save is kept there.
