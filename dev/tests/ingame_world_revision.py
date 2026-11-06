@@ -18,7 +18,12 @@ With --old-rom (the build before the redesign, e.g. the published phone build):
   * a save made on that build in old Woodstock's green continues on this build in front of
     the Center, with the people at their new homes;
   * a save made on that build inside the station continues there, and its door leads out to
-    the station's new door.
+    the station's new door;
+  * a save made on that build on Route 201 beside Woodstock's seam continues there, and the
+    strip of Woodstock the game holds beside it is the new town's (CONTINUE pastes the save's
+    view of the terrain, which reaches into that strip, unless the revision drops it).
+The old build's .map must sit beside its ROM: keep a copy away from dev/out/mobile, which the
+mobile publish tests rewrite (dev/out/m15/oldrom: the phone build before M15, 2026-11-05_fb2b9673ff, with its map rebuilt byte for byte).
 Screenshots: dev/out/world_revision_<case>.png. Disposable saves under dev/out only.
 """
 import os
@@ -56,6 +61,32 @@ def current_revision(p):
 def safe_tile(p):
     heal = next(h for h in interiors.heal_locations(p)["heal_locations"] if h["id"] == "HEAL_LOCATION_WOODSTOCK_2")
     return heal["x"], heal["y"]
+
+
+def seam_strip_wrong(e, p, route, town):
+    """The blocks the game holds in `route`'s connection strip toward `town` (gBackupMapLayout,
+    the grid the player walks on: the map plus 7 tiles of each neighbour), compared with
+    `town`'s blocks there. CONTINUE pastes a save's view of the terrain (SaveBlock1.mapView)
+    over that grid, strip included, so an old save beside the seam would show the old town.
+    Returns the cells that differ, as (x, y): (held, expected) metatiles."""
+    r, tj = p.load_map(route), p.load_map(town)
+    c = next(c for c in r.connections if c["map"] == tj.id)
+    assert c["direction"] == "right", "only an east seam is checked"
+    off = int(c["offset"])                       # town row = route row - offset
+    sym = e.sym["gBackupMapLayout"]
+    width, ptr = e.read32(sym), e.read32(sym + 8)
+    px, py = e.player()[2:]
+    wrong = {}
+    for y in range(py - 7, py + 8):
+        for x in range(r.layout.width, r.layout.width + 7):
+            tx, ty = x - r.layout.width, y - off
+            if not (0 <= y < r.layout.height and 0 <= ty < tj.layout.height):
+                continue
+            held = e.read16(ptr + 2 * ((x + 7) + width * (y + 7))) & 0x3FF
+            want = tj.layout.mid(tx, ty)
+            if held != want:
+                wrong[(tx, ty)] = (held, want)
+    return wrong
 
 
 def save_and_continue(e):
@@ -121,14 +152,15 @@ def current_rom(p):
         fast_text(e)
         e.test_mode()
         check(e.get_var(VAR) == rev, f"a new game starts on world revision {rev} (got {e.get_var(VAR)})")
-        # an old save on another map: stays put, the var catches up
-        e.warp("Route201_1", 20, 14)
+        # an old save on another map, beside Woodstock's seam: stays put, the var catches up, and
+        # its saved view (which reaches into Woodstock's strip) is dropped
+        e.warp("Route201_1", 47, 14)
         here = e.player()
         e.set_var(VAR, 0)
         check(save_and_continue(e) and e.player() == here,
-              f"an old save on Route 201 continues where it was saved ({here[2:]} -> {e.player()[2:]})")
+              f"an old save on Route 201 by the seam continues where it was saved ({here[2:]} -> {e.player()[2:]})")
         check(e.get_var(VAR) == rev, "and the var is updated")
-        # a current save on Woodstock: stays put
+        # a current save on Woodstock: stays put, its view kept
         e.warp(TOWN, 25, 24)
         here = e.player()
         check(save_and_continue(e) and e.player() == here,
@@ -152,7 +184,8 @@ def old_slot(rom):
 
 def old_rom(p, rom):
     for tag, setup in (("old_green", lambda e: e.warp(TOWN, *OLD_GREEN)),
-                       ("old_station", lambda e: e.warp("Woodstock_Lab", 6, 10))):
+                       ("old_station", lambda e: e.warp("Woodstock_Lab", 6, 10)),
+                       ("old_route201_seam", lambda e: e.warp("Route201_1", 47, 14))):
         print(f"old ROM ({os.path.basename(rom)}): {tag}")
         d = old_slot(rom)
         try:
@@ -172,6 +205,19 @@ def old_rom(p, rom):
                 e.test_mode()
                 if tag == "old_green":
                     expect_relocated(e, p, tag)
+                elif tag == "old_route201_seam":
+                    pos = e.player()
+                    check(pos == old_pos, f"{tag}: continues on Route 201 where it was saved ({pos[2:]})")
+                    wrong = seam_strip_wrong(e, p, "Route201_1", TOWN)
+                    check(not wrong, f"{tag}: the strip of Woodstock beside the seam shows the new town, "
+                                     f"not the save's view of the old one" + (f": {len(wrong)} cells differ, "
+                                     f"e.g. {sorted(wrong.items())[:3]}" if wrong else ""))
+                    e.shot(os.path.join(OUT, f"world_revision_{tag}.png"))
+                    e.step("Right", 3)                 # (47,14) -> (49,14) -> Woodstock (0,36)
+                    e.wait_for_control()
+                    out = e.player()
+                    check(e.map_name(out) == "WOODSTOCK_2" and out[2:] == (0, 36),
+                          f"{tag}: walking east crosses into Woodstock's highway ({e.map_name(out)} {out[2:]})")
                 else:
                     pos = e.player()
                     check(pos == old_pos, f"{tag}: continues inside the station where it was saved ({pos[2:]})")

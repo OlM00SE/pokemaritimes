@@ -28,7 +28,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mapkit.project import Project, REPO, NUM_TILES_IN_PRIMARY
 from mapkit.layout import pack
-from mapkit.sketch import Sketch, SketchError, compile_sketch, extract_bridges, CHAR_TO_CLASS
+from mapkit.sketch import Sketch, SketchError, compile_sketch, extract_bridges, keep_valid_bridges
 from mapkit import bridges, shores, tileimport
 
 TARGET = "gTileset_Petalburg"
@@ -69,7 +69,7 @@ def fixture():
     tmp = tempfile.TemporaryDirectory(prefix="bridge-pieces-", dir=out)
     root = Path(tmp.name)
     for rel in ("src/data/tilesets/graphics.h", "src/data/tilesets/metatiles.h",
-                "src/data/tilesets/headers.h", "src/graphics.c"):
+                "src/data/tilesets/headers.h", "src/graphics.c", "src/tileset_anims.c"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(Path(REPO) / rel, root / rel)
     for folder in ("data/tilesets/primary/general", "data/tilesets/secondary/rustboro"):
@@ -118,6 +118,43 @@ def test_import():
         again = tileimport.plan(fp, bridges.SOURCE, list(bridges.SOURCE_PIECES), TARGET)
         check(not again.changes and again.mapping == pl.mapping, "a second run appends nothing")
         check(bridges.piece_ids(fp, FakeLayout)[0] == pl.mapping, "afterwards the bridge finds its pieces")
+        # a tile an animation overwrites is never reused, even when its pixels match
+        plank = (pl.mapping[bridges.DECK[0]] - 0x200)
+        planks = {(v & 0x3FF) - NUM_TILES_IN_PRIMARY for v in fp.tileset(TARGET).metatiles[plank]
+                  if (v & 0x3FF) >= NUM_TILES_IN_PRIMARY}
+        with patch.object(tileimport, "animated_tiles", return_value=planks):
+            anim = tileimport.plan(Project(str(root)), bridges.SOURCE, list(bridges.SOURCE_PIECES), TARGET)
+        check(anim.new_tiles and not anim.problems,
+              f"tiles an animation overwrites aren't reused: the planks would be appended again ({len(anim.new_tiles)} tiles)")
+    finally:
+        tmp.cleanup()
+    # a tileset whose tiles.png is 256 wide: the import keeps its layout
+    tmp, root = fixture()
+    try:
+        png = root / "data/tilesets/secondary/petalburg/tiles.png"
+        fp = Project(str(root))
+        t = fp.tileset(TARGET)
+        n = (t.tiles_image.width // 8) * (t.tiles_image.height // 8)
+        old = [t.tile(i) for i in range(n)]
+        from PIL import Image
+        wide = Image.new("P", (256, -(-n // 32) * 8), 0)
+        wide.putpalette(t.tiles_image.getpalette())
+        for i, px in enumerate(old):
+            tile = Image.new("P", (8, 8)); tile.putdata(px)
+            wide.paste(tile, ((i % 32) * 8, (i // 32) * 8))
+        wide.save(png, bits=4)
+        fp = Project(str(root))
+        before_wide = [fp.tileset(TARGET).tile(i) for i in range(n)]
+        pl = tileimport.plan(fp, bridges.SOURCE, list(bridges.SOURCE_PIECES), TARGET)
+        tileimport.apply(fp, pl)
+        fp = Project(str(root))
+        t = fp.tileset(TARGET)
+        check(t.tiles_image.width == 256 and [t.tile(i) for i in range(n)] == before_wide,
+              "a 256-wide tiles.png keeps its width and every tile's index")
+        src = fp.tileset_pair("gTileset_General", bridges.SOURCE)
+        dst = fp.tileset_pair("gTileset_General", TARGET)
+        check(all(metatile_rgb(src, a) == metatile_rgb(dst, b) for a, b in pl.mapping.items()),
+              "and the copied pieces draw exactly as Rustboro's")
     finally:
         tmp.cleanup()
     tmp, root = fixture()
@@ -128,6 +165,12 @@ def test_import():
             t.palettes[k] = [(8, 8, 8 + k)] * 16
         pl = tileimport.plan(fp, bridges.SOURCE, list(bridges.SOURCE_PIECES), TARGET)
         check(any("palette slot" in pr for pr in pl.problems), "no free palette slot is refused")
+        fp = Project(str(root))
+        gen = fp.tileset("gTileset_General")
+        gen.metatiles[1] = tuple((v & 0x0FFF) | (11 << 12) for v in gen.metatiles[1])   # a primary metatile on slot 11
+        pl = tileimport.plan(fp, bridges.SOURCE, list(bridges.SOURCE_PIECES), TARGET)
+        check(sorted(pl.palettes) == [7] and all((v >> 12) != 11 for e, _ in pl.new_metatiles for v in e),
+              f"a slot a primary metatile draws with isn't free: the palette goes to slot 7 ({sorted(pl.palettes)})")
         fp = Project(str(root))
         t = fp.tileset(TARGET)
         n = (t.tiles_image.width // 8) * (t.tiles_image.height // 8)
@@ -238,6 +281,18 @@ def test_extract(p, kit, L, blocks):
     extract_bridges(p, L, half)
     check(not any(ch == "H" for r in half for ch in r) and half[5][5] == "#",
           "a broken strip stays '#'")
+    L.blocks = list(blocks)
+    # a deck whose south end isn't grass (tall grass): a compile would refuse it, so extract keeps it
+    tall = [list(r.replace("H", "~")) for r in SHAPE]
+    tall[7][5] = ","
+    extract_bridges(p, L, tall)
+    check(not any(ch == "H" for r in tall for ch in r), "a deck with tall grass at its end stays '#' (the end's error blames its strip)")
+    # a later pass keeps one deck cell as '#': the rest of the strip goes with it
+    rows = [list(r) for r in SHAPE]
+    rows[5][6] = "#"
+    want = {v: k for k, v in bridges.piece_ids(p, L)[0].items()}
+    kept = keep_valid_bridges(rows, w, h, lambda x, y: want.get(L.mid(x, y)))
+    check(kept == 5 and not any(ch == "H" for r in rows for ch in r), f"half a strip left by a later pass is kept whole ({kept} cells)")
 
 
 def main():

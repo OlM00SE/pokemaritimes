@@ -65,19 +65,21 @@ class ResizeMap(unittest.TestCase):
     def test_moves_everything_with_the_terrain(self):
         old = self.p.load_map("Woodstock_2")
         old_events = {k: [(e["x"], e["y"]) for e in old.events(k)] for k in resize_map.EVENT_KINDS}
-        pl = resize_map.plan(self.p, "Woodstock_2", 48, 42, 2, 3)
+        left = self.conn("Woodstock_2", "MAP_ROUTE201_1")["left"]      # the seams as they are now
+        down = self.conn("Woodstock_2", "MAP_ROUTE202_1")["down"]
+        pl = resize_map.plan(self.p, "Woodstock_2", old.layout.width + 12, old.layout.height + 8, 2, 3)
         self.assertFalse(pl.problems, pl.problems)
         resize_map.apply(self.p, pl)
         p = Project(str(self.root))
         new = p.load_map("Woodstock_2")
         L, OL = new.layout, old.layout
-        self.assertEqual((L.width, L.height), (48, 42))
+        self.assertEqual((L.width, L.height), (OL.width + 12, OL.height + 8))
         self.assertTrue(L.size_ok)
         for y in range(OL.height):
             for x in range(OL.width):
                 self.assertEqual(L.get(x + 2, y + 3), OL.get(x, y), (x, y))
         border = {b & 0x3FF for b in OL.border}
-        for x, y in ((0, 0), (47, 41), (40, 2), (1, 40)):
+        for x, y in ((0, 0), (L.width - 1, L.height - 1), (L.width - 3, 2), (1, L.height - 2)):
             self.assertIn(L.mid(x, y), border)
             self.assertEqual(L.coll(x, y), 1, "new cells are solid")
         for k in resize_map.EVENT_KINDS:
@@ -87,17 +89,18 @@ class ResizeMap(unittest.TestCase):
         h = next(h for h in heal["heal_locations"] if h["id"] == "HEAL_LOCATION_FIXTURE")
         self.assertEqual((h["x"], h["y"]), (12, 15))
         # left/right seams follow dy, up/down seams follow dx, on both sides
-        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE201_1"), {"left": 3})
-        self.assertEqual(self.conn("Route201_1", "MAP_WOODSTOCK_2"), {"right": -3})
-        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE202_1"), {"down": 2})
-        self.assertEqual(self.conn("Route202_1", "MAP_WOODSTOCK_2"), {"up": -2})
+        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE201_1"), {"left": left + 3})
+        self.assertEqual(self.conn("Route201_1", "MAP_WOODSTOCK_2"), {"right": -(left + 3)})
+        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE202_1"), {"down": down + 2})
+        self.assertEqual(self.conn("Route202_1", "MAP_WOODSTOCK_2"), {"up": -(down + 2)})
 
     def test_connect_sets_a_seam(self):
-        pl = resize_map.plan(self.p, "Woodstock_2", 48, 42, connect={"Route201_1": 22})
-        resize_map.apply(self.p, pl, {"Route201_1": 22})
-        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE201_1"), {"left": 22})
-        self.assertEqual(self.conn("Route201_1", "MAP_WOODSTOCK_2"), {"right": -22})
-        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE202_1"), {"down": 0})
+        down = self.conn("Woodstock_2", "MAP_ROUTE202_1")["down"]
+        pl = resize_map.plan(self.p, "Woodstock_2", 48, 42, connect={"Route201_1": 31})
+        resize_map.apply(self.p, pl, {"Route201_1": 31})
+        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE201_1"), {"left": 31})
+        self.assertEqual(self.conn("Route201_1", "MAP_WOODSTOCK_2"), {"right": -31})
+        self.assertEqual(self.conn("Woodstock_2", "MAP_ROUTE202_1"), {"down": down})
 
     def test_refusals_write_nothing(self):
         pl = resize_map.plan(self.p, "Woodstock_2", 20, 20)         # crops warps and people
@@ -125,6 +128,36 @@ class ResizeMap(unittest.TestCase):
         wj.write_text(json.dumps(j, indent=2), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "shared"):
             resize_map.plan(Project(str(self.root)), "Woodstock_2", 48, 42)
+
+    def test_stale_preview_refused(self):
+        pl = resize_map.plan(self.p, "Woodstock_2", 48, 42)
+        # the seam changes (both sides, consistently) after the preview was shown
+        for name, to, off in (("Woodstock_2", "MAP_ROUTE201_1", 4), ("Route201_1", "MAP_WOODSTOCK_2", -4)):
+            path = self.root / "data/maps" / name / "map.json"
+            j = json.loads(path.read_text(encoding="utf-8"))
+            next(c for c in j["connections"] if c["map"] == to)["offset"] = off
+            path.write_text(json.dumps(j, indent=2), encoding="utf-8")
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, "changed since the preview"):
+            resize_map.apply(Project(str(self.root)), pl)
+        self.assertEqual(before, self.snapshot())
+
+    def test_connect_names_a_side(self):
+        # Woodstock joined to Route 201 on two sides: a bare --connect is ambiguous
+        for name, to, d in (("Woodstock_2", "MAP_ROUTE201_1", "up"), ("Route201_1", "MAP_WOODSTOCK_2", "down")):
+            path = self.root / "data/maps" / name / "map.json"
+            j = json.loads(path.read_text(encoding="utf-8"))
+            j["connections"].append({"map": to, "offset": 0, "direction": d})
+            path.write_text(json.dumps(j, indent=2), encoding="utf-8")
+        p = Project(str(self.root))
+        with self.assertRaisesRegex(ValueError, "2 sides"):
+            resize_map.plan(p, "Woodstock_2", 48, 42, connect={"Route201_1": 9})
+        pl = resize_map.plan(p, "Woodstock_2", 48, 42, connect={"Route201_1:left": 9})
+        self.assertFalse(pl.problems, pl.problems)
+        resize_map.apply(p, pl, {"Route201_1:left": 9})
+        j = json.loads((self.root / "data/maps/Woodstock_2/map.json").read_text(encoding="utf-8"))
+        offs = {c["direction"]: c["offset"] for c in j["connections"] if c["map"] == "MAP_ROUTE201_1"}
+        self.assertEqual(offs, {"left": 9, "up": 0})
 
     def test_failure_restores_every_byte(self):
         pl = resize_map.plan(self.p, "Woodstock_2", 48, 42, 1, 1)
