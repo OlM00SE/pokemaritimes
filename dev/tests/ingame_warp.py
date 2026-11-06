@@ -5,7 +5,7 @@ from mgba_bridge import Emu, REPO, UNTHROTTLED
 from playtest import prepare_rom
 
 OUT = os.path.join(REPO, "dev", "out")
-targets = [("Route203_1", 10, 10), ("Fredericton_0", 20, 30), ("Route102", 10, 10), ("HomeTown_0", 9, 10)]
+targets = [("Route203_1", 10, 10), ("Fredericton_0", 20, 30), ("Route102", 10, 10), ("HomeTown_0", 9, 15)]
 ok = True
 with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
     assert e.boot_new_game()

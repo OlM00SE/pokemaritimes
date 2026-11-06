@@ -1778,3 +1778,5 @@ EventScript_PalletTown_PlayersHouse_2F_TurnOnPC::
 	.include "data/maps/Woodstock_Mart/scripts.inc"
 	.include "data/maps/Woodstock_House3_1F/scripts.inc"
 	.include "data/maps/Woodstock_House3_2F/scripts.inc"
+	.include "data/maps/HomeTown_Sawmill/scripts.inc"
+	.include "data/maps/Route201_Farmhouse/scripts.inc"

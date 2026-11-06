@@ -76,7 +76,7 @@ HomeTown_EventScript_ExitWithoutPokemon::
 # 50 "data/maps/HomeTown_0/scripts.pory"
 HomeTown_Movement_StepBack:
 # 51 "data/maps/HomeTown_0/scripts.pory"
-	walk_up
+	walk_left
 	step_end
 
 HomeTown_0_EventScript_PlayersMailbox::

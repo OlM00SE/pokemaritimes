@@ -5,7 +5,7 @@ mapscripts Route201_1_MapScripts {
 // owns: Route201_1_EventScript_RouteSign, LOCALID_ROUTE201_1_FORESTER, LOCALID_ROUTE201_1_BUG_CATCHER_ROSS, TRAINER_ROUTE201_1_BUG_CATCHER_ROSS, FLAG_HIDDEN_ITEM_ROUTE201_1_POND_POTION
 
 script Route201_1_EventScript_RouteSign {
-    msgbox("ROUTE 201\n{DOWN_ARROW} WOODSTOCK", MSGBOX_SIGN)
+    msgbox("ROUTE 201\n{RIGHT_ARROW} WOODSTOCK", MSGBOX_SIGN)
     end
 }
 
@@ -16,7 +16,7 @@ script Route201_1_EventScript_Forester {
 
 script Route201_1_EventScript_BugCatcherRoss {
     trainerbattle_single(TRAINER_ROUTE201_1_BUG_CATCHER_ROSS, format("Hey! You jumped right into my bug-catching spot!"), format("Aww, my bugs got squashed..."))
-    msgbox(format("Bug Pokémon love this meadow under the old road.\pI come here every day after school."), MSGBOX_AUTOCLOSE)
+    msgbox(format("Bug Pokémon love the meadow up on the slope.\pI come here every day after school."), MSGBOX_AUTOCLOSE)
     end
 }
 

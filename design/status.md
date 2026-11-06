@@ -1,16 +1,121 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-06 (Milestone 15, Woodstock). Read this first in a new session. The world's geography and
+> Updated 2026-11-06 (Milestone 16, the start valley). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Next session: Milestone 16, the start valley** (proposed below, not started; Tom asked to hold it
-until he says go). M15 is merged, pushed and on the phone. Read
-`region_blueprint.md`, then "Next milestone" below. Before any map work: `dev/corridor.py check`
-(0 errors, 0 warnings). The merge gate is `dev/regression.py` (must end `0 failed`; quote its
-evidence lines). Detach a shared interior with `dev/unique_layout.py` before editing its terrain
-in Porymap. A redesign of a map saves may stand on needs a world revision (below).
+**Next session:** M16 is on branch `milestone16-start-valley` (state below: GATE/REVIEW/MERGE
+PENDING until this line says otherwise). Read `region_blueprint.md`, then "Next milestone" below.
+Before any map work: `dev/corridor.py check` (0 errors, 0 warnings). The merge gate is
+`dev/regression.py` (must end `0 failed`; quote its evidence lines). A redesign of a map saves
+may stand on needs a world revision (below).
+
+**Milestone 16: the start valley, HomeTown and Route 201 along the Meduxnekeag** (branch
+`milestone16-start-valley`). Both maps rebuilt from the plan's underlays at the plan's sizes, so the
+corridor's first three maps now stand on the plan of record end to end. Renders and in-game:
+`dev/out/m16/start_valley.png` (the three maps stitched), `before_*_context.png` /
+`after_*_context.png` (the seams), `ingame_sheet.png` (twelve spots, both gates),
+`world_revision_m15_home.png` (the negative control).
+
+**HomeTown** (`design/maps/hometown_design.py`, 36x26 -> 34x28): the border hills close the west and
+north; the Meduxnekeag comes down out of them as a brook, opens into the mill pond (a boulder in
+it) and runs east to Route 201 (seam rows 16-19). The player's house and the Leblancs' on the lawns
+of the south-west bank (rooms and warps 0-1 kept), their gardens, yard trees, the lane; the road
+steps down the valley floor and leaves east (rows 24-25). The sawmill (a `house_wide` stamp, new
+room `HomeTown_Sawmill` with a sawyer) on the bench across the brook, a ledge from its bench to the
+pond shore, a plank footbridge over the outflow. **The exit gate** is now every walkable tile of
+the east column (x 33: rows 14-15, the trail along the brook's far bank, and 20-26, the road side;
+nine coord triggers); the researcher stands by the road at (31,22) facing east and the step back is
+`walk_left`. `tests/hometown_gate.py` proves on the model that nothing leaves without crossing one.
+
+**Route 201** (`design/maps/route201_design.py`, 50x20 -> 52x28): the Meduxnekeag runs east the whole
+way (seams: HomeTown rows 14-17, Woodstock 16-19), swinging north into a meander. Two ways along
+the valley, as the real one has:
+- the road on the south bank (seams rows 22-23), arching gently up the intervale: the farm (a
+  `house_oldale` stamp, new room `Route201_Farmhouse` with a farmer), hay fields (tall grass),
+  hedgerow groves, a gravel bar on the inside of the bend; the south slope wooded in segments on
+  the tree grid each stretch's verge allows, with stepped bays;
+- the riverside trail on the north bank, for explorers: a meadow under the hardwood slope whose
+  ledge drops onto the trail where Bug Catcher Ross waits, the glade above the bridge as a terrace
+  (two ledges, the trail climbing through its middle), the regrowing cutblock (the forester), the
+  beaver pond (its lodge a rock; the hidden Potion in the nook east of it), then along the bank
+  into Woodstock's north bank;
+- a plank bridge on the farm lane joins them.
+The crossing is 53 steps with no forced tall grass and no forced trainer, as before. The route sign
+moved to the road out of HomeTown and points east (`{RIGHT_ARROW} WOODSTOCK`).
+
+**Road material:** one, Woodstock's light path (`=`), from HomeTown's lanes to Woodstock's highway
+(the old logging road's sand is gone).
+
+**Tooling:**
+- **`dev/corridor.py join "<Map>" [--apply]`:** makes the game's connections between a planned map
+  and its built neighbours the plan's, both sides, a direction included (HomeTown's seam turned
+  from down to right, which `resize_map --connect` can't do); refused until each folder has the
+  plan's size; rolls back on failure. `tests/corridor_join.py` (3 fixture tests).
+- **Compiler fix, tree tiling (`mapkit/sketch.py` `_tile_trees`):** leftover edge cells were paired
+  greedily from x = -1 / y = -1, so a half tree in the top band at the right edge was taken as cut by
+  the top border (orphaning its lower cell), and a row of tree tops along the bottom edge read from
+  x = -1 paired every top with the wrong neighbour. Single-border cuts now go before corners.
+- **Two design lessons** (in the scripts' comments): groves must be whole 2-row bands on the tree
+  grid or `plant` drops them silently (the first Route 201 draft lost every valley grove that way,
+  and an area that excluded the valley floor hid it); and the gate test's first draft passed its
+  per-trigger checks vacuously (closed tiles given in the wrong coordinate frame closed nothing),
+  which its "with everything closed" check exposed; it now asserts the tiles are obstacles.
+
+**Save compatibility: SAVES CARRY OVER** (save line 2, no layout change). World revision 2: a save
+made before M16 standing on HomeTown continues once on the lane below the player's doormat (9,15),
+one on Route 201 on the road by the sign (5,22); saves inside houses continue where they were (the
+doors lead out to the moved doors). Proven against the M15 phone build (`2026-11-06_3a43be36ca`,
+kept with its `.map` in `dev/out/m16/oldrom/`) and the build before it (`dev/out/m15/oldrom/`):
+`ingame_world_revision.py --old-rom dev/out/m16/oldrom/PokeMaritimes_save2.gba --old-rom
+dev/out/m15/oldrom/PokeMaritimes_save2.gba` 92/92. **Negative control:** the same M15 HomeTown save
+on a build without the M16 rows continues at (9,10), inside the walls of the player's new house,
+unable to move, with the wandering boy outside his range.
+
+**Code review** (`/code-review medium`): 10 findings, all fixed.
+- **`join` did half its job:** it rewrote the plan's joins but never removed an edge connection to a
+  built planned map the plan no longer puts alongside (`check` still listed it). It now removes
+  them on both sides (the Route 202 dry run drops the prototype's Fredericton join, as `check`
+  asks); a fixture test covers it. It also closed no files and duplicated `check`'s folder and
+  edge logic (now shared: `folders`, `edge_joins`).
+- **The gate test ignored elevation:** a coord event fires only for a player at its elevation (or
+  0; `field_control_avatar.c`), so a trigger on another elevation would be closed in the model and
+  open in the game. All nine match today (3 on 3); the test now asserts it per trigger.
+- **World revision test:** rows were kept one per map (a second redesign of HomeTown would have
+  overwritten the first); now a list, and a save's safe tile is the last row newer than it, as
+  the engine applies them. Its "people at home" check had become vacuous at Route 201's safe tile
+  (nobody within view): it now walks, without a reload, until someone's home is in view (over the
+  bridge to Bug Catcher Ross) and requires an active person. The old build's revision is read in
+  the first case's emulator (one boot fewer), the rows parsed once.
+- **Roundtrip's guard case** could index past the bottom row; it now picks sand with room below
+  or fails with a message.
+- **Tree tiling pass 2** scanned the whole box three times; it now visits only the border lines
+  (same tiles: every map byte-identical, roundtrip and flora unchanged).
+- **History:** the branch's first commits mixed map data with tooling and applied the join before
+  its tool, leaving commits with redesigned maps and no world revision (a bisect hazard for real
+  saves). The unpushed branch was re-layered: tooling, engine, map data, tests, docs.
+- A duplicated comment in the HomeTown design script.
+
+How it was verified (the gate: `milestone16-start-valley @ b8ed441ab5`, clean tree, ROM `2fd03fa9…`,
+**49 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261106_180823_899300/`):
+| Area | Result |
+|---|---|
+| Static | checker 40 maps, 0 errors (5 warnings as before); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings (the start valley's joins match the plan; only Route 202/Fredericton's remain to change); hometown_gate PASS (9 triggers, each needed, each at its tile's elevation, each step back walkable); corridor_join 4 tests; id budget, save layout (no layout change) |
+| Pieces | round trip 91.7-100% (HomeTown and Route 201 now 100%, from 87.5% and 100% as hand/old maps; 2 guards PASS, the terrain guard on Route 201's gravel bar); reconstruction 87.8% (observed); ledge, shore, flora, stamp, bridge pieces PASS |
+| Routes | crossings 53, 53, 30, 30 steps, 0 forced tall grass (observed): Route 201 plays the same length as before, 83 reachable tall grass |
+| In-game | conformance 547/547; playthrough (both gates call the player back; starter; Route 201 to Woodstock and back; heal); doors 20 round trips (HomeTown 3 with the sawmill, Route 201's farmhouse); buildings 22/22; respawn 3 real losses; world revision 35/35 in the gate, 99/99 with `--old-rom` for the M15 phone build and the one before; bridges 134/134 (HomeTown's and Route 201's decks found from their sketches); events 134/134 on 10 maps (HomeTown 23, Route 201 21, the sawmill 4, the farmhouse 4); ledges 509/509 on 8 maps (Route 201's tour 3/3 groups); flora 447/447; encounters 12 battles; four autowalks; save 45/45; shores 624/624 |
+| Negative controls | the M16 rows removed: an M15 HomeTown save continues inside the walls of the new house at (9,10), the wandering boy out of range; the gate test's per-trigger checks (any one trigger dropped opens a way out) |
+
+Known limits:
+- **Visual:** the creek's banks step in straight runs (the shore kit has no diagonal bank piece);
+  the meander still reads somewhat geometric at the apex. The sawmill is the Petalburg wide house
+  (its garden and hedge read as a farmstead) until Porytiles brings log piles and a saw.
+- **The gate:** nine coord triggers on HomeTown's east column, not a natural choke (the brook's
+  far bank is a trail into Route 201). `tests/hometown_gate.py` guards any redesign.
+- **Route 201's safe tile** has nobody within view; the world revision test walks to Ross to check
+  people, which is slower than the other cases.
+- All new text (the sawyer, the farmer, the sign) is provisional and unread in-game by Tom.
 
 **Milestone 15 done: Woodstock, the confluence town** (branch `milestone15-woodstock`). The first
 corridor map rebuilt from the plan of record: 48x42 at 0.5 km a tile, Woodstock at world (0, 0).
@@ -862,19 +967,26 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-The build order is in `region_blueprint.md`, "Build order": M15 Woodstock (done), M16 the start valley, then Route 202, Nackawic, Route 203 and Fredericton.
+The build order is in `region_blueprint.md`, "Build order": M15 Woodstock and M16 the start valley (done), then Route 202, Nackawic, Route 203 and Fredericton.
 
-**Milestone 16 (proposed): the start valley, HomeTown and Route 201 along the Meduxnekeag.** The plan's inset: the creek comes down from the border hills through the hamlet and runs east the whole length of Route 201 into Woodstock's seam (rows 30-33), the road on its south bank.
-- **Resize both** with `dev/resize_map.py` (HomeTown 36x26 → 34x28, Route 201 50x20 → 52x28) and set the plan's offsets: HomeTown → Route 201 at 2, Route 201 → Woodstock at 14 (Woodstock's side changes from today's interim 22 to the plan's −14 counterpart, and the creek and road then meet Woodstock's seam exactly; `corridor.py check` derives both).
-- **World revision 2:** both maps hold saves (HomeTown is where every game starts). Rows for HomeTown_0 and Route201_1 with safe tiles (no Center: explicit x, y; HomeTown's in front of the player's house), `MARITIMES_WORLD_REVISION` 2, and `ingame_world_revision.py` extended (its `--old-rom` against the M15 phone build).
-- **HomeTown's story gate and starter scene** move with the design: its coord events (the exit gate) and the events specs (HomeTown 22 checks, the kitchen, Route 201's forester, Bug Catcher Ross and the hidden Potion) are re-placed; the resize reports them.
-- **One road material for the corridor:** Route 201's logging road is sand, Woodstock's highway light path; pick one (or a deliberate change at the town line) in the rebuild.
-- **Design:** the hamlet's brook and sawmill yard, Route 201's hardwood valley (the preserve), a farm clearing, a ledge terrace down to the creek flats, the beaver pond; cliffs (item 4 below) would make the valley's terraces read as hills, and may belong in this milestone.
-- **Done when:** checker, renders and in-game (doors, events, ledges, flora, autowalks, the playthrough, world revisions) pass, the regression set, `/code-review medium`, then the phone build.
+**Milestone 17 (proposed): Route 202, the river road to the Meductic bend** (`corridor.toml`: 42x36,
+folder `Route202_1`, today 42x46). South from Woodstock along the Saint John's west bank (real
+data, ~6-7 wide), past islands and intervale fields, then east along the south bank at Meductic.
+- **Resize** (`resize_map.py Route202_1 42x36`), then `corridor.py join "Route 202"`: Woodstock's
+  south seam moves from the interim 7 to the plan's 16 (and the Fredericton prototype's join to Route
+  202 goes: the plan puts Nackawic there; leave Fredericton reachable for the autowalks until M18, or
+  re-point those tests). The underlay's river and road are real; the road keeps a verge.
+- **World revision 3** for Route 202 (and Fredericton if its join changes), `--old-rom` against the
+  M16 phone build.
+- **Cliffs first?** The real valley side here is steep: General's brown mountain family (`060-0EF`)
+  as shape-resolved vocabulary (like ledges and shores: faces, tops, corners, the 16 cliff-ledge
+  joints) would give the river road real bluffs and taller terraces than one ledge step. That is
+  a tooling milestone of its own size; recommended as M17's first half, proved on a lab map.
+- Islands in the Saint John for Surf later; the Meductic bend's intervale as the route's farmland.
 Still open from before:
 1. **Tom plays by hand:** the current slice's text is all provisional. Since the corridor will be rebuilt, reading it matters less now; the rebuilt maps carry their events specs over and are reread then.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
-3. ~~The woods around HomeTown and Woodstock~~: superseded; both are rebuilt from the plan (M15, M16).
+3. ~~The woods around HomeTown and Woodstock~~: done; both rebuilt from the plan (M15, M16).
 4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too. Wanted for the valley terraces (Route 201, Route 202).
 5. **Shore follow-ups:** pond shores by shape; a bank-to-beach transition tile. (River shores in the rebuilt towns come from the kit.)
 6. **Bridges:** the north-south plank deck is done (M15, `H`). Still to come: an east-west deck over a river running north-south (Route 104 has the pieces), Nackawic's long bridge (north-south over the headpond: the plank deck may do; a covered bridge is a Porytiles job), Fredericton's walking bridge (Rustboro has the pieces natively), and a bridge a surfer passes under (Route 110's elevation-15 pieces).

@@ -1,0 +1,14 @@
+# The farmhouse on Route 201's intervale: its kitchen (provisional text).
+#   dev/events.py build design/maps/Route201_Farmhouse.events.toml [--apply]
+map = "Route201_Farmhouse"
+
+[[person]]
+name = "Farmer"
+at = [6, 4]
+gfx = "WOMAN_2"
+facing = "down"
+text = """
+The creek floods the flats every spring. That's what makes the soil so good for hay.
+
+Bunnelby dig in my fields, and the Starly flock to the stubble after we cut it.
+"""

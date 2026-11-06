@@ -154,8 +154,12 @@ that area's turn.
    Center's door (a world revision). Seams: interim offsets line up today's Route 201 and Route
    202 until M16 and M17 rebuild them on the plan; the creek meets Route 201's woods and the wider
    river meets Route 202's narrow one behind woods until then.
-4. **M16: the start valley**: HomeTown and Route 201 together, along the Meduxnekeag (the starter
-   scene and the events specs move with them).
+4. **M16: the start valley** (done): HomeTown and Route 201 rebuilt from their underlays and joined
+   on the plan's seams (`corridor.py join`). HomeTown: the brook from the border hills, the mill
+   pond, the sawmill across a footbridge, the exit gate on the hamlet's east edge. Route 201: the
+   Meduxnekeag east the whole way, the road on its south bank past a farm on the intervale, a
+   riverside trail on the north bank (meadow ledge, terraced glade, cutblock, beaver pond), a
+   bridge joining them. Saves on either continue at a safe tile (world revision 2).
 5. **M17: Route 202**, **M18: Nackawic** (a long bridge), **M19: Route 203**,
    **M20: Fredericton.** The dam and the giant axe need custom tiles (Porytiles), so they get
    stand-ins first.

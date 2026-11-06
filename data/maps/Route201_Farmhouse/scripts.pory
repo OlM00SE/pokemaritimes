@@ -1,0 +1,14 @@
+// Route201_Farmhouse: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Route201_Farmhouse_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/Route201_Farmhouse.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_ROUTE201_FARMHOUSE_FARMER
+
+script Route201_Farmhouse_EventScript_Farmer {
+    msgbox(format("The creek floods the flats every spring. That's what makes the soil so good for hay.\pBunnelby dig in my fields, and the Starly flock to the stubble after we cut it."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

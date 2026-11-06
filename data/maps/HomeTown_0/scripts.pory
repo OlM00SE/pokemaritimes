@@ -34,7 +34,7 @@ script HomeTown_EventScript_Researcher {
     end
 }
 
-// Stepping onto the exit path without a Pokémon: the researcher calls the player back.
+// Stepping onto the hamlet's east edge (the road, or the trail along the brook) without a Pokémon: the researcher calls the player back.
 script HomeTown_EventScript_ExitWithoutPokemon {
     lockall
     applymovement(LOCALID_HOMETOWN_RESEARCHER, Common_Movement_ExclamationMark)
@@ -48,7 +48,7 @@ script HomeTown_EventScript_ExitWithoutPokemon {
 }
 
 movement HomeTown_Movement_StepBack {
-    walk_up
+    walk_left
 }
 
 // ---- dev/events.py: generated from design/maps/HomeTown_0.events.toml. Edit the spec, not this block. ----
