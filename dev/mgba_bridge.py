@@ -4,7 +4,7 @@
     with Emu(rom) as e:
         e.press("A", 5); e.wait(60); e.shot("x.png"); print(e.location())
 """
-import os, re, socket, subprocess, time
+import os, re, secrets, socket, subprocess, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -12,7 +12,7 @@ REPO = os.path.dirname(HERE)
 MGBA = os.environ.get("MGBA_EXE") or os.path.normpath(
     os.path.join(REPO, "..", "..", "tools", "mgba", "mgba-dev", "mGBA.exe"))
 BRIDGE = os.path.join(HERE, "bridge.lua")
-PORT = 8765
+PORT = 8765                         # standalone bridge.lua default; sessions choose their own port
 UNTHROTTLED = ["-C", "videoSync=0", "-C", "audioSync=0"]
 
 
@@ -121,21 +121,45 @@ class Emu:
         self.rom = os.path.abspath(rom)
         mp = os.path.splitext(self.rom)[0] + ".map"
         self.sym = load_symbols(mp) if os.path.exists(mp) else {}
-        args = [MGBA, "--script", BRIDGE, *extra_args, self.rom]
-        self.proc = subprocess.Popen(args)
-        deadline = time.time() + boot_timeout
-        while True:
-            try:
-                self.sock = socket.create_connection(("127.0.0.1", PORT), timeout=2)
-                break
-            except OSError:
-                if time.time() > deadline:
-                    self.close()
-                    raise RuntimeError("mGBA bridge did not come up")
-                time.sleep(0.25)
-        self.sock.settimeout(120)
-        self.f = self.sock.makefile("r")
-        assert self.cmd("ping") == "pong"
+        self.proc = self.sock = self.f = self._script_dir = None
+        self.session = secrets.token_hex(16)
+        # The Lua bridge has a fixed standalone port, but each automated emulator gets a private
+        # script and port. A second test cannot steal the first test's socket or send it commands.
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            self.port = reservation.getsockname()[1]
+        try:
+            os.makedirs(os.path.join(REPO, "dev", "out"), exist_ok=True)
+            self._script_dir = tempfile.TemporaryDirectory(prefix="mgba-bridge-",
+                dir=os.path.join(REPO, "dev", "out"), ignore_cleanup_errors=True)
+            source = open(BRIDGE, encoding="utf-8").read()
+            port_line = "local PORT = 8765"
+            session_line = 'local SESSION = "standalone"'
+            if source.count(port_line) != 1 or source.count(session_line) != 1:
+                raise RuntimeError("bridge.lua session markers changed; cannot start an isolated emulator")
+            script = os.path.join(self._script_dir.name, "bridge.lua")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write(source.replace(port_line, f"local PORT = {self.port}")
+                              .replace(session_line, f'local SESSION = "{self.session}"'))
+            self.proc = subprocess.Popen([MGBA, "--script", script, *extra_args, self.rom])
+            deadline = time.monotonic() + boot_timeout
+            while True:
+                if self.proc.poll() is not None:
+                    raise RuntimeError(f"mGBA exited before its bridge started (exit {self.proc.returncode})")
+                try:
+                    self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
+                    break
+                except OSError as ex:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError(f"mGBA bridge did not come up on port {self.port}") from ex
+                    time.sleep(0.25)
+            self.sock.settimeout(120)
+            self.f = self.sock.makefile("r")
+            if self.cmd("ping") != f"pong {self.session}":
+                raise RuntimeError("connected to an emulator bridge from another session")
+        except BaseException:
+            self.close()
+            raise
 
     # --- transport ---
     def cmd(self, line):
@@ -472,12 +496,23 @@ class Emu:
 
     # --- lifecycle ---
     def close(self):
-        try:
+        if self.f is not None:
+            self.f.close()
+            self.f = None
+        if self.sock is not None:
             self.sock.close()
-        except Exception:
-            pass
-        if self.proc.poll() is None:
-            self.proc.kill()
+            self.sock = None
+        if self.proc is not None:
+            if self.proc.poll() is None:
+                self.proc.kill()
+            try:
+                self.proc.wait(timeout=5)  # release the .sav before the next test prepares it
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("mGBA did not exit after kill")
+            self.proc = None
+        if self._script_dir is not None:
+            self._script_dir.cleanup()
+            self._script_dir = None
 
     def __enter__(self): return self
     def __exit__(self, *a): self.close()
