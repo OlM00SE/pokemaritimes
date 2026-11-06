@@ -138,7 +138,7 @@ def design_issues(cls, pieces, w, h, kept_walkable=None):
     errors, warnings = [], []
     name = {"T": "a tree", "TL": "a tree", "TR": "a tree", "BL": "a tree", "BR": "a tree",
             "S": "water", "W": "water", "F": "a solid kept '#' tile", "LD": "another ledge",
-            "RK": "a rock", **flora.NAMES}
+            "RK": "a rock", "CL": "a cliff wall", "ST": "stairs", **flora.NAMES}
     ok = lambda x, y: cls[y][x] in WALKABLE or (cls[y][x] == "F" and kept_walkable and kept_walkable(x, y))
     for (x, y), mid in sorted(pieces.items()):
         d = PIECE_DIR[mid]

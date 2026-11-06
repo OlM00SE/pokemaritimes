@@ -168,7 +168,7 @@ class Rules:
         for d, n in enumerate(sig):
             self.nb[mid][d][n] += 1
 
-    def pick_nb(self, cls, sig, min_count=None):
+    def pick_nb(self, cls, sig, min_count=None, exclude=frozenset()):
         """argmax_t  log P(t | cls) + sum_d log P(neighbour_d | t)   (Laplace-smoothed).
         Each neighbour votes independently, so known edge cues (e.g. water to the north ->
         bank-shadow grass) carry over to neighbour combinations vanilla never used.
@@ -181,7 +181,7 @@ class Rules:
         if min_count is None:
             min_count = min(60, max(10, int(total * 0.01)))
         for t, n_t in self.base[cls].items():
-            if n_t < min_count:
+            if n_t < min_count or t in exclude:
                 continue
             s = math.log(n_t / total)
             for d, nbr in enumerate(sig):
@@ -206,21 +206,28 @@ class Rules:
                 self._outputs[c].add(cnt.most_common(1)[0][0])
         return self._outputs[cls]
 
-    def pick(self, cls, sig):
+    def pick(self, cls, sig, exclude=frozenset()):
+        """exclude: metatiles never to choose (vanilla labels its cliff stairs as grass, so the
+        rules could otherwise draw stairs in a lawn beside a kept cliff); the next most common
+        tile at that level is taken instead. Empty, the choice is the plain lookup."""
+        def top(c):
+            if not exclude:
+                return c.most_common(1)[0][0]
+            return next((m for m, _ in c.most_common() if m not in exclude), None)
         keys = self.keys(cls, sig)
         c = self.t[8][cls].get(keys[8])
-        if c and sum(c.values()) >= self.MIN_SUPPORT:
-            return c.most_common(1)[0][0], 8
+        if c and sum(c.values()) >= self.MIN_SUPPORT and (t := top(c)) is not None:
+            return t, 8
         if self.fallback == "nb":
-            t = self.pick_nb(cls, sig)
+            t = self.pick_nb(cls, sig, exclude=exclude)
             if t is not None:
                 return t, 5
         for lvl in (7, 4, 3):
             c = self.t[lvl][cls].get(keys[lvl])
-            if c and (sum(c.values()) >= self.MIN_SUPPORT or lvl == 3):
-                return c.most_common(1)[0][0], lvl
-        if self.base[cls]:
-            return self.base[cls].most_common(1)[0][0], 0
+            if c and (sum(c.values()) >= self.MIN_SUPPORT or lvl == 3) and (t := top(c)) is not None:
+                return t, lvl
+        if self.base[cls] and (t := top(self.base[cls])) is not None:
+            return t, 0
         return None, -1
 
 
@@ -318,8 +325,9 @@ def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4, where=None):
     return fixed
 
 
-def autotile(rules, lab, w, h, keep=None):
-    """lab: class grid (F and LD cells need `keep[y][x]` metatile). Returns (metatile grid, stats)."""
+def autotile(rules, lab, w, h, keep=None, exclude=frozenset()):
+    """lab: class grid (F and LD cells need `keep[y][x]` metatile). Returns (metatile grid, stats).
+    exclude: metatiles the rules must never choose (Rules.pick)."""
     out = [[0] * w for _ in range(h)]
     levels = Counter()
     for y in range(h):
@@ -328,7 +336,7 @@ def autotile(rules, lab, w, h, keep=None):
             if c in KEPT:
                 out[y][x] = keep[y][x] if keep else 0x001
                 continue
-            mid, lvl = rules.pick(c, signature(lab, x, y, w, h))
+            mid, lvl = rules.pick(c, signature(lab, x, y, w, h), exclude)
             out[y][x] = mid if mid is not None else 0x001
             levels[lvl] += 1
     return out, levels

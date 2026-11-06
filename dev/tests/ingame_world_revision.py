@@ -10,11 +10,13 @@ revision and that stands on that row's map continues through vanilla's continue-
 the row's safe tile (the map's heal location, else the row's x, y), with the map's people at
 home; the var is then current. The rows are read from overworld.c. On the current ROM:
   * a new game starts on the current revision;
-  * a save on a map no row names (Route 202), marked as made before every revision, continues
-    where it was saved, and the var catches up;
+  * a save on a map no row names (the Fredericton prototype), marked as made before every
+    revision, continues where it was saved, and the var catches up;
   * a current save on Woodstock continues where it was saved;
   * a save made on revision 1 (M15) continues where it was on Woodstock (its row is 1), but on
     HomeTown and on Route 201 (rows of revision 2) at their safe tiles;
+  * a save made on revision 2 (M16) continues where it was on HomeTown, but on Route 202 (a row
+    of revision 3) at its safe tile;
   * a save made before M15 on Woodstock continues in front of its Center;
   each relocation: a walkable tile, people at home, in control, the var current, and a save
   made there continues there.
@@ -27,10 +29,15 @@ With --old-rom, the cases follow the revision the old build's new games start on
     house continues there, and its door leads out to the house's new door; a save on Woodstock
     beside Route 201's seam continues there, and the strip of Route 201 the game holds beside it
     is the new route's (CONTINUE pastes the save's view of the terrain, which reaches into that
-    strip, unless the revision drops it).
+    strip, unless the revision drops it);
+  * 2 (the M16 phone build): a save on old Route 202's road, below the new map's bottom edge,
+    continues at Route 202's safe tile; saves on Woodstock beside its south seam and on the
+    Fredericton prototype beside its west seam (both seams moved) continue there, and the strip
+    of Route 202 beside each is the new route's.
 An old build's .map must sit beside its ROM: keep copies away from dev/out/mobile, which the
 mobile publish tests rewrite (dev/out/m15/oldrom: the phone build before M15,
-2026-11-05_fb2b9673ff; dev/out/m16/oldrom: the M15 phone build, 2026-11-06_3a43be36ca).
+2026-11-05_fb2b9673ff; dev/out/m16/oldrom: the M15 phone build, 2026-11-06_3a43be36ca;
+dev/out/m17/oldrom: the M16 phone build, 2026-11-06_8f3f5872b6).
 Screenshots: dev/out/world_revision_<case>.png. Disposable saves under dev/out only.
 """
 import os
@@ -49,6 +56,7 @@ from ingame_buildings import fast_text
 OUT = os.path.join(REPO, "dev", "out")
 VAR = "VAR_MARITIMES_WORLD_REVISION"
 TOWN = "Woodstock_2"
+UNNAMED = "Fredericton_0"   # a map no row names (a prototype, not yet rebuilt)
 OLD_GREEN = (14, 20)        # the old Woodstock's town green; inside a building on the new map
 results = []
 
@@ -98,29 +106,34 @@ def safe_tile(p, name, saved_rev):
 
 
 def seam_strip_wrong(e, p, route, town):
-    """The blocks the game holds in `route`'s connection strip toward `town`, east or west (gBackupMapLayout,
-    the grid the player walks on: the map plus 7 tiles of each neighbour), compared with
-    `town`'s blocks there. CONTINUE pastes a save's view of the terrain (SaveBlock1.mapView)
-    over that grid, strip included, so an old save beside the seam would show the old town.
-    Returns the cells that differ, as (x, y): (held, expected) metatiles."""
+    """The blocks the game holds in `route`'s connection strip toward `town`, on any side
+    (gBackupMapLayout, the grid the player walks on: the map plus 7 tiles of each neighbour),
+    compared with `town`'s blocks there. CONTINUE pastes a save's view of the terrain
+    (SaveBlock1.mapView) over that grid, strip included, so an old save beside the seam would
+    show the old town. Returns the cells that differ, as (x, y): (held, expected) metatiles."""
     r, tj = p.load_map(route), p.load_map(town)
     c = next(c for c in r.connections if c["map"] == tj.id)
-    assert c["direction"] in ("left", "right"), "only an east or west seam is checked"
-    off = int(c["offset"])                       # town row = route row - offset
-    east = c["direction"] == "right"
+    d, off = c["direction"], int(c["offset"])    # east/west: town row = route row - offset;
+    rw, rh = r.layout.width, r.layout.height     # north/south: town column = route column - offset
     sym = e.sym["gBackupMapLayout"]
     width, ptr = e.read32(sym), e.read32(sym + 8)
     px, py = e.player()[2:]
+    if d in ("left", "right"):
+        cells = [(x, y, (x - rw if d == "right" else tj.layout.width + x), y - off)
+                 for y in range(py - 7, py + 8) if 0 <= y < rh
+                 for x in (range(rw, rw + 7) if d == "right" else range(-7, 0))]
+    else:
+        cells = [(x, y, x - off, (y - rh if d == "down" else tj.layout.height + y))
+                 for x in range(px - 7, px + 8) if 0 <= x < rw
+                 for y in (range(rh, rh + 7) if d == "down" else range(-7, 0))]
     wrong = {}
-    for y in range(py - 7, py + 8):
-        for x in (range(r.layout.width, r.layout.width + 7) if east else range(-7, 0)):
-            tx, ty = (x - r.layout.width if east else tj.layout.width + x), y - off
-            if not (0 <= y < r.layout.height and 0 <= ty < tj.layout.height):
-                continue
-            held = e.read16(ptr + 2 * ((x + 7) + width * (y + 7))) & 0x3FF
-            want = tj.layout.mid(tx, ty)
-            if held != want:
-                wrong[(tx, ty)] = (held, want)
+    for x, y, tx, ty in cells:
+        if not (0 <= tx < tj.layout.width and 0 <= ty < tj.layout.height):
+            continue
+        held = e.read16(ptr + 2 * ((x + 7) + width * (y + 7))) & 0x3FF
+        want = tj.layout.mid(tx, ty)
+        if held != want:
+            wrong[(tx, ty)] = (held, want)
     return wrong
 
 
@@ -233,12 +246,13 @@ def current_rom(p):
         e.test_mode()
         check(e.get_var(VAR) == rev, f"a new game starts on world revision {rev} (got {e.get_var(VAR)})")
         # an old save on a map no row names: stays put, the var catches up
-        spot = walkable_near(p, "Route202_1", 26, 2)
-        e.warp("Route202_1", *spot)
+        spot = walkable_near(p, UNNAMED, 20, 10)
+        check(not any(m == UNNAMED for m, _, _ in revision_rows(p)), f"no row names {UNNAMED}")
+        e.warp(UNNAMED, *spot)
         here = e.player()
         e.set_var(VAR, 0)
         check(save_and_continue(e) and e.player() == here,
-              f"an old save on Route 202 continues where it was saved ({here[2:]} -> {e.player()[2:]})")
+              f"an old save on {UNNAMED} continues where it was saved ({here[2:]} -> {e.player()[2:]})")
         check(e.get_var(VAR) == rev, "and the var is updated")
         # a current save on Woodstock: stays put, its view kept
         e.warp(TOWN, 25, 24)
@@ -256,6 +270,15 @@ def current_rom(p):
             check(safe_tile(p, name, 1) is not None, f"a row moves revision-1 saves on {name}")
             at = walkable_near(p, name, *old)
             old_save_relocates(e, p, name, at, 1, f"simulated_{name}")
+        # a save made on revision 2 (M16): HomeTown stays, Route 202 (rebuilt in 3) relocates
+        e.warp("HomeTown_0", *walkable_near(p, "HomeTown_0", 20, 18))
+        here = e.player()
+        e.set_var(VAR, 2)
+        check(safe_tile(p, "HomeTown_0", 2) is None and save_and_continue(e) and e.player() == here,
+              f"a revision-2 save on HomeTown_0 continues where it was saved ({e.player()[2:]})")
+        check(safe_tile(p, "Route202_1", 2) is not None, "a row moves revision-2 saves on Route202_1")
+        old_save_relocates(e, p, "Route202_1", walkable_near(p, "Route202_1", 26, 22), 2,
+                           "simulated_Route202_1")
         # a save from before M15 on Woodstock, standing where the old green was (a building now)
         e.warp(TOWN, *OLD_GREEN)
         e.set_var(VAR, 0)
@@ -305,6 +328,11 @@ OLD_CASES = {
         ("m15_house", lambda e: e.warp("LittlerootTown_MyHouse_1F_0", *inside_door("LittlerootTown_MyHouse_1F_0")),
          "room:LittlerootTown_MyHouse_1F_0:HomeTown_0"),
         ("m15_woodstock_seam", lambda e: e.warp(TOWN, 1, 36), "seam:" + TOWN + ":Route201_1")],
+    # the M16 phone build: old Route 202 was 42x46; (14, 39) is on its road, past the new map's
+    # bottom edge. Woodstock's south seam and Fredericton's west seam both moved (7 -> 16, 10 -> -8)
+    2: [("m16_route202", lambda e: e.warp("Route202_1", 14, 39), "relocate:Route202_1"),
+        ("m16_woodstock_seam", lambda e: e.warp(TOWN, 25, 39), "seam:" + TOWN + ":Route202_1"),
+        ("m16_fredericton_seam", lambda e: e.warp(UNNAMED, 1, 30), "seam:" + UNNAMED + ":Route202_1")],
 }
 
 
@@ -357,7 +385,7 @@ def old_rom(p, rom):
                                      f"e.g. {sorted(wrong.items())[:3]}" if wrong else ""))
                     e.shot(os.path.join(OUT, f"world_revision_{tag}.png"))
                     c = next(c for c in p.load_map(here).connections if c["map"] == p.load_map(other).id)
-                    e.step("Left" if c["direction"] == "left" else "Right", 3)
+                    e.step(c["direction"].capitalize(), 3)
                     e.wait_for_control()
                     out = e.player()
                     check(e.map_name(out) == p.load_map(other).id[4:],

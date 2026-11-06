@@ -38,10 +38,8 @@ map = "Woodstock_2"
 rect = [-34, -22, 48, 42]
 role = "town"
 idea = "The confluence town on the Saint John's west bank: the Meduxnekeag comes in from the west and joins the big river at downtown. Main street along the river, a bridge over the creek, the wildlife station. North edge: the way to Hartland (later)."
-# Built in M15 (design/maps/woodstock_design.py). Route 201 joins it on the plan's seam since M16
-# (`corridor.py join "Route 201"`). Until Route 202 (M17) is rebuilt on the plan, the game joins
-# Woodstock to that prototype at an interim offset that lines up its road: 7 (the plan: 16).
-# `check` lists it under "changes the plan asks for".
+# Built in M15 (design/maps/woodstock_design.py). Route 201 joins it on the plan's seam since M16,
+# Route 202 since M17 (offset 16).
 
 [[map]]
 name = "Route 202"
@@ -49,6 +47,10 @@ map = "Route202_1"
 rect = [-18, 20, 42, 36]
 role = "route"
 idea = "The river road: south along the west bank past islands and intervale fields, upland ledges down to the flats; at Meductic the river swings east and the road follows its south bank."
+# Built in M17 (design/maps/route202_design.py): three levels (flats, the road's terrace, the
+# upland and the far bank), cliffs, a brook's ravine. Until Nackawic (M18) exists, the game joins
+# its east edge to the Fredericton prototype at an interim offset (-8: Fredericton's river inside
+# ours), so the slice stays connected; `check` lists that join under "changes the plan asks for".
 
 [[map]]
 name = "Nackawic"

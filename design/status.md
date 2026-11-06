@@ -1,16 +1,106 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-06 (Milestone 16, the start valley). Read this first in a new session. The world's geography and
+> Updated 2026-11-06 (Milestone 17, Route 202 and cliffs). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Next session: Milestone 17, Route 202** (proposed below, not started; Tom asked to hold it until
-he says go). M16 is merged into `develop` as `8f3f5872b6`, pushed to `origin/develop` (Tom okayed,
-2026-11-06) and on the phone. Read `region_blueprint.md`, then "Next milestone" below.
-Before any map work: `dev/corridor.py check` (0 errors, 0 warnings). The merge gate is
-`dev/regression.py` (must end `0 failed`; quote its evidence lines). A redesign of a map saves
-may stand on needs a world revision (below).
+**Milestone 17 is merged into `develop`, not pushed** (pushing waits for Tom's okay). The phone
+build is published (below). Next milestone: proposed below, not started. Read `region_blueprint.md`,
+then "Next milestone". Before any map work: `dev/corridor.py check` (0 errors, 0 warnings; it lists
+Route 202's interim Fredericton join as a plan change). The merge gate is `dev/regression.py` (must
+end `0 failed`; quote its evidence lines). A redesign of a map saves may stand on needs a world
+revision (below).
+
+**Milestone 17: Route 202, the river road to the Meductic bend, and a cliff vocabulary** (branch
+`milestone17-route202`). Tom asked for convincing elevation (cliffs, bluffs, terraces) where the
+geography calls for it, led by Route 202's real landscape. Renders and in-game:
+`dev/out/m17/route202_before_after.png`, `route202.png`, `route202_context.png` (the seams),
+`clifflab.png`, `ingame_sheet.png` (eleven spots).
+
+**Cliffs and terraces (tooling, `mapkit/cliffs.py`):** levels and walls from vanilla General's brown
+rock family (Routes 104, 116, 120). Every sketch cell has a level (`// level:` lines); `^` is a wall,
+`%` stairs. The resolver picks each wall's piece from its neighbours (low, high or wall): rims
+(`068 069 06A`), flanks (`070`/`072`), faces one to three rows (`079`; `07C`, `0A9`, `091`; `07B`/`07D`
+beside a flank, as vanilla's), foot corners (`078`/`07A`) and inside corners (`0BE 0BF 089 074`);
+stairs one or two wide (`0AF`, `0AF 0CF`). The level check: walkable ground changes level only
+through a wall, a ledge, stairs, or a graded road (one level, beside a wall: a cutting). Walls never
+touch water. A ledge's end runs under a wall. Design helpers: `landscape.terrace(area, level, face)`,
+`stairs`, `cutting`, `cliff_clearance`. Every pair of pieces it puts side by side is one vanilla uses
+(106/106); full table in `mapping_reference.md` §16. Found on the way: vanilla labels its stairs as
+grass, so the learned rules could draw stairs in a lawn (they did, beside kept cliffs); the compiler
+now excludes them (`Rules.pick(exclude=)`; one Route 203_1_2 extract cell improved, nothing else
+changed). **CliffLab** (dev group, 40x32) uses every piece and every way between levels.
+
+**Route 202** (`design/maps/route202_design.py`, 42x46 -> 42x36, on the plan): the real valley below
+Woodstock is a trench in the upland, terraces stepping down to the intervale, brooks cutting
+ravines. Three levels:
+- level 0, the flats: Woodstock's outskirts, the riverside meadow, the brook's ravine floor, the
+  Meductic intervale inside the bend (hay fields);
+- level 1, the road's terrace; level 2, the wooded upland in the south-west (rims stepped in runs,
+  forest to the crest) and the **far bank**, stepping down the river in blocks of two-row bluffs,
+  facing the road across the water;
+- the **brook's ravine** (a two-row face on its north side): the road drops through cuttings to a
+  plank bridge and climbs back; stairs from the brook to the north terrace; a ledge from that
+  terrace to the meadow; a farm lane down a cutting to the intervale; a logging trail up to an
+  upland clearing; an island in the river (Surf, later).
+- **Perspective lesson:** the camera sees faces only where land rises northward (the far bank, the
+  ravine's north wall). On the near bank the ground rises south-west, away from the camera, so
+  only rims show; forest on the crest and stepped scarps make them read as slopes.
+- Events (`Route202_1.events.toml`, provisional text): the route sign, Meductic's sign (the portage),
+  a river watcher (the dam's headpond), Fisherman Murray, Picnicker Anne, Hiker Gordon, a Poké Ball in
+  the clearing, a hidden Potion at the brook's mouth. Own area name `ROUTE 202`; a wild table (Pidgey,
+  Sentret, Bidoof, Mareep, the Nidoran, Psyduck, Oddish, Fletchling, Skiddo, Yanma, Buneary; 3-5).
+- Crossing 51 steps either way (was 56/74), no forced tall grass, no forced trainer.
+- **Seams:** Woodstock on the plan's offset 16 (was the interim 7): the road and river continue;
+  Woodstock's cut tree tops get their lower halves on row 0. **East: an interim join to the
+  Fredericton prototype** (offset -8; the plan puts Nackawic there), so the slice stays connected
+  and the autowalks run. Accepted until M18: Fredericton's 4-row river meets our 7-row one (rows 10,
+  11, 16 meet lawn), the road runs on into Fredericton's lawn, the far bank's last bluff stops at the
+  seam. Also: our river's column 27 meets a tile of Woodstock's bank on row 0 (as land it would open
+  a way down the far bank's shore around the route).
+
+**Save compatibility: SAVES CARRY OVER** (save line 2, no layout change; 2 new trainer ids, 2 Maritimes
+flags). World revision 3: a save made before M17 standing on Route 202 continues once on the road
+out of Woodstock by the sign (9,2); older saves drop their saved view, so saves beside Woodstock's
+and Fredericton's moved seams show the new route. Proven against the M16 phone build
+(`dev/out/m17/oldrom/`, `2026-11-06_8f3f5872b6`) and the two before it: 135/135. **Negative control:**
+without the row, an M16 save on old Route 202 continues at (14,39), outside the new 36-row map, and
+the seam strips show 60 and 62 cells of the old route.
+
+**Code review** (`/code-review medium`): 8 findings, 7 fixed, 1 accepted (the interim seam).
+- **The far bank's art:** a one-tile diagonal staircase with two-row faces put inside corners beside
+  face tops and middles (`089` by `07C`/`0A9`), pairs vanilla never draws, down the whole scarp. Now
+  stepped blocks. The vanilla-adjacency check had covered only the shapes and CliffLab; it now covers
+  every built map (negative control: the old map fails it with exactly those four pairs).
+- **Woodstock's seam:** new trees started on row 0 under the town's cut tree tops.
+- **Vacuous gates:** wall bumps compared game with model only (a walkable wall would pass); the extract
+  round trip couldn't fail on cliffs (kept `#`). Now a bump must stay put, and a sketch-agreement
+  check requires each built map's cliffs to be what the resolver gives its sketch (23 cells differ on
+  the old map).
+- Graded roads could change level by any amount anywhere (now one level, beside a wall); `Rules.pick`
+  sorted every candidate list in full; the fisherman's comment contradicted his facing.
+- Found while fixing: making the river's seam tile land opened a 24-step way around the route down the
+  far bank's shore (route numbers caught it); trees now close the shore strip at the east edge.
+
+How it was verified (the gate: `milestone17-route202 @ 02a8b5ca11`, clean tree, ROM `104363e0…`,
+**53 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261106_222633_301200/`):
+| Area | Result |
+|---|---|
+| Static | checker 41 maps, 0 errors (5 warnings as before); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings; id budget, save layout (no layout change) |
+| Pieces | cliff_pieces: shapes 21/21, vanilla adjacencies 106/106, sketch agreement (CliffLab 152, Route 202 164 cliff cells, 0 differ), extract round trip 0 cliff blocks changed; ledge, shore, flora, stamp, bridge pieces PASS; round trip 91.8-100%; reconstruction 87.8% (observed) |
+| Routes | crossings 53, 53, 29, 29, 51, 51 steps, 0 forced tall grass (observed) |
+| In-game | cliffs 477/477 (CliffLab 249, Route 202 228: every wall bumped, every stair climbed, every cutting walked); conformance 587/587 (CliffLab added); events 185/185 on 11 maps (Route 202 51/51); ledges 521/521 on 10 maps (CliffLab's and Route 202's ledges toured); encounters 12 battles on Route 201 and 12 on Route 202; world revision 47/47 in the gate, 135/135 with three old builds; autowalks through Route 202 to Fredericton and Route 203; bridges 162/162; doors 20; buildings 22/22; respawn; save 45/45; shores 624/624; flora 447/447 |
+| Negative controls | world revision 3 removed (above); the old far bank against the adjacency and sketch checks; harness guards for the new checks (no walls or stairs, a walkable wall) |
+
+Known limits:
+- **Cliffs:** no faces straight into water (a tile of shore at the foot), no rock-topped mountains,
+  no side or north stairs (General has none), no cliff-ledge joint pieces; extract keeps cliffs as
+  `#` (levels aren't recovered). Faces of three rows or more can't end against a flank.
+- **The interim east seam** (above) until Nackawic.
+- The island and the far bank's shore are Surf places with nothing on them yet (`ingame_events.py`
+  only reaches events on foot, so a Surf-only item needs that first).
+- All new text is provisional and unread by Tom.
 
 **Milestone 16: the start valley, HomeTown and Route 201 along the Meduxnekeag** (branch
 `milestone16-start-valley`). Both maps rebuilt from the plan's underlays at the plan's sizes, so the
@@ -936,7 +1026,7 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | Script macros, the debug var editor and the test framework's script header know the story vars | `asm/macros/event.inc`, `src/debug.c`, `include/test/overworld_script.h` |
 
 ## Regression set (run before merging anything)
-**`dev/regression.py`** runs all of it, serially, and is the merge gate: 42 steps (build, 23 static, 18 in mGBA), about 13 minutes. It must end `0 failed`; quote its evidence lines in the handoff (the report is `dev/out/regression/<run>/report.json`, and says if the tree was dirty). `--only <id>...` for a subset while working (the build always runs). How it guards against silent passes and emulator interference: `dev/README.md`, "Test suites".
+**`dev/regression.py`** runs all of it, serially, and is the merge gate: 55 steps since M17, about 20 minutes. It must end `0 failed`; quote its evidence lines in the handoff (the report is `dev/out/regression/<run>/report.json`, and says if the tree was dirty). `--only <id>...` for a subset while working (the build always runs). How it guards against silent passes and emulator interference: `dev/README.md`, "Test suites".
 
 Last full run (test-infrastructure-reliability @ `8766a2a6f9`, after the review fixes and the flake fix; ROM `7df037fe…`, unchanged from the published build): 40 gates passed, 2 observed, 0 failed. Conformance 537/537 (108 source tiles beyond the warp's signed 8-bit range, all on vanilla Route 119, reported as untestable), doors 15 round trips, buildings 11/11, respawn 3 real losses, encounters 12 wild battles, ledges 490/490 on 7 maps (4 tours, 3 skipped for wandering people), events 116/116 on 7 maps, save 45/45, shores 624/624, flora 435/435, mobile publish 53/53, authoring 20 tests, harness guards, checker 33 maps 0 errors and vanilla 0 unexpected, reconstruction 87.8% (observed), round trip 87.5–100%.
 
@@ -972,6 +1062,9 @@ dev/tests/shore_pieces.py             # no emulator; PASS (vanilla 99.9%, 17/17 
 dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 shapes, round trip, 300 plantings, kept blocks 7/7)
 dev/tests/stamp_pieces.py             # no emulator; PASS (catalog, 37 vanilla doors recognised, round trips, refusals, door plans, room scripts)
 dev/tests/bridge_pieces.py            # no emulator; 31 checks (import from vanilla Petalburg in a fixture, shapes, extract)
+dev/tests/cliff_pieces.py             # no emulator; shapes 21/21, vanilla adjacencies 106/106, sketch agreement, round trip
+dev/tests/ingame_cliffs.py            # CliffLab + Route 202: every wall bumped, every stair climbed, every cutting walked (477/477)
+dev/tests/ingame_encounters.py Route202_1
 dev/tests/resize_map.py               # no emulator; 5 fixture tests
 dev/tests/ingame_flora.py             # GroveLab, Route 203, Route 201: 435/435 (flora pieces incl. the sign post, staggered edge trees)
 dev/tests/mobile_publish.py           # 53/53 in a scratch folder (uses the built ROM; never the real Drive); after mobile.py or save changes
@@ -986,27 +1079,29 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-The build order is in `region_blueprint.md`, "Build order": M15 Woodstock and M16 the start valley (done), then Route 202, Nackawic, Route 203 and Fredericton.
+The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton.
 
-**Milestone 17 (proposed): Route 202, the river road to the Meductic bend** (`corridor.toml`: 42x36,
-folder `Route202_1`, today 42x46). South from Woodstock along the Saint John's west bank (real
-data, ~6-7 wide), past islands and intervale fields, then east along the south bank at Meductic.
-- **Resize** (`resize_map.py Route202_1 42x36`), then `corridor.py join "Route 202"`: Woodstock's
-  south seam moves from the interim 7 to the plan's 16 (and the Fredericton prototype's join to Route
-  202 goes: the plan puts Nackawic there; leave Fredericton reachable for the autowalks until M18, or
-  re-point those tests). The underlay's river and road are real; the road keeps a verge.
-- **World revision 3** for Route 202 (and Fredericton if its join changes), `--old-rom` against the
-  M16 phone build.
-- **Cliffs first?** The real valley side here is steep: General's brown mountain family (`060-0EF`)
-  as shape-resolved vocabulary (like ledges and shores: faces, tops, corners, the 16 cliff-ledge
-  joints) would give the river road real bluffs and taller terraces than one ledge step. That is
-  a tooling milestone of its own size; recommended as M17's first half, proved on a lab map.
-- Islands in the Saint John for Surf later; the Meductic bend's intervale as the route's farmland.
+**Milestone 18 (proposed): Nackawic, the bridge town** (`corridor.toml`: 36x42, a new map east of
+Route 202). The road stays on the south bank (Pokiok); a long bridge crosses the widening headpond
+to Nackawic on the north bank: the mill and the giant axe (stand-ins until Porytiles). A Pokémon
+Center halfway along the corridor.
+- **New map** (`new_map.py`, then `corridor.py join "Nackawic"`): Route 202's east edge joins it on
+  the plan, and the Fredericton prototype's interim join moves to Nackawic's east edge (or Fredericton
+  waits for Route 203; re-point the autowalks either way). That ends Route 202's interim seam.
+- **The long bridge:** the north-south plank deck already crosses a river running east-west; the
+  headpond is 10 rows of water. Check the deck over a long span, and the banks at both ends.
+- **Cliffs into water** (tooling half, recommended): the headpond's banks and the far bank's bluffs
+  would drop straight into the water, as vanilla's do (`079` over plain water, `07C` over the bank
+  piece `189`, the water-side rim and flank pieces `098-09A`). Today a wall needs a tile of shore.
+- **The Eel River** at Meductic (it joins the Saint John at the bend, coming from the south-west)
+  needs an east-west deck to carry the road over a river running north-south (Route 104 has the
+  pieces). A small tooling item; it fits here or in M19.
+- An item for the island and the far bank once Surf exists (the events test needs a Surf path first).
 Still open from before:
 1. **Tom plays by hand:** the current slice's text is all provisional. Since the corridor will be rebuilt, reading it matters less now; the rebuilt maps carry their events specs over and are reread then.
 2. ~~Decide the var plan before any story work~~: done in milestone 11 (256 story vars, 768 block flags; `design/save_format.md`). Story scripts allocate with `dev/save_ids.py`.
 3. ~~The woods around HomeTown and Woodstock~~: done; both rebuilt from the plan (M15, M16).
-4. **Cliffs (`070/071`):** these also unlock the 16 cliff-ledge joints, terraces taller than one ledge step, and the elevation variety a "hills" biome needs. Rocky shores (`17A–184`) and the dirt/sand boulders (`0E1`/`0E2`) fit here too. Wanted for the valley terraces (Route 201, Route 202).
+4. ~~Cliffs~~: grass-topped cliffs and terraces done (M17, `mapkit/cliffs.py`). Still open: cliffs into water, rock-topped mountains (`071` plateaus, for the highlands), the cliff-ledge joint pieces, rocky shores (`17A–184`), the dirt/sand boulders (`0E1`/`0E2`), and extract recovering levels. Route 201's terraced glade and HomeTown's border hills could take real cliffs on a later pass.
 5. **Shore follow-ups:** pond shores by shape; a bank-to-beach transition tile. (River shores in the rebuilt towns come from the kit.)
 6. **Bridges:** the north-south plank deck is done (M15, `H`). Still to come: an east-west deck over a river running north-south (Route 104 has the pieces), Nackawic's long bridge (north-south over the headpond: the plank deck may do; a covered bridge is a Porytiles job), Fredericton's walking bridge (Rustboro has the pieces natively), and a bridge a surfer passes under (Route 110's elevation-15 pieces).
 7. **Town vocabulary after stamps:** hedges and fences (Petalburg's `24x` hedge pieces, by shape like ledges), garden beds, town signs on the Center and Mart; Rustboro's paved city buildings with their shadows for Fredericton (M20); a Maritimes gym room once there's a gym design.
@@ -1023,6 +1118,7 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Cliffs:** raise terraces low to high with `landscape.terrace`, then draw water, roads and forest (a wall replaces whatever its cell held). Give each terrace's interior an even width and start its bands on the tree grid, or plant leaves one-row grass pockets behind the rims (Route 202's upland steps sit on odd rows for that). A one-tile diagonal staircase with faces taller than one row isn't vanilla (inside corners beside face tops): step scarps in blocks. A road through a wall is a `cutting` at the lower level; stairs only cut south faces. Read the route numbers after any change near water or a seam: a tile of shore turned to land opened a way around Route 202. After changing `cliffs.py`, `tests/cliff_pieces.py` shows whether a built map's cliffs would change (sketch agreement).
 - **Redesigning a map saves may stand on:** resize with `dev/resize_map.py` first (a reused folder must match the plan's size), then add a world revision (`sWorldRevisions`, raise `MARITIMES_WORLD_REVISION`) in the same milestone, and prove it with `tests/ingame_world_revision.py --old-rom` against the last phone build (Drive's `builds/` holds it; `dev/out/mobile/check.map` is that build's symbol map while `mobile.py` hasn't run since). Without it a phone save lands at its old coordinates, inside whatever stands there now, with the old people and the old terrain's saved view around it.
 - **Bridges:** draw `H` two columns wide over every water row where the river runs east-west, with grass at both ends; the road keeps its one-tile grass margin from the deck as from water. A map on a tileset without the pieces is refused with the import command (`dev/tile_import.py bridge <tileset> --apply`). Tree bands: where a street's margin and a creek's leave an odd pair of rows, plant that area on the odd grid (`parity=(0, 1)`) or it stays bare (Woodstock's design does both).
 - **Copying tiles:** `dev/tile_import.py` only appends; check a tileset's animation frames (indices past its `tiles.png` that metatiles use) before copying many tiles: the tool refuses to land on them.

@@ -860,6 +860,9 @@
 #define TRAINER_BRENDAN_PLACEHOLDER         853
 #define TRAINER_MAY_PLACEHOLDER             854
 #define TRAINER_ROUTE201_1_BUG_CATCHER_ROSS 855  // Maritimes: dev/events.py
+#define TRAINER_ROUTE202_1_FISHERMAN_MURRAY 856  // Maritimes: dev/events.py
+#define TRAINER_ROUTE202_1_PICNICKER_ANNE   857  // Maritimes: dev/events.py
+#define TRAINER_ROUTE202_1_HIKER_GORDON     858  // Maritimes: dev/events.py
 
 // NOTE: Because each Trainer uses a flag to determine when they are defeated, MAX_TRAINERS_COUNT bounds the trainer ids
 //       Maritimes: raised from 864 to 1376 (512 more trainers, 64 bytes of SaveBlock1); dev/events.py appends ids
@@ -867,7 +870,7 @@
 //       More space can be made by shifting flags around in constants/flags.h or changing how trainer flags are handled
 //       MAX_TRAINERS_COUNT can be increased but will take up additional saveblock space
 
-#define TRAINERS_COUNT_EMERALD     856
+#define TRAINERS_COUNT_EMERALD     859
 #define MAX_TRAINERS_COUNT_EMERALD 1376
 
 #if IS_FRLG

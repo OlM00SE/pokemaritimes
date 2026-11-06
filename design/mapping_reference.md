@@ -100,7 +100,7 @@ Elevation bookkeeping (`ObjectEventUpdateElevation`):
 - `06F` over `08D` makes a one-tile stair step down to the east (Route 103). `06E` over `08E` steps down to the west (Route 101).
 - There are no north-facing ledges in this tileset.
 - **Ends.** Next to ground or trees, a ledge end always gets a cap (83/83). At the map edge, the middle piece runs off the map (4/4). Against a secondary-tileset cliff or wall, it runs under it (35/35). Against a primary object such as a boulder, it gets a cap (26/29).
-- **Not modelled.** Route 118's mountain terraces and five other ledge-meets-cliff joints use cliff tiles (`070/071`, secondary cliffs). They're future vocabulary.
+- **Not modelled.** Route 118's mountain terraces and five other ledge-meets-cliff joints use cliff tiles (`070/071`, secondary cliffs). They're future vocabulary. Our own ledges meet our cliffs by running under the wall, no cap (§16).
 
 ## 9. One-way traps (`checks.check_traps`)
 **How the check works:** ledges make one-way moves, so the checker builds the full movement graph from every entrance (on foot) and finds tiles that can be reached but can't reach a way out.
@@ -200,3 +200,19 @@ Reading the piece as grass would change that neighbour, so extract keeps the pie
 - **Animation frames live past a tileset's PNG:** Petalburg's metatiles `24A`/`24B` point at tiles 800-819, which its 160-tile `tiles.png` doesn't hold; the animation writes them. Appended tiles must stay below such indices.
 - **What a save remembers about the map it stands on** (`SaveBlock1`): the position (`pos`, `location`), the map's objects with their positions (`objectEvents`; CONTINUE restores them, `LoadSaveblockObjEventScripts` only refreshes their scripts), and `mapView`, the 15x14 metatiles around the player when saving, which `LoadSavedMapView` pastes back over the grid on CONTINUE and then clears (so it always reads empty after a CONTINUE). The grid includes the connected maps' strips: a save on Route 201 beside Woodstock's seam pasted 64 cells of old Woodstock over the new one in the negative control, and Woodstock's old cliff and steps appeared in the new town from a save on it. Also warp data with coordinates: `continueGameWarp`, `dynamicWarp`, `escapeWarp`, `lastHealLocation`; a warp with a valid `warpId` uses the warp's position instead (`SetPlayerCoordsFromWarp`), so warps by id survive a redesign that keeps warp indices.
 - **The continue-game warp** (`CB2_ContinueSavedGame`): if `SaveBlock2.specialSaveWarpFlags` has `CONTINUE_GAME_WARP`, CONTINUE warps to `continueGameWarp` and loads the map as any warp does (`CB2_LoadMap`): people from the map's templates, no saved view, the avatar's state fitted to the tile (on foot on land). Vanilla uses it for saves made in special places; the world revisions use it to move a save off a redesigned map.
+## 16. Cliffs and terraces (mined from 238 vanilla layouts; encoded in `dev/mapkit/cliffs.py`; verified in-game by `tests/ingame_cliffs.py` and `tests/conformance.py`)
+**The family.** `gTileset_General`'s brown rock pieces (`060-0EF`) draw raised ground in Hoenn's three-quarter view: the camera looks north, so a terrace shows a **face** on its south side, a thin **rim** on its north side and a narrow **flank** on each side. Hoenn uses them two ways: as rock-topped mountains (Routes 111, 116; the top is `071`, `MB_MOUNTAIN_TOP`, solid as mass in 4278 of 7206 uses and walkable rock floor in the rest) and as grass-topped bluffs and terraces (Routes 104, 120). Route 120's long cliffs also use Fortree secondary pieces; the General ones alone are enough for grass-topped terraces.
+
+| Role (the wall cell's low side) | Pieces | Vanilla neighbour evidence |
+|---|---|---|
+| Rim (low N) | `068` NW corner, `069`, `06A` NE corner | `069` N: grass 108/261; `068` S: `070` 56; `06A` S: `072` 48 |
+| Flank (low W / E) | `070` / `072` | `070` W: grass 254; `072` E: grass 188 |
+| Foot corners (low S and W / E) | `078` / `07A` | `078` N: `070` 128; `07A` N: `072` 90 |
+| Face, one row (low S) | `079` | `079` N: `071`/grass; S: grass 299, water 336 |
+| Face, taller | top `07C`, middle `0A9`, bottom `091`; the top beside a flank `07B` (west) / `07D` (east) | `0A9` above `0A9` 367; `091` S: grass 175; `070` E `07B` 63, `07D` E `072` 37; **`07C` beside a flank: never**; **`0A9` beside a flank: never** |
+| Inside corners (low on one diagonal) | NW `0BE`, NE `0BF`, SW `089`, SE `074` | `0BE` W: `069` 21; `0BF` E: `069` 25; `089` S: `070` 120; `074` S: `072` 82 |
+| Stairs (through a face) | `0AF`, two wide `0AF 0CF` | `0AF` E: `0CF` 109/131; walkable, elevation 3 (77) or 0 (42) |
+
+- **Attributes:** every wall piece's modal attributes are collision 1, elevation 0; stairs 0/3. Walls are `MB_NORMAL` or `MB_MOUNTAIN_TOP`, plain solid tiles: they block from every side by collision. Plateau tops in vanilla sit at elevation 3, 4 or 5 with no consistent rule; nothing needs it, so our terraces keep walkable ground at 3 (levels are a design notion).
+- **Vanilla labels the stairs as grass** (`MB_NORMAL`, modal 0/3), so the learned rules can choose `0AF`/`0CF` for a grass cell beside a kept object (two did beside kept cliffs on CliffLab, and one on Route 203's second map's extract). The compiler excludes them from the rules' choices (`Rules.pick(exclude=...)`); no existing map held one, so nothing else changed.
+- **Not vocabulary yet:** faces straight into water (vanilla: `079` over plain water `170`, `07C` over the bank piece `189`); the sand and water variants of the rim and flanks (`080-082`, `088`, `08A`, `090`, `092`, `098-09A`); the rock-ledge joints `08F`, `095`, `096` (8 uses); rock-topped mountains (`071`, `073`, `075`, `06B-06D`, `093/094/09B/09C`); caves (`064`/`0A7`).

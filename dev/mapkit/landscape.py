@@ -101,6 +101,66 @@ def ledge_clearance(sk, area=None):
     return out
 
 
+# ------------------------------------------------------------------------------ terraces ----
+def terrace(sk, area, level, face=1):
+    """Raise `area` (a set of cells) to terrace `level`, walled with cliffs (mapkit/cliffs.py).
+    The area's cells take the level; its edge cells beside lower ground (any of the 8
+    neighbours) become wall '^': a rim on the north, flanks on the west and east, and on the
+    south a face `face` rows tall (the rows above each foot cell, inside the area). Raise low
+    terraces first: a higher one inside a lower one walls itself against it. Returns the wall
+    cells. Draw roads, water and forest after: a wall replaces whatever the cell held."""
+    inmap = lambda x, y: 0 <= x < sk.w and 0 <= y < sk.h
+    area = {c for c in area if inmap(*c)}
+    sk.set_level(area, level)
+    lower = lambda x, y: inmap(x, y) and (x, y) not in area and sk.levels[y][x] < level
+    walls = {(x, y) for x, y in area
+             if any(lower(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))}
+    foot = {(x, y) for x, y in walls if lower(x, y + 1)}
+    # a face rises above each foot cell; at an inside corner (lower ground only diagonally
+    # below, beside a foot cell) the face's upper rows run on over the corner's column
+    corner = {(x, y) for x, y in walls - foot if (lower(x - 1, y + 1) or lower(x + 1, y + 1))
+              and ((x - 1, y) in foot or (x + 1, y) in foot)}
+    for x, y in foot | corner:
+        for k in range(1, face):
+            if (x, y - k) in area:
+                walls.add((x, y - k))
+    for x, y in walls:
+        sk.set(x, y, "^")
+    return walls
+
+
+def stairs(sk, x, y, width=2):
+    """Stairs up a south face: the wall cells from (x, y) down through the face, in `width`
+    (1 or 2) columns from x, become '%'. Give the top-left cell of the stairs (the face's top
+    row). Returns the stair cells."""
+    out = set()
+    for cx in range(x, x + width):
+        cy = y
+        while 0 <= cy < sk.h and sk.get(cx, cy) == "^":
+            out.add((cx, cy))
+            cy += 1
+    for c in out:
+        sk.set(*c, "%")
+    return out
+
+
+def cutting(sk, cells, level, ch="="):
+    """A road through a cliff: `cells` (the road's cells inside the wall) become `ch` at `level`
+    (the lower terrace's, so the cut walls end in corners). Two road cells may differ in level
+    (a graded road), so the road climbs through the cut; the walls stay on both sides."""
+    for x, y in cells:
+        sk.set(x, y, ch)
+    sk.set_level(cells, level)
+
+
+def cliff_clearance(sk, area=None):
+    """Stairs and the tile above and below each: never plant there."""
+    out = set()
+    for x, y in cells_of(sk, "%", area):
+        out |= {(x, y), (x, y - 1), (x, y + 1)}
+    return out
+
+
 # ------------------------------------------------------------------------------- forest ----
 def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
     """Replant the forest inside `area` (a set of cells) so that it covers `mask`.
@@ -132,13 +192,14 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
     band_in = lambda x, y: can(x, y) and can(x, y + 1) and ((x, y) in mask or (x, y + 1) in mask)
 
     def closed(x, y, kept=True):
-        """Beyond a run's end: forest that stays (outside the area) or the map edge, and with
-        `kept`, a kept '#' block (it may be solid: a cliff, a building). A leftover tile never
+        """Beyond a run's end: forest that stays (outside the area), the map edge, a cliff wall,
+        and with `kept`, a kept '#' block (it may be solid: a cliff, a building). A leftover tile never
         goes against one. Gap filling passes kept=False: a kept block may also be walkable (a
         hand-painted path), and a one-tile walkway beside it must stay open."""
         if not inmap(x, y) or not inmap(x, y + 1):
             return True
-        return any((kept and sk.rows[cy][cx] == "#") or ((cx, cy) not in area and sk.rows[cy][cx] in "Ty")
+        return any((kept and sk.rows[cy][cx] == "#") or sk.rows[cy][cx] == "^"
+                   or ((cx, cy) not in area and sk.rows[cy][cx] in "Ty")
                    for cx, cy in ((x, y), (x, y + 1)))
 
     # close one-tile gaps (per band) between two runs, or between a run and the map edge or

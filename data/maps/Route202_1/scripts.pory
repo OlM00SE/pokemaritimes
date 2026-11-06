@@ -1,2 +1,40 @@
 mapscripts Route202_1_MapScripts {
 }
+
+// ---- dev/events.py: generated from design/maps/Route202_1.events.toml. Edit the spec, not this block. ----
+// owns: Route202_1_EventScript_RouteSign, Route202_1_EventScript_MeducticSign, LOCALID_ROUTE202_1_RIVER_WATCHER, LOCALID_ROUTE202_1_FISHERMAN_MURRAY, TRAINER_ROUTE202_1_FISHERMAN_MURRAY, LOCALID_ROUTE202_1_PICNICKER_ANNE, TRAINER_ROUTE202_1_PICNICKER_ANNE, LOCALID_ROUTE202_1_HIKER_GORDON, TRAINER_ROUTE202_1_HIKER_GORDON, LOCALID_ROUTE202_1_UPLAND_BALL, FLAG_ITEM_ROUTE202_1_UPLAND_BALL, FLAG_HIDDEN_ITEM_ROUTE202_1_BROOK_MOUTH_POTION
+
+script Route202_1_EventScript_RouteSign {
+    msgbox("ROUTE 202\n{DOWN_ARROW} MEDUCTIC", MSGBOX_SIGN)
+    end
+}
+
+script Route202_1_EventScript_MeducticSign {
+    msgbox("MEDUCTIC\nWhere the old portage trail left the river for the Eel River lakes.", MSGBOX_SIGN)
+    end
+}
+
+script Route202_1_EventScript_RiverWatcher {
+    msgbox(format("Before the dam went in downriver, the Saint John ran fast and shallow here.\pNow it's wide and slow all the way to Meductic. The islands used to be hilltops, you know."), MSGBOX_NPC)
+    end
+}
+
+script Route202_1_EventScript_FishermanMurray {
+    trainerbattle_single(TRAINER_ROUTE202_1_FISHERMAN_MURRAY, format("Shh! The trout are biting in the brook today."), format("You scared them all off..."))
+    msgbox(format("This brook comes down out of the hills and cuts right through the terraces.\pIt's a short walk down to the big river from here."), MSGBOX_AUTOCLOSE)
+    end
+}
+
+script Route202_1_EventScript_PicnickerAnne {
+    trainerbattle_single(TRAINER_ROUTE202_1_PICNICKER_ANNE, format("The hay's taller than me this year! Want to battle?"), format("My Pokémon got lost in the hay..."))
+    msgbox(format("The flats down here flood every spring. That's why the soil grows such good hay."), MSGBOX_AUTOCLOSE)
+    end
+}
+
+script Route202_1_EventScript_HikerGordon {
+    trainerbattle_single(TRAINER_ROUTE202_1_HIKER_GORDON, format("You climbed all the way up here? Let's see what you've got!"), format("Whew! You're tougher than this hill."))
+    msgbox(format("From the top of the valley wall you can see the river swing east at Meductic.\pThe cliffs across the water are the far bank. Nobody gets over there without a boat."), MSGBOX_AUTOCLOSE)
+    end
+}
+
+// ---- end of dev/events.py block ----

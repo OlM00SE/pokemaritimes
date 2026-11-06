@@ -2140,6 +2140,9 @@ static const struct WorldRevision sWorldRevisions[] =
     // player's doormat; Route 201 (50x20 -> 52x28): on the road by the route sign
     { 2, MAP_GROUP(MAP_HOME_TOWN_0), MAP_NUM(MAP_HOME_TOWN_0), HEAL_LOCATION_NONE, 9, 15 },
     { 2, MAP_GROUP(MAP_ROUTE201_1), MAP_NUM(MAP_ROUTE201_1), HEAL_LOCATION_NONE, 5, 22 },
+    // M17: Route 202 rebuilt on the plan (42x46 -> 42x36, terraces and cliffs): on the road out of
+    // Woodstock, beside the route sign
+    { 3, MAP_GROUP(MAP_ROUTE202_1), MAP_NUM(MAP_ROUTE202_1), HEAL_LOCATION_NONE, 9, 2 },
 };
 
 static bool32 WarpIsOnMap(const struct WarpData *warp, const struct WorldRevision *row)
