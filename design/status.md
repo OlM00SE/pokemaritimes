@@ -90,7 +90,15 @@ a Woodstock house, continues where it was made (the houses' doors lead out to th
   the "old ROM" there became the new one mid-session: the old build now lives in
   `dev/out/m15/oldrom/` with its `.map` rebuilt from `fb2b9673ff` (byte-identical ROM, `7df037fe…`).
 
-How it was verified (filled in from the gate below).
+How it was verified (the gate: `milestone15-woodstock @ f1c21fc2be`, clean tree, ROM `c6300120…`,
+**45 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261106_144337_719700/`):
+| Area | Result |
+|---|---|
+| Static | checker 38 maps, 0 errors (5 warnings: Fredericton's dead doors, the Centers' upstairs as vanilla's); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings; id budget 17/17; save layout matches (no layout change) |
+| Pieces | bridge_pieces 37/37; resize_map 7 tests; stamp, shore, flora, ledge pieces PASS; round trip 87.5-100% (Woodstock 100%: 2016/2016 blocks, its 562 shore blocks unchanged, its 6 stamps and doors recognised); reconstruction 87.8% (observed) |
+| Routes | crossings 52, 51, 30, 30 steps, 0 forced tall grass (Woodstock: Route 201 ↔ Route 202 in 30 steps either way) |
+| In-game | conformance 545/545; doors 18 round trips (Woodstock 6 with 2 upstairs); buildings 22/22 (Woodstock's Center sets `HEAL_LOCATION_WOODSTOCK_2`, the nurse heals, the Mart sells); bridges 38/38; world revision 13/13 (35/35 with `--old-rom dev/out/m15/oldrom/PokeMaritimes_save2.gba`); events 126/126 on 8 maps; respawn 3 real losses; save 45/45; playthrough; four autowalks; ledges 490/490; shores 624/624; flora 435/435; encounters 12 battles |
+| Negative controls | the migration disabled: an old Woodstock save lands inside the wide house with the old people and terrain (21/29); the view clear disabled: 64 cells of old Woodstock in Route 201's strip; 15 harness guards |
 
 **Test infrastructure reliability (2026-11-06):** branch `test-infrastructure-reliability`
 merged into `develop` as `3abcbb3b8b` and pushed to `origin/develop` (Tom okayed). The last
