@@ -32,18 +32,24 @@ def approach(L, x, y):
 
 
 def main(maps):
+    if not maps:
+        print("FAIL: no outdoor maps requested; no doors tested")
+        return 1
     p = Project()
     fails = []
+    completed = 0
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
         e.test_mode()
         for outdoor in maps:
             m = p.load_map(outdoor)
             doors = set(door_tiles(p, m))
+            selected = tested = 0
             for w in m.events("warp_events"):
                 x, y = w["x"], w["y"]
                 if (x, y) not in doors:
                     continue
+                selected += 1
                 inside = name_of(p, w["dest_map"])
                 label = f"{outdoor} door ({x},{y}) -> {inside}"
                 if not inside:
@@ -85,9 +91,17 @@ def main(maps):
                 if not ok:
                     fails.append(f"{label}: walking out put the player on {back} {pos[2:4]}, "
                                  f"expected ({x},{y + 1})")
+                else:
+                    tested += 1
+            completed += tested
+            print(f"{outdoor}: {tested}/{selected} door round trips completed"
+                  + (" (NOT TESTED)" if not selected else ""))
+            if not selected:
+                fails.append(f"{outdoor}: no door warps were selected; no coverage")
     for f in fails:
         print("FAIL", f)
-    print(f"RESULT: {'PASS' if not fails else f'{len(fails)} failures'}")
+    print(f"RESULT: {'PASS' if not fails else f'{len(fails)} failures'}; "
+          f"{completed} completed door round trips")
     return 1 if fails else 0
 
 

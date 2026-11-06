@@ -5,7 +5,7 @@
 No test_mode: give one level-1 Magikarp with Splash, hurt it, talk to Ross and actually
 lose. Check the battle outcome, destination, healing and restored player control.
 Also save/reset/CONTINUE an explicitly zeroed legacy respawn and a working Center.
-Only the disposable dev/out/test.sav is used. Build the current branch first.
+Only a disposable test save under dev/out is used. Build the current branch first.
 """
 import os
 import struct

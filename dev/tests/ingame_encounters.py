@@ -49,6 +49,9 @@ def battle_mon_size(e):
 def main(argv):
     name = argv[0]
     battles = int(argv[argv.index("--battles") + 1]) if "--battles" in argv else 12
+    if battles < 1 and "--no-party" not in argv:
+        print("FAIL: --battles must be at least 1; no encounters would be tested")
+        return 1
     p = Project()
     map_id = p.load_map(name).id
     table = land_table(p, map_id)

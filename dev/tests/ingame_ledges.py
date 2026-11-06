@@ -91,7 +91,7 @@ def approaches(e, p, name):
     """Returns the number of failures. A warp that errors, or lands somewhere else, is a
     failure: every case counted as run was really run in the game."""
     cases = cases_for(p, name)
-    bad, done, jumps = [], 0, 0
+    bad, done, jumps, mismatches = [], 0, 0, 0
     for ledge, (sx, sy), d, exp, kind, elev in cases:
         try:
             landed = e.warp(name, sx, sy)[2:]
@@ -112,9 +112,11 @@ def approaches(e, p, name):
             got = (got, elevations(e))
             exp = (exp, elev)
         if not ok:
+            mismatches += 1
             bad.append(f"    ledge {ledge} from {(sx, sy)} press {d}: model {kind}->{exp}, game ->{got}")
-    print(f"{name}: {done - len(bad)}/{done} ledge approaches agree ({jumps} jumps, "
-          f"{done - jumps} refusals expected; {len(cases) - done} not run)")
+    print(f"{name}: {done - mismatches}/{done} executed ledge approaches agree "
+          f"({jumps} jumps, {done - jumps} refusals expected; "
+          f"{len(cases) - done} not run, {len(bad)} failed)")
     for line in bad[:8]:
         print(line)
     if not done:
@@ -167,6 +169,7 @@ def round_trip(e, p, name):
     w = World(p, m)
     spawn = spawn_point(m)
     if not spawn:
+        print(f"{name}: round trip NOT APPLICABLE (no spawn point)")
         return 0
     start = w.arrival_state(*w.to_grid(*spawn))
     seen = w.explore([start])
@@ -237,7 +240,8 @@ def tour(e, p, name):
     entrance fails (it would go untested); groups no one can ever jump (cliff-style ledges with
     nothing behind them) are only listed. Paths go around the people standing on the map;
     skipped on maps with wandering people (one could step into a planned path).
-    Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png."""
+    Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png.
+    Returns (failures, skipped): skipped is 1 when the map's tour was skipped."""
     for old in glob.glob(os.path.join(OUT, f"ledges_{name}_tour*.png")):
         os.remove(old)                  # no stale landings from earlier runs or other designs
     m = p.load_map(name)
@@ -245,13 +249,13 @@ def tour(e, p, name):
     if movers:
         print(f"{name}: tour skipped ({len(movers)} wandering people, e.g. at "
               f"({movers[0]['x']},{movers[0]['y']}))")
-        return 0
+        return 0, 1
     w = events.world_with_people(p, m)
     L = m.layout
     at = entrance(p, m, w)
     if at is None:
         print(f"{name}: tour FAILED: no entrance to start from")
-        return 1
+        return 1, 0
     start = w.arrival_state(*w.to_grid(*at))
     edges = {}
     seen = w.explore([start], edges=edges)
@@ -294,21 +298,24 @@ def tour(e, p, name):
         print(f"{name}: group {g}: jump {d} at {(tx, ty)} -> {(lx, ly)}, then back to {at}: "
               f"{'OK' if ok else 'FAILED'}")
         bad += not ok
-    return bad
+    return bad, 0
 
 
 def main(argv):
     maps = argv or DEFAULT_MAPS
     p = Project()
-    bad = 0
+    bad = tour_skips = 0
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
         e.test_mode()
         for name in maps:
             bad += approaches(e, p, name)
             bad += round_trip(e, p, name)
-            bad += tour(e, p, name)
-    print("PASS" if not bad else f"FAIL ({bad})")
+            failures, skipped = tour(e, p, name)
+            bad += failures
+            tour_skips += skipped
+    print(("PASS" if not bad else f"FAIL ({bad})") +
+          f"; {len(maps) - tour_skips} tours attempted, {tour_skips} explicitly skipped")
     return 1 if bad else 0
 
 

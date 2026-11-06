@@ -140,7 +140,7 @@ def main():
 
     # ---- the layout stamp ----
     stamp, sb2_size = layout()
-    sav = os.path.join(OUT, "test.sav")
+    sav = os.path.splitext(rom)[0] + ".sav"
     buf = sav_io(sav)
     verdict = savefile.check(sav)
     check(verdict[0] == "ok", f"dev/savefile.py reads the game's own save as loadable: {verdict}")

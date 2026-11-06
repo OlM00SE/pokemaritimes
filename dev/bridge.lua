@@ -12,6 +12,7 @@
 --   reset                     reset the console
 
 local PORT = 8765
+local SESSION = "standalone"
 local KEYS = { A = 0, B = 1, SELECT = 2, START = 3, RIGHT = 4, LEFT = 5, UP = 6, DOWN = 7, R = 8, L = 9 }
 
 local server, client
@@ -33,7 +34,7 @@ end
 
 local function start(line)
   local cmd, a, b = line:match("^(%S+)%s*(%S*)%s*(.*)$")
-  if cmd == "ping" then reply("ok pong")
+  if cmd == "ping" then reply("ok pong " .. SESSION)
   elseif cmd == "frame" then reply("ok " .. frameCount)
   elseif cmd == "press" then
     local m = keymask(a)

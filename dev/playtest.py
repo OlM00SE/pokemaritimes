@@ -8,22 +8,51 @@
 Runs on a copy of the ROM in dev/out/ so tests never touch your real save.
 Screenshots land in dev/out/. Exit code 1 if the overworld is never reached.
 """
-import argparse, os, shutil, sys, time
+import argparse, atexit, os, shutil, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mgba_bridge import Emu, REPO, UNTHROTTLED
 
 OUT = os.path.join(REPO, "dev", "out")
 DIRS = {"U": "UP", "D": "DOWN", "L": "LEFT", "R": "RIGHT"}
+_test_dir = None
+_test_dirs = []
 
 
-def prepare_rom(fresh):
+def _cleanup_test_dirs():
+    for directory in _test_dirs:
+        directory.cleanup()
+
+
+atexit.register(_cleanup_test_dirs)
+
+
+def prepare_rom(fresh, persistent=False):
+    """Copy the built ROM into an isolated test slot.
+
+    Automated tests get one temporary slot per process, so parallel tests never replace each
+    other's ROM, symbol map or save. The interactive playtest CLI uses the persistent test slot
+    to preserve its --continue workflow across commands.
+    """
+    global _test_dir
     os.makedirs(OUT, exist_ok=True)
-    rom = os.path.join(OUT, "test.gba")
+    if persistent:
+        folder = OUT
+    else:
+        if fresh or _test_dir is None:
+            if _test_dir is not None:       # the previous emulator has closed: drop its slot
+                _test_dir.cleanup()
+                _test_dirs.remove(_test_dir)
+            _test_dir = tempfile.TemporaryDirectory(prefix="emutest-", dir=OUT,
+                                                     ignore_cleanup_errors=True)
+            _test_dirs.append(_test_dir)
+        folder = _test_dir.name
+    rom = os.path.join(folder, "test.gba")
     shutil.copyfile(os.path.join(REPO, "pokeemerald.gba"), rom)
-    shutil.copyfile(os.path.join(REPO, "pokeemerald.map"), os.path.join(OUT, "test.map"))
-    sav = os.path.join(OUT, "test.sav")
-    if fresh and os.path.exists(sav):
-        # the previous test's mGBA may still be closing and holding the save (Windows): wait a bit
+    shutil.copyfile(os.path.join(REPO, "pokeemerald.map"), os.path.join(folder, "test.map"))
+    sav = os.path.join(folder, "test.sav")
+    if persistent and fresh and os.path.exists(sav):
+        # a fresh temporary slot has no save; the persistent one may still be held by the last
+        # playtest's closing mGBA (Windows): wait a bit
         for attempt in range(20):
             try:
                 os.remove(sav)
@@ -47,7 +76,7 @@ def main():
                          "default is test mode, which only tests movement")
     a = ap.parse_args()
 
-    rom = prepare_rom(fresh=not a.cont)
+    rom = prepare_rom(fresh=not a.cont, persistent=True)
     with Emu(rom, extra_args=[] if a.realtime else UNTHROTTLED) as e:
         ok = e.boot_to_overworld() if a.cont else e.boot_new_game()
         if not ok:
