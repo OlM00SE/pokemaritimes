@@ -2120,7 +2120,9 @@ static void FieldCB_FadeTryShowMapPopup(void)
 // fitted to the tile) to the row's safe tile: the map's heal location if it has one (it follows
 // a moved Center), else (x, y). Warps by id stay valid (redesigns keep warp indices); a
 // coordinate warp on the map is moved to the safe tile, and a respawn point on the map is
-// re-pointed at the map's current heal location (the whiteout matches it by coordinates).
+// re-pointed at the map's current heal location (the whiteout matches it by coordinates). Any
+// save made before the current revision also drops its saved view of the terrain, which reaches
+// into connected maps' strips (a save beside the redesigned map's seam would show the old one).
 struct WorldRevision
 {
     u8 revision;
@@ -2169,6 +2171,11 @@ static void ApplyWorldRevisions(void)
         {
             SetWarpData(&gSaveBlock1Ptr->continueGameWarp, row->mapGroup, row->mapNum, WARP_ID_NONE, x, y);
             SetContinueGameWarpStatus();
+            // The map is loaded once from the save before the warp (InitMapFromSavedGame): the
+            // position belongs to the old map (a smaller map could leave it out of bounds), so
+            // stand on the safe tile for that load too.
+            gSaveBlock1Ptr->pos.x = x;
+            gSaveBlock1Ptr->pos.y = y;
         }
         else
         {
@@ -2180,7 +2187,14 @@ static void ApplyWorldRevisions(void)
             SetLastHealLocationWarp(mapHeal);
     }
     if (saved < MARITIMES_WORLD_REVISION)
+    {
+        // The saved view (the metatiles around the player, pasted back on CONTINUE) also covers
+        // the strips of connected maps: a save beside a redesigned map's seam would paste the old
+        // terrain there. Drop it for every save made before a revision, wherever it stands; it
+        // only carries metatiles scripts changed near the player, which map scripts set again.
+        CpuFill16(0, gSaveBlock1Ptr->mapView, sizeof(gSaveBlock1Ptr->mapView));
         VarSet(VAR_MARITIMES_WORLD_REVISION, MARITIMES_WORLD_REVISION);
+    }
 }
 
 void CB2_ContinueSavedGame(void)
