@@ -9348,7 +9348,7 @@
       "id": "LAYOUT_ROUTE202_1",
       "name": "Route202_1_Layout",
       "width": 42,
-      "height": 46,
+      "height": 36,
       "primary_tileset": "gTileset_General",
       "secondary_tileset": "gTileset_Petalburg",
       "border_filepath": "data/layouts/Route202_1/border.bin",
@@ -9473,6 +9473,16 @@
       "secondary_tileset": "gTileset_Petalburg",
       "border_filepath": "data/layouts/TownLab/border.bin",
       "blockdata_filepath": "data/layouts/TownLab/map.bin"
+    },
+    {
+      "id": "LAYOUT_CLIFF_LAB",
+      "name": "CliffLab_Layout",
+      "width": 40,
+      "height": 32,
+      "primary_tileset": "gTileset_General",
+      "secondary_tileset": "gTileset_Petalburg",
+      "border_filepath": "data/layouts/CliffLab/border.bin",
+      "blockdata_filepath": "data/layouts/CliffLab/map.bin"
     }
   ]
 }
