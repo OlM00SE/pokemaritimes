@@ -97,12 +97,25 @@ unable to move, with the wandering boy outside his range.
   saves). The unpushed branch was re-layered: tooling, engine, map data, tests, docs.
 - A duplicated comment in the HomeTown design script.
 
-**Verification so far** (before the gate): checker 40 maps 0 errors; corridor 7 maps 0 errors 0
-warnings; hometown_gate PASS; corridor_join 3/3; playthrough PASS (both gates call the player back,
-the starter, Route 201 to Woodstock and back, the heal); doors HomeTown 3/3 and Route 201 1/1; events
-HomeTown 23/23, Route 201 21/21, the sawmill 4/4, the farmhouse 4/4; ledges Route 201 30/30 (tour 3/3
-groups) and HomeTown 9/9; bridges 134/134 (HomeTown and Route 201 picked up from their sketches);
-flora Route 201 133/133; world revision 99/99 with both old builds.
+How it was verified (the gate: `milestone16-start-valley @ b8ed441ab5`, clean tree, ROM `2fd03fa9…`,
+**49 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261106_180823_899300/`):
+| Area | Result |
+|---|---|
+| Static | checker 40 maps, 0 errors (5 warnings as before); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings (the start valley's joins match the plan; only Route 202/Fredericton's remain to change); hometown_gate PASS (9 triggers, each needed, each at its tile's elevation, each step back walkable); corridor_join 4 tests; id budget, save layout (no layout change) |
+| Pieces | round trip 91.7-100% (HomeTown and Route 201 now 100%, from 87.5% and 100% as hand/old maps; 2 guards PASS, the terrain guard on Route 201's gravel bar); reconstruction 87.8% (observed); ledge, shore, flora, stamp, bridge pieces PASS |
+| Routes | crossings 53, 53, 30, 30 steps, 0 forced tall grass (observed): Route 201 plays the same length as before, 83 reachable tall grass |
+| In-game | conformance 547/547; playthrough (both gates call the player back; starter; Route 201 to Woodstock and back; heal); doors 20 round trips (HomeTown 3 with the sawmill, Route 201's farmhouse); buildings 22/22; respawn 3 real losses; world revision 35/35 in the gate, 99/99 with `--old-rom` for the M15 phone build and the one before; bridges 134/134 (HomeTown's and Route 201's decks found from their sketches); events 134/134 on 10 maps (HomeTown 23, Route 201 21, the sawmill 4, the farmhouse 4); ledges 509/509 on 8 maps (Route 201's tour 3/3 groups); flora 447/447; encounters 12 battles; four autowalks; save 45/45; shores 624/624 |
+| Negative controls | the M16 rows removed: an M15 HomeTown save continues inside the walls of the new house at (9,10), the wandering boy out of range; the gate test's per-trigger checks (any one trigger dropped opens a way out) |
+
+Known limits:
+- **Visual:** the creek's banks step in straight runs (the shore kit has no diagonal bank piece);
+  the meander still reads somewhat geometric at the apex. The sawmill is the Petalburg wide house
+  (its garden and hedge read as a farmstead) until Porytiles brings log piles and a saw.
+- **The gate:** nine coord triggers on HomeTown's east column, not a natural choke (the brook's
+  far bank is a trail into Route 201). `tests/hometown_gate.py` guards any redesign.
+- **Route 201's safe tile** has nobody within view; the world revision test walks to Ross to check
+  people, which is slower than the other cases.
+- All new text (the sawyer, the farmer, the sign) is provisional and unread in-game by Tom.
 
 **Milestone 15 done: Woodstock, the confluence town** (branch `milestone15-woodstock`). The first
 corridor map rebuilt from the plan of record: 48x42 at 0.5 km a tile, Woodstock at world (0, 0).
