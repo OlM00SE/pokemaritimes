@@ -35,8 +35,9 @@ Before the dam went in downriver, the Saint John ran fast and shallow here.
 Now it's wide and slow all the way to Meductic. The islands used to be hilltops, you know.
 """
 
-# On the brook's north bank, east of the stairs, facing along the bank toward the river: the
-# bank is a side way down to the meadow, so the battle is optional.
+# On the brook's north bank, east of the bridge, facing back along the bank toward it (west): a
+# player following the bank down to the meadow walks into his sight. The bank is a side way, off
+# the road, so the battle is optional.
 [[trainer]]
 name = "FishermanMurray"
 at = [20, 12]

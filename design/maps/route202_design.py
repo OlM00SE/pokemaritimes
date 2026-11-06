@@ -61,6 +61,8 @@ RIVER = {(x, y) for y in range(H) for x in range(W) if under[y][x] == "~"}
 dist_river = lambda x, y: min(max(abs(x - rx), abs(y - ry)) for rx, ry in RIVER)
 ISLAND = ls.rect(31, 9, 34, 11)                   # mid-river below the riverside meadow
 RIVER -= ISLAND
+# (the river's column 27 meets a tile of Woodstock's bank on row 0: as land it would open a way from
+# the town down the far bank's shore, around the whole route)
 
 # --- levels and walls (low terraces first) ---------------------------------------------------------
 BROOK_FLOOR = ls.rect(0, 12, 30, 15)               # the ravine floor: the brook (13-14) and its banks
@@ -70,8 +72,12 @@ NORTH_TERRACE = ls.rect(0, 4, 16, 11)              # rim on row 4; the ravine's 
 SOUTH_TERRACE = ls.rect(0, 16, 16, H - 1) | ls.rect(17, 18, 21, H - 1) | ls.rect(22, 20, W - 1, H - 1)
 UPLAND = (ls.rect(0, 19, 4, H - 1) | ls.rect(5, 23, 10, H - 1) | ls.rect(10, 27, 18, H - 1)
           | ls.rect(19, 28, W - 1, H - 1))
-FAR_BANK = {(x, y) for y in range(0, 18) for x in range(W)
-            if x > max((rx for rx, ry in RIVER if ry == y), default=W) and dist_river(x, y) >= 2}
+# the far bank steps down the river in blocks, each with a two-row face and a flank: a staircase
+# of single steps would put inside corners beside face tops (089 by 07C), which vanilla never
+# does. It starts east of Woodstock's last column (31), so no wall meets the town's trees; the
+# strip of shore between it and the water stays (Surf, later)
+FAR_BANK = ls.rect(32, 0, W - 1, 2) | ls.rect(35, 3, W - 1, 5) | ls.rect(38, 6, W - 1, 7)
+assert all(dist_river(x, y) >= 2 for x, y in FAR_BANK), "a far-bank wall would touch the river"
 ls.terrace(sk, NORTH_TERRACE, 1, face=2)
 ls.terrace(sk, SOUTH_TERRACE - BROOK_FLOOR, 1, face=1)
 ls.terrace(sk, UPLAND, 2, face=1)
@@ -132,11 +138,18 @@ UPLAND_CLEARING = ls.blob(37, 32.5, 3.2, 1.8, seed=2201, wobble=0.25) & UPLAND
 # bank's top, the outskirts' woods at the top (Woodstock's continue), the north terrace's west
 # half, and groves on the south terrace between the road and the upland
 WOODS = ((UPLAND - UPLAND_CLEARING) | FAR_BANK
-         | ls.rect(0, 0, 7, 3) | ls.rect(12, 0, 15, 3)
+         | ls.rect(0, 2, 7, 3) | ls.rect(12, 0, 15, 3)
          | ls.rect(0, 5, 3, 9) | ls.rect(8, 5, 8, 9) | ls.rect(13, 5, 15, 9)
          | ls.rect(0, 17, 9, 21) | ls.forest_edge(13, 24, 36, 27, "N", amp=2, seed=2206)
-         | ls.rect(19, 5, 22, 6) | ls.rect(36, 18, 41, 19))
+         | ls.rect(19, 5, 22, 6) | ls.rect(36, 18, 41, 19)
+         | ls.rect(40, 8, 41, 9))                     # the far shore stops short of the east edge
 ls.plant(sk, WOODS - CLEAR - WALLS, ALL, keep_clear=CLEAR)
+# Woodstock's bottom row holds tree tops at columns 0 and 3-6 (its 16 and 19-22): their lower
+# halves stand on row 0 (trees cut by the top border; row 1 stays open so they can't pair down)
+for x in (0, 3, 4, 5, 6):
+    sk.set(x, 0, "T")
+for x in range(0, 9):
+    assert sk.get(x, 1) != "T", f"row 1 at {x} must stay open under the seam's tree bottoms"
 # hay fields on the intervale, tall grass in the meadow, the glade and under the upland
 ls.meadow(sk, ls.rect(19, 16, 24, 17) | ls.rect(29, 16, 34, 18), seed=2211, tufts=3, keep_clear=CLEAR)
 ls.meadow(sk, ls.blob(18, 3, 2, 2.4, seed=2212), seed=2213, tufts=2, keep_clear=CLEAR)
