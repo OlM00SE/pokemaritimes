@@ -34,7 +34,6 @@ from .transaction import atomic_write, edit
 CACHE = "_imported_pieces"      # project attribute: what callers found imported (cleared on apply)
 NUM_PALS_TOTAL = 13             # palettes 6..12 belong to the secondary tileset
 NUM_TILES_TOTAL = 1024
-TILES_PER_ROW = 16
 
 
 @dataclass
@@ -52,8 +51,10 @@ class Plan:
         return bool(self.new_tiles or self.palettes or self.new_metatiles)
 
 
-def _empty_slots(ts):
-    used = {v >> 12 for e in ts.metatiles for v in e}
+def _empty_slots(ts, primary):
+    """Secondary palette slots no metatile draws with: the secondary's own, and the primary's
+    too (a primary metatile may use slots 6-12, drawn with whichever secondary is loaded)."""
+    used = {v >> 12 for t in (ts, primary) for e in t.metatiles for v in e}
     return [i for i in range(NUM_PALS_IN_PRIMARY, NUM_PALS_TOTAL)
             if i not in used and all(c == (0, 0, 0) for c in ts.palettes[i])]
 
@@ -63,20 +64,40 @@ def _tile_count(ts):
     return (img.width // 8) * (img.height // 8)
 
 
-def plan(project, source, mids, target):
+def animated_tiles(project, name):
+    """Secondary tile indices (0-based) that `name`'s animations overwrite at runtime
+    (src/tileset_anims.c: its VDests arrays and QueueAnimTiles_<Name>_* functions, each
+    destination NUM_TILES_IN_PRIMARY + N for the frame's size in tiles; 4 if it can't tell)."""
+    import re
+    short = name.replace("gTileset_", "")
+    src = open(project.path("src/tileset_anims.c"), encoding="utf-8").read()
+    blocks = re.findall(rf"gTilesetAnims_{short}_\w*VDests\[\]\s*=\s*\{{.*?\}};", src, re.S)
+    funcs = re.findall(rf"static void QueueAnimTiles_{short}_\w*\([^)]*\)\s*\{{.*?\n\}}", src, re.S)
+    sizes = [int(n) for f in funcs for n in re.findall(r"(\d+)\s*\*\s*TILE_SIZE_4BPP", f)] or [4]
+    out = set()
+    for text in blocks + funcs:
+        for n in re.findall(r"NUM_TILES_IN_PRIMARY\s*\+\s*(\d+)", text):
+            out |= set(range(int(n), int(n) + max(sizes)))
+    return out
+
+
+def plan(project, source, mids, target, primary="gTileset_General"):
     src, dst = project.tileset(source), project.tileset(target)
     pl = Plan(source, target)
     if not (src.secondary and dst.secondary):
         pl.problems.append(f"both tilesets must be secondary ({source}, {target})")
         return pl
     src_n, dst_n = _tile_count(src), _tile_count(dst)
+    # tiles an animation overwrites: frames written past the PNG (indices a target metatile
+    # points at beyond its end) and destinations in tileset_anims.c, inside the PNG or past it.
+    # A copied tile never reuses one (its art would cycle) and appended tiles never land on one.
+    reserved = {(v & 0x3FF) - NUM_TILES_IN_PRIMARY for e in dst.metatiles for v in e
+                if (v & 0x3FF) >= NUM_TILES_IN_PRIMARY + dst_n} | animated_tiles(project, target)
     dst_tiles = {}
     for i in range(dst_n):
-        dst_tiles.setdefault(tuple(dst.tile(i)), i)
-    # tile indices a target metatile points at past its tiles.png: animation frames go there
-    reserved = {(v & 0x3FF) - NUM_TILES_IN_PRIMARY for e in dst.metatiles for v in e
-                if (v & 0x3FF) >= NUM_TILES_IN_PRIMARY + dst_n}
-    pal_map, free = {}, _empty_slots(dst)
+        if i not in reserved:
+            dst_tiles.setdefault(tuple(dst.tile(i)), i)
+    pal_map, free = {}, _empty_slots(dst, project.tileset(primary))
     tile_map = {}
     existing = {(tuple(e), a): NUM_METATILES_IN_PRIMARY + i
                 for i, (e, a) in enumerate(zip(dst.metatiles, dst.attributes))}
@@ -175,16 +196,17 @@ def apply(project, pl):
     with edit(project, files):
         if fresh.new_tiles:
             img = dst.tiles_image
-            n = _tile_count(dst) + len(fresh.new_tiles)
-            rows = -(-n // TILES_PER_ROW)
-            out = Image.new("P", (TILES_PER_ROW * 8, rows * 8), 0)
+            per_row = img.width // 8                # keep the PNG's own width: tile i sits at
+            n = _tile_count(dst) + len(fresh.new_tiles)   # (i % per_row, i // per_row)
+            rows = -(-n // per_row)
+            out = Image.new("P", (img.width, rows * 8), 0)
             out.putpalette(img.getpalette())
             out.paste(img, (0, 0))
             for k, px in enumerate(fresh.new_tiles):
                 i = _tile_count(dst) + k
                 tile = Image.new("P", (8, 8))
                 tile.putdata(px)
-                out.paste(tile, ((i % TILES_PER_ROW) * 8, (i // TILES_PER_ROW) * 8))
+                out.paste(tile, ((i % per_row) * 8, (i // per_row) * 8))
             buf = io.BytesIO()
             out.save(buf, format="PNG", bits=_bit_depth(project.path(folder, "tiles.png")))
             atomic_write(project.path(folder, "tiles.png"), buf.getvalue())

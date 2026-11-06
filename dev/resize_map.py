@@ -10,9 +10,11 @@ like the border the player sees past the edge), ready for a redesign. With the t
   * heal locations on this map (src/data/heal_locations.json);
   * connections: each keeps its alignment with the moved terrain (offset + dx or dy), on both
     sides, unless --connect NEIGHBOUR=OFFSET sets it (this map's offset; the neighbour's side
-    is its negative), e.g. to re-offset a seam to the corridor plan.
+    is its negative), e.g. to re-offset a seam to the corridor plan. NEIGHBOUR:DIRECTION picks
+    one side when the neighbour joins on two.
 Refused: a shared layout (dev/unique_layout.py first), a size the engine can't load, a crop
-that loses an event, a --connect for a map that isn't connected.
+that loses an event, a --connect for a connection that doesn't exist (or names a neighbour
+joined on two sides without the side), and an --apply whose plan differs from the preview.
 
 Reported, not changed (they need a human):
   * scripts elsewhere that name the map with coordinates (warp, setrespawn, ...);
@@ -30,9 +32,9 @@ from mapkit.project import Project, max_map_area_ok
 from mapkit.layout import layout_users, pack
 from mapkit.mapjson import dump_json
 from mapkit.transaction import atomic_write, edit
+from mapkit.geo import OPPOSITE
 
 EVENT_KINDS = ("object_events", "warp_events", "coord_events", "bg_events")
-OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 HEAL_PATH = "src/data/heal_locations.json"
 COORD_SCRIPT = re.compile(r"\b(warp\w*|setwarp|setdynamicwarp|setescapewarp|setrespawn|"
                           r"setdivewarp|setholewarp)\b[^\n]*\bMAP_(\w+)\s*,[^\n]*\d+\s*,\s*-?\d+", re.I)
@@ -61,7 +63,9 @@ def _label(kind, ev):
     return ev.get("script") or ev.get("type") or kind
 
 
-def plan(p, name, new_w, new_h, dx=0, dy=0, connect=None):
+def plan(p, name, new_w, new_h, dx=0, dy=0, connect=None, references=True):
+    """connect: {neighbour or "neighbour:direction": offset}. references=False skips the report
+    of what a human must check (apply re-plans without it)."""
     connect = dict(connect or {})
     if name not in p.map_names:
         raise ValueError(f"unknown map {name}")
@@ -126,17 +130,22 @@ def plan(p, name, new_w, new_h, dx=0, dy=0, connect=None):
     pl.heal = heal if changed else None
 
     # --- connections, both sides ---
-    neighbours = {p.const_to_map.get(c["map"]) for c in m.connections}
-    unknown = set(connect) - {n for n in neighbours if n}
-    if unknown:
-        raise ValueError(f"--connect names maps {name} isn't connected to: {', '.join(sorted(unknown))}")
+    links = [(p.const_to_map.get(c["map"]), c["direction"]) for c in m.connections]
+    for key in connect:
+        nb, _, d = key.partition(":")
+        hits = [l for l in links if l[0] == nb and (not d or l[1] == d)]
+        if not hits:
+            raise ValueError(f"--connect {key}: {name} has no such connection")
+        if len(hits) > 1:
+            raise ValueError(f"--connect {key}: {name} joins {nb} on {len(hits)} sides; "
+                             f"name one, e.g. {nb}:{hits[0][1]}")
     for c in m.connections:
         nb = p.const_to_map.get(c["map"])
         d = c["direction"]
         if d not in OPPOSITE:                 # dive/emerge: whole-map links, no offset to keep
             continue
         old = int(c["offset"])
-        new = connect.get(nb, old + (dx if d in ("up", "down") else dy))
+        new = connect.get(f"{nb}:{d}", connect.get(nb, old + (dx if d in ("up", "down") else dy)))
         pl.connections.append((nb, d, old, new))
         if nb is None:
             pl.problems.append(f"connection {d} to {c['map']}: no such map folder")
@@ -154,8 +163,16 @@ def plan(p, name, new_w, new_h, dx=0, dy=0, connect=None):
         back[0]["offset"] = -new
         pl.neighbour_json[nb] = nj
 
-    # --- what a human must check ---
-    short = m.id[4:]
+    if references:
+        pl.references = _references(p, name, m.id[4:])
+    return pl
+
+
+def _references(p, name, short):
+    """What a human must check: scripts elsewhere naming the map with coordinates, dev scripts
+    naming the map, and the saves standing on it."""
+    out = []
+    me = os.path.normcase(os.path.abspath(__file__))
     for root in ("data/maps", "data/scripts"):
         for dirpath, _, files in os.walk(p.path(root)):
             if os.path.normcase(dirpath).startswith(os.path.normcase(p.path("data/maps", name))):
@@ -167,30 +184,33 @@ def plan(p, name, new_w, new_h, dx=0, dy=0, connect=None):
                 for mm in COORD_SCRIPT.finditer(txt):
                     if mm.group(2) == short:
                         rel = os.path.relpath(os.path.join(dirpath, f), p.root).replace("\\", "/")
-                        pl.references.append(f"script {rel}: {mm.group(0).strip()[:90]}")
+                        out.append(f"script {rel}: {mm.group(0).strip()[:90]}")
     tests = []
     for dirpath, _, files in os.walk(p.path("dev")):
         if "out" in os.path.relpath(dirpath, p.path("dev")).split(os.sep):
             continue
         for f in files:
-            if os.path.samefile(os.path.join(dirpath, f), __file__):
+            if os.path.normcase(os.path.abspath(os.path.join(dirpath, f))) == me:
                 continue
             if f.endswith(".py") and name in open(os.path.join(dirpath, f), encoding="utf-8",
                                                   errors="replace").read():
                 tests.append(os.path.relpath(os.path.join(dirpath, f), p.root).replace("\\", "/"))
     if tests:
-        pl.references.append("dev scripts that name the map (check any coordinates they hold): "
-                             + ", ".join(sorted(tests)))
-    pl.references.append(f"saved games standing on {name} continue at their old coordinates: "
-                         "add a world revision (src/overworld.c, sWorldRevisions) or announce a save break")
-    return pl
+        out.append("dev scripts that name the map (check any coordinates they hold): "
+                   + ", ".join(sorted(tests)))
+    out.append(f"saved games standing on {name} continue at their old coordinates: "
+               "add a world revision (src/overworld.c, sWorldRevisions) or announce a save break")
+    return out
 
 
 def apply(p, pl, connect=None):
-    # Re-plan at the write boundary so a stale preview can't be written.
-    fresh = plan(p, pl.name, *pl.new_wh, *pl.offset, connect=connect)
+    # Re-plan at the write boundary: refuse if anything changed since the preview.
+    fresh = plan(p, pl.name, *pl.new_wh, *pl.offset, connect=connect, references=False)
     if fresh.problems:
         raise ValueError("; ".join(fresh.problems))
+    if (fresh.blocks, fresh.events, fresh.connections, fresh.heal, fresh.neighbour_json) != \
+            (pl.blocks, pl.events, pl.connections, pl.heal, pl.neighbour_json):
+        raise ValueError("the map or its neighbours changed since the preview; preview it again")
     m = p.load_map(pl.name)
     files = ["data/layouts/layouts.json", m.layout.entry["blockdata_filepath"],
              f"data/maps/{pl.name}/map.json"] + [f"data/maps/{nb}/map.json" for nb in fresh.neighbour_json]
@@ -244,8 +264,9 @@ def main():
     ap.add_argument("map")
     ap.add_argument("size", help="WxH, e.g. 48x42")
     ap.add_argument("--offset", default="0,0", help="dx,dy: where the old (0,0) lands")
-    ap.add_argument("--connect", action="append", default=[], metavar="MAP=OFFSET",
-                    help="set this map's connection offset to a neighbour (its side gets -OFFSET)")
+    ap.add_argument("--connect", action="append", default=[], metavar="MAP[:DIR]=OFFSET",
+                    help="set this map's connection offset to a neighbour (its side gets -OFFSET); "
+                         "name the direction when the neighbour joins on two sides")
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args()
     try:

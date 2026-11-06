@@ -170,43 +170,56 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
                                   lambda ch: CHAR_TO_CLASS[ch])
         if verify_shores:
             keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus)
+    if L.primary == PRIMARY:
+        recheck_bridges(project, L, sk.rows)       # the passes above may have kept a deck's neighbours
     return sk
 
 
+def recheck_bridges(project, layout, rows):
+    """keep_valid_bridges against the layout's own bridge pieces (nothing if it has none)."""
+    ids, _ = bridges.piece_ids(project, layout)
+    if ids and any(bridges.CHAR in row for row in rows):
+        want = {v: k for k, v in ids.items()}
+        keep_valid_bridges(rows, layout.width, layout.height, lambda x, y: want.get(layout.mid(x, y)))
+
+
 def extract_bridges(project, layout, rows):
-    """Bridge decks (mapkit/bridges.py) become 'H', where the strip's shape resolves exactly
-    (deck pieces where the shape asks for them); any other deck cell stays '#' (Route 104's
-    turning bridge over pond water, Fredericton's hand-painted ones)."""
+    """Bridge decks (mapkit/bridges.py) become 'H', where the strip resolves exactly (deck
+    pieces where the shape asks for them, grass or kept cells at its ends); any other deck cell
+    stays '#' (Route 104's turning bridge over pond water, Fredericton's hand-painted ones)."""
     ids, _ = bridges.piece_ids(project, layout)
     if not ids:
         return
     want = {v: k for k, v in ids.items()}
-    w, h = layout.width, layout.height
-    cells = {(x, y) for y in range(h) for x in range(w) if layout.mid(x, y) in want}
-    while cells:
-        for x, y in cells:
-            rows[y][x] = bridges.CHAR
+    for y in range(layout.height):
+        for x in range(layout.width):
+            if layout.mid(x, y) in want:
+                rows[y][x] = bridges.CHAR
+    keep_valid_bridges(rows, layout.width, layout.height, lambda x, y: want.get(layout.mid(x, y)))
+
+
+def keep_valid_bridges(rows, w, h, piece_at):
+    """Turn every 'H' strip that doesn't resolve to the pieces standing there into '#', whole
+    (half a deck can't be rebuilt). piece_at(x, y): the bridge piece (bridges.SOURCE numbering)
+    the layout holds there, or None. Extract runs it again after its later passes, which can
+    keep a deck's neighbours or ends as '#'. Returns the number of cells kept."""
+    kept = 0
+    while True:
+        cells = {(x, y) for y in range(h) for x in range(w) if rows[y][x] == bridges.CHAR}
+        if not cells:
+            return kept
         cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in rows]
         pieces, _, errors = bridges.resolve(cls, cells, w, h)
-        bad = {(x, y) for x, y, _ in errors} | {c for c, m in pieces.items() if m != want[layout.mid(*c)]}
-        bad &= cells
+        bad = {c for c, m in pieces.items() if m != piece_at(*c)}
+        for x, y, _ in errors:          # an end's error names the cell beyond the deck: its strip
+            bad |= {(x, y), (x, y - 1), (x, y + 1)} & cells
         if not bad:
-            return
-        # a strip with a bad cell is kept whole: half a deck can't be rebuilt
-        for x, y in cells:
-            rows[y][x] = "#"
-        cells = {c for c in cells if not _same_strip(c, bad, cells)}
-
-
-def _same_strip(c, bad, cells):
-    group, stack = set(), [c]
-    while stack:
-        x, y = stack.pop()
-        if (x, y) in group or (x, y) not in cells:
-            continue
-        group.add((x, y))
-        stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
-    return bool(group & bad)
+            return kept
+        for group in bridges.strips(cells):
+            if group & bad:
+                for x, y in group:
+                    rows[y][x] = "#"
+                    kept += 1
 
 
 def recognise_stamps(project, m, rows):
@@ -304,6 +317,7 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
             sk.rows[y][x] = "#"
         keep_unrebuildable_ledges(sk.rows, w, h, lambda x, y: layout.mid(x, y))
         shores.keep_unrebuildable(sk.rows, w, h, lambda x, y: layout.mid(x, y), lambda ch: CHAR_TO_CLASS[ch])
+        recheck_bridges(project, layout, sk.rows)
 
 
 def keep_unrebuildable_ledges(rows, w, h, mid_at):

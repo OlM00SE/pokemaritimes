@@ -55,14 +55,9 @@ def piece_ids(project, layout):
     return cache[key]
 
 
-def resolve(cls, cells, w, h, ends=None):
-    """cls: final class grid as the shores see it, in which every bridge cell reads as water.
-    cells: the sketch's 'H' cells. ends: the class grid the deck's ends are judged on (default
-    cls; the compiler passes the one where flowers aren't grass). Returns ({(x, y): source
-    piece}, {(x, y): PLAIN_GRASS} for the grass below each deck, errors)."""
-    ends = ends or cls
-    pieces, below, errors = {}, {}, []
-    seen = set()
+def strips(cells):
+    """The 4-connected groups of deck cells, in reading order of their first cell."""
+    out, seen = [], set()
     for start in sorted(cells, key=lambda c: (c[1], c[0])):
         if start in seen:
             continue
@@ -75,6 +70,18 @@ def resolve(cls, cells, w, h, ends=None):
             x, y = c
             stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
         seen |= group
+        out.append(group)
+    return out
+
+
+def resolve(cls, cells, w, h, ends=None):
+    """cls: final class grid as the shores see it, in which every bridge cell reads as water.
+    cells: the sketch's 'H' cells. ends: the class grid the deck's ends are judged on (default
+    cls; the compiler passes the one where flowers aren't grass). Returns ({(x, y): source
+    piece}, {(x, y): PLAIN_GRASS} for the grass below each deck, errors)."""
+    ends = ends or cls
+    pieces, below, errors = {}, {}, []
+    for group in strips(cells):
         xs = sorted({x for x, _ in group})
         ys = sorted({y for _, y in group})
         rect = {(x, y) for x in range(xs[0], xs[-1] + 1) for y in range(ys[0], ys[-1] + 1)}
