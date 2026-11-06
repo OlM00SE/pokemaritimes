@@ -58,6 +58,8 @@ def manifest():
         Step("shore_pieces", ("dev/tests/shore_pieces.py",)),
         Step("flora_pieces", ("dev/tests/flora_pieces.py",)),
         Step("stamp_pieces", ("dev/tests/stamp_pieces.py",)),
+        Step("bridge_pieces", ("dev/tests/bridge_pieces.py",), check="result_ratio", timeout=360),
+        Step("resize_map", ("dev/tests/resize_map.py",), check="result_ratio"),
         Step("corridor_plan", ("dev/tests/corridor_plan.py",)),
         Step("corridor", ("dev/corridor.py", "check")),
         Step("reconstruction", ("dev/tests/reconstruction.py",), kind="observed", timeout=360),
@@ -65,7 +67,7 @@ def manifest():
         Step("route_metrics", ("dev/route_stats.py", "Route201_1", "Woodstock_2"), kind="observed"),
     ]
     for name in ("HomeTown_0", "HomeTown_House2_1F", "Route201_1", "Woodstock_2",
-                 "Woodstock_House1", "Woodstock_House2", "Woodstock_Lab"):
+                 "Woodstock_House1", "Woodstock_House2", "Woodstock_House3_1F", "Woodstock_Lab"):
         steps.append(Step("events_spec_" + name.lower(),
                           ("dev/events.py", "build", f"design/maps/{name}.events.toml"),
                           check="events_dryrun"))
@@ -75,8 +77,11 @@ def manifest():
         Step("playthrough", ("dev/tests/playthrough_slice1.py",), timeout=180),
         Step("doors", ("dev/tests/ingame_doors.py", "HomeTown_0", "Woodstock_2", "TownLab"),
              check="doors", timeout=180),
-        Step("buildings", ("dev/tests/ingame_buildings.py",), check="buildings", timeout=180),
+        Step("buildings", ("dev/tests/ingame_buildings.py", "TownLab", "Woodstock_2"),
+             check="buildings", timeout=240),
         Step("respawn", ("dev/tests/ingame_respawn.py",), timeout=180),
+        Step("world_revision", ("dev/tests/ingame_world_revision.py",), check="result_ratio", timeout=240),
+        Step("bridges", ("dev/tests/ingame_bridges.py",), check="bridges", timeout=180),
         Step("encounters", ("dev/tests/ingame_encounters.py", "Route201_1"),
              check="encounters", timeout=180),
         Step("encounters_no_party", ("dev/tests/ingame_encounters.py", "Route201_1", "--no-party"),
@@ -120,9 +125,20 @@ def coverage_error(step, output):
             return "no completed in-game door round trips reported"
     elif step.check == "buildings":
         m = re.search(r"RESULT: (\d+) passed, (\d+) failed", output)
-        kinds = re.search(r"TownLab: (\d+) Centers, (\d+) Marts selected", output)
-        if not m or int(m[1]) < 1 or int(m[2]) or not kinds or min(map(int, kinds.groups())) < 1:
-            return "TownLab did not exercise both Center and Mart with passing checks"
+        if not m or int(m[1]) < 1 or int(m[2]):
+            return "the working rooms did not pass with a positive count"
+        for name in [a for a in step.command[1:] if not a.startswith("-")] or ["TownLab"]:
+            kinds = re.search(rf"^{re.escape(name)}: (\d+) Centers, (\d+) Marts selected", output, re.M)
+            if not kinds or min(map(int, kinds.groups())) < 1:
+                return f"{name} did not exercise both a Center and a Mart"
+    elif step.check == "bridges":
+        m = re.search(r"TOTAL: (\d+)/(\d+) bridge cases", output)
+        if not m or int(m[2]) < 1 or int(m[1]) != int(m[2]):
+            return "no positive, fully passing in-game bridge case count reported"
+    elif step.check == "result_ratio":
+        m = re.search(r"^RESULT: (\d+)/(\d+) ", output, re.M)
+        if not m or int(m[2]) < 1 or int(m[1]) != int(m[2]):
+            return "no positive, fully passing RESULT count reported"
     elif step.check == "encounters":
         if not re.search(r"^battle 1: wild ", output, re.M):
             return "no actual wild battle reported"

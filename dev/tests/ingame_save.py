@@ -90,7 +90,7 @@ def main():
             return 1
         e.test_mode()
         e.give_mon("STARLY", 7)
-        e.warp("Woodstock_2", 14, 20)
+        e.warp("Woodstock_2", 25, 24)        # Main Street, between Water Street and the bridge
         for v, on in want.items():
             e.set_flag(v, on)
         check(all(e.get_var(n) == 0 for n in VARS), "a new game starts with the story vars at 0")
