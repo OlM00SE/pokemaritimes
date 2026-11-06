@@ -23,6 +23,25 @@ and documented it.
   open, and a sweep of scratch folders from killed runs.
 - `tests/harness_guards.py` (13 negative controls) and `tests/emulator_isolation.py` (two live
   emulators side by side) prove these.
+- **The gate caught a real flake:** a re-run failed `ingame_events` 113/114, "the wandering child
+  could not be talked to in 8 attempts" (M14's one unexplained failure was likely the same).
+  Logging each attempt showed that a warp reloads the map and puts every object back on its
+  home tile, so the test had been aiming at where the child stood *before* the warp, and it
+  pressed A before the player's turn had finished. It now talks to the child at home and waits
+  for the turn: 10 runs in a row pass, worst case attempt 5 of 20 (before: up to 17).
+- `/code-review medium` raised 10 findings: 8 fixed, 1 kept by design, 1 documented as a limit.
+  **Fixed:** `Emu.close()` could raise over a test's own error (now warns); the bridge port came
+  from Windows' ephemeral range, where an outgoing connection could take it before mGBA bound it
+  (now 20000–48000); a build timeout left `make` running inside WSL (the runner now stops it, and
+  the build's timeout is 30 min for full rebuilds); shores and flora counted a map with no cases
+  twice and could print a negative total; fresh test slots piled up until exit (the previous is
+  removed) and a save-release wait sat on a path where it could never run; the buildings test
+  duplicated the gate's TownLab rule; the ledge test re-derived the tour's skip rule; the
+  isolation test bypassed the suites' own `prepare_rom`. **Kept:** conformance fails a warp that
+  lands elsewhere (its start tiles come from the model's own arrival prediction, so a move is a
+  real disagreement). **Limit:** the dev bridge's WARP takes signed 8-bit coordinates, so
+  conformance can't sample tiles past x or y 127 (only vanilla Route 119 today; reported as
+  untestable). A corridor map that long would need a 16-bit WARP (an engine change).
 
 **Foundation hardening complete (2026-11-05):** branch `foundation-hardening` merged into
 `develop` as `fb2b9673ff` and pushed to `origin/develop`. No other milestone has started.
@@ -677,7 +696,7 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 ## Regression set (run before merging anything)
 **`dev/regression.py`** runs all of it, serially, and is the merge gate: 42 steps (build, 23 static, 18 in mGBA), about 13 minutes. It must end `0 failed`; quote its evidence lines in the handoff (the report is `dev/out/regression/<run>/report.json`, and says if the tree was dirty). `--only <id>...` for a subset while working (the build always runs). How it guards against silent passes and emulator interference: `dev/README.md`, "Test suites".
 
-Last full run (test-infrastructure-reliability, ROM `7df037fe…`, unchanged from the published build): 40 gates passed, 2 observed, 0 failed. Conformance 537/537 (108 source tiles beyond the warp's signed 8-bit range, reported as untestable), doors 15 round trips, buildings 12/12, respawn 3 real losses, encounters 12 wild battles, ledges 490/490 on 7 maps (4 tours, 3 skipped for wandering people), events 114/114 on 7 maps, save 45/45, shores 624/624, flora 435/435, mobile publish 53/53, authoring 20 tests, harness guards, checker 33 maps 0 errors and vanilla 0 unexpected, reconstruction 87.8% (observed), round trip 87.5–100%.
+Last full run (test-infrastructure-reliability @ `8766a2a6f9`, after the review fixes and the flake fix; ROM `7df037fe…`, unchanged from the published build): 40 gates passed, 2 observed, 0 failed. Conformance 537/537 (108 source tiles beyond the warp's signed 8-bit range, all on vanilla Route 119, reported as untestable), doors 15 round trips, buildings 11/11, respawn 3 real losses, encounters 12 wild battles, ledges 490/490 on 7 maps (4 tours, 3 skipped for wandering people), events 116/116 on 7 maps, save 45/45, shores 624/624, flora 435/435, mobile publish 53/53, authoring 20 tests, harness guards, checker 33 maps 0 errors and vanilla 0 unexpected, reconstruction 87.8% (observed), round trip 87.5–100%.
 
 Add a step to `manifest()` in `dev/regression.py` when a new test or spec'd map joins the set (and a `check` when the test claims coverage its exit code can't prove). The commands it runs, for running one by hand:
 ```
