@@ -2136,6 +2136,10 @@ static const struct WorldRevision sWorldRevisions[] =
 {
     // M15: Woodstock rebuilt on the corridor plan (36x34 -> 48x42): in front of its Center
     { 1, MAP_GROUP(MAP_WOODSTOCK_2), MAP_NUM(MAP_WOODSTOCK_2), HEAL_LOCATION_WOODSTOCK_2 },
+    // M16: the start valley rebuilt on the plan. HomeTown (36x26 -> 34x28): on the lane below the
+    // player's doormat; Route 201 (50x20 -> 52x28): on the road by the route sign
+    { 2, MAP_GROUP(MAP_HOME_TOWN_0), MAP_NUM(MAP_HOME_TOWN_0), HEAL_LOCATION_NONE, 9, 15 },
+    { 2, MAP_GROUP(MAP_ROUTE201_1), MAP_NUM(MAP_ROUTE201_1), HEAL_LOCATION_NONE, 5, 22 },
 };
 
 static bool32 WarpIsOnMap(const struct WarpData *warp, const struct WorldRevision *row)
