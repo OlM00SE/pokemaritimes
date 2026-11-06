@@ -240,7 +240,8 @@ def tour(e, p, name):
     entrance fails (it would go untested); groups no one can ever jump (cliff-style ledges with
     nothing behind them) are only listed. Paths go around the people standing on the map;
     skipped on maps with wandering people (one could step into a planned path).
-    Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png."""
+    Screenshots each landing: dev/out/ledges_<Map>_tour<N>.png.
+    Returns (failures, skipped): skipped is 1 when the map's tour was skipped."""
     for old in glob.glob(os.path.join(OUT, f"ledges_{name}_tour*.png")):
         os.remove(old)                  # no stale landings from earlier runs or other designs
     m = p.load_map(name)
@@ -248,13 +249,13 @@ def tour(e, p, name):
     if movers:
         print(f"{name}: tour skipped ({len(movers)} wandering people, e.g. at "
               f"({movers[0]['x']},{movers[0]['y']}))")
-        return 0
+        return 0, 1
     w = events.world_with_people(p, m)
     L = m.layout
     at = entrance(p, m, w)
     if at is None:
         print(f"{name}: tour FAILED: no entrance to start from")
-        return 1
+        return 1, 0
     start = w.arrival_state(*w.to_grid(*at))
     edges = {}
     seen = w.explore([start], edges=edges)
@@ -297,7 +298,7 @@ def tour(e, p, name):
         print(f"{name}: group {g}: jump {d} at {(tx, ty)} -> {(lx, ly)}, then back to {at}: "
               f"{'OK' if ok else 'FAILED'}")
         bad += not ok
-    return bad
+    return bad, 0
 
 
 def main(argv):
@@ -310,9 +311,9 @@ def main(argv):
         for name in maps:
             bad += approaches(e, p, name)
             bad += round_trip(e, p, name)
-            if any(events.moves(o) for o in p.load_map(name).events("object_events")):
-                tour_skips += 1
-            bad += tour(e, p, name)
+            failures, skipped = tour(e, p, name)
+            bad += failures
+            tour_skips += skipped
     print(("PASS" if not bad else f"FAIL ({bad})") +
           f"; {len(maps) - tour_skips} tours attempted, {tour_skips} explicitly skipped")
     return 1 if bad else 0

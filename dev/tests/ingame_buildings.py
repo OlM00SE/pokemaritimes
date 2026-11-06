@@ -150,9 +150,7 @@ def main(argv):
                         check(after == before + 1, f"buying one {item}: {before} -> {after}")
             if not centers and not marts:
                 check(False, f"{outdoor}: no Centers or Marts found; NOT TESTED")
-            if outdoor == "TownLab":
-                check(centers >= 1 and marts >= 1,
-                      f"{outdoor}: expected both a Center and a Mart ({centers}, {marts})")
+            # which map must have which kinds is the gate's call (regression.py's check)
             print(f"{outdoor}: {centers} Centers, {marts} Marts selected")
     print(f"RESULT: {passed} passed, {failed} failed")
     return 1 if failed else 0

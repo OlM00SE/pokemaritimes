@@ -153,6 +153,7 @@ class HarnessGuards(unittest.TestCase):
                     code, output = quietly(module.main, ["Empty"])
             self.assertEqual(code, 1)
             self.assertIn("NOT TESTED", output)
+            self.assertNotIn("TOTAL: -", output)      # coverage failures don't skew the ratio
 
     def test_zero_requested_battles_fail(self):
         self.assertEqual(quietly(ingame_encounters.main, ["Route201_1", "--battles", "0"])[0], 1)

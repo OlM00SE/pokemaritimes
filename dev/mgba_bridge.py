@@ -116,6 +116,22 @@ def load_symbols(map_path):
     return syms
 
 
+def free_port():
+    """A port for one emulator's bridge, chosen below Windows' ephemeral range (49152+, where
+    outgoing connections get their ports), so nothing is likely to take it between this check
+    and mGBA binding it. A wrong taker is caught anyway by the session token."""
+    rng = secrets.SystemRandom()
+    for _ in range(200):
+        port = rng.randrange(20000, 48000)
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+        return port
+    raise RuntimeError("no free port for the mGBA bridge")
+
+
 class Emu:
     def __init__(self, rom, extra_args=(), boot_timeout=20):
         self.rom = os.path.abspath(rom)
@@ -125,9 +141,7 @@ class Emu:
         self.session = secrets.token_hex(16)
         # The Lua bridge has a fixed standalone port, but each automated emulator gets a private
         # script and port. A second test cannot steal the first test's socket or send it commands.
-        with socket.socket() as reservation:
-            reservation.bind(("127.0.0.1", 0))
-            self.port = reservation.getsockname()[1]
+        self.port = free_port()
         try:
             os.makedirs(os.path.join(REPO, "dev", "out"), exist_ok=True)
             self._script_dir = tempfile.TemporaryDirectory(prefix="mgba-bridge-",
@@ -506,9 +520,10 @@ class Emu:
             if self.proc.poll() is None:
                 self.proc.kill()
             try:
-                self.proc.wait(timeout=5)  # release the .sav before the next test prepares it
+                self.proc.wait(timeout=15)  # release the .sav before the next test prepares it
             except subprocess.TimeoutExpired:
-                raise RuntimeError("mGBA did not exit after kill")
+                # never raise here: close() runs while a test's own error propagates
+                print(f"WARNING: mGBA (pid {self.proc.pid}) did not exit 15 s after kill", flush=True)
             self.proc = None
         if self._script_dir is not None:
             self._script_dir.cleanup()

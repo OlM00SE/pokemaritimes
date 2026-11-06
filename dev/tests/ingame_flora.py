@@ -89,14 +89,14 @@ def main(argv):
         raise SystemExit("--edges must be nonnegative")
     maps = argv or DEFAULT_MAPS
     p, rng = Project(), random.Random(2027)
-    total = bad = 0
+    total = bad = uncovered = 0
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
         e.test_mode()                       # no wild battles, no trainer sight
         for name in maps:
             pieces, edges = cases_for(p, name, n_edges, rng)
             if not pieces and not edges:
-                bad += 1
+                uncovered += 1
                 print(f"{name}: FAIL, no testable flora pieces or forest edges (NOT TESTED)")
             fails, crown_shot = [], False
             for label, todo in (("piece", pieces), ("edge", edges)):
@@ -127,8 +127,9 @@ def main(argv):
                 e.shot(os.path.join(OUT, f"flora_{name}_{i}.png"))
             for f in fails[:10]:
                 print("    " + f)
-    print(f"\nTOTAL: {total - bad}/{total} flora and forest-edge cases behave as the model says")
-    return 1 if bad else 0
+    print(f"\nTOTAL: {total - bad}/{total} flora and forest-edge cases behave as the model says"
+          + (f"; {uncovered} maps not tested" if uncovered else ""))
+    return 1 if bad or uncovered else 0
 
 
 if __name__ == "__main__":

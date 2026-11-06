@@ -79,6 +79,8 @@ def main(argv):
                     mism.append(f"    warp to ({x},{y}) failed: {ex}")
                     warp_error = True
                     break
+                # Starts come from the model's arrival_state, which says the player stays on the
+                # tile; landing elsewhere is a model/game disagreement, not a case to skip.
                 if landed != (x, y):
                     mism.append(f"    warp to ({x},{y}) landed at {landed}: comparison not run")
                     continue

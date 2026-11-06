@@ -76,7 +76,7 @@ def main(argv):
         raise SystemExit("--max and --surf must be nonnegative")
     maps = argv or DEFAULT_MAPS
     p, rng = Project(), random.Random(2026)
-    total = bad = 0
+    total = bad = uncovered = 0
     with Emu(prepare_rom(fresh=True), extra_args=UNTHROTTLED) as e:
         assert e.boot_new_game()
         e.test_mode()                       # no wild battles, no trainer sight
@@ -138,15 +138,17 @@ def main(argv):
             print(f"{name}: surf {ok}/{len(sample)} surfed off the shore through the Surf prompt"
                   + (" (SKIPPED by --surf 0)" if n_surf == 0 else
                      " (NOT TESTED: no eligible edge)" if not sample else ""))
-            if n_surf and not sample:
-                bad += 1
-            if not map_total:
-                bad += 1
+            if map_total == len(sample):          # no bump, land or rock case at all
+                uncovered += 1
                 print(f"{name}: FAIL, no shore cases selected (NOT TESTED)")
+            elif n_surf and not sample:
+                uncovered += 1
             for f in fails[:10]:
                 print("    " + f)
-    print(f"\nTOTAL: {total - bad}/{total} shore cases behave as the model says")
-    return 1 if bad else 0
+    # case failures and coverage failures are counted apart, so the total stays a real ratio
+    print(f"\nTOTAL: {total - bad}/{total} shore cases behave as the model says"
+          + (f"; {uncovered} coverage failures" if uncovered else ""))
+    return 1 if bad or uncovered else 0
 
 
 if __name__ == "__main__":

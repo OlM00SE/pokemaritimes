@@ -39,6 +39,9 @@ def prepare_rom(fresh, persistent=False):
         folder = OUT
     else:
         if fresh or _test_dir is None:
+            if _test_dir is not None:       # the previous emulator has closed: drop its slot
+                _test_dir.cleanup()
+                _test_dirs.remove(_test_dir)
             _test_dir = tempfile.TemporaryDirectory(prefix="emutest-", dir=OUT,
                                                      ignore_cleanup_errors=True)
             _test_dirs.append(_test_dir)
@@ -47,8 +50,9 @@ def prepare_rom(fresh, persistent=False):
     shutil.copyfile(os.path.join(REPO, "pokeemerald.gba"), rom)
     shutil.copyfile(os.path.join(REPO, "pokeemerald.map"), os.path.join(folder, "test.map"))
     sav = os.path.join(folder, "test.sav")
-    if fresh and os.path.exists(sav):
-        # the previous test's mGBA may still be closing and holding the save (Windows): wait a bit
+    if persistent and fresh and os.path.exists(sav):
+        # a fresh temporary slot has no save; the persistent one may still be held by the last
+        # playtest's closing mGBA (Windows): wait a bit
         for attempt in range(20):
             try:
                 os.remove(sav)

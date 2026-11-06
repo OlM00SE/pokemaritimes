@@ -30,7 +30,7 @@ import time
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "dev" / "out" / "regression"
 SCRATCH = REPO / "dev" / "out"
-SCRATCH_PREFIXES = ("emutest-", "mgba-bridge-", "bridge-isolation-")
+SCRATCH_PREFIXES = ("emutest-", "mgba-bridge-")
 STALE_SECONDS = 6 * 3600
 
 
@@ -45,7 +45,8 @@ class Step:
 
 def manifest():
     steps = [
-        Step("build", ("dev/fastbuild.py",), timeout=240),
+        # a full rebuild (a header change, --reseed) takes minutes; a typical one ~15 s
+        Step("build", ("dev/fastbuild.py",), timeout=1800),
         Step("authoring", ("dev/tests/authoring_safety.py",)),
         Step("harness_guards", ("dev/tests/harness_guards.py",), timeout=240),
         Step("maps_baseline", ("dev/check_maps.py", "--baseline")),
@@ -206,19 +207,24 @@ def acquire_lock():
     return f
 
 
-def kill_tree(proc):
-    """Kill a step and everything it started (its mGBA, a WSL build)."""
-    if proc.poll() is not None:
-        return
-    if sys.platform == "win32":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
-    else:
-        proc.kill()
-    try:
-        proc.wait(timeout=15)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
+def kill_tree(proc, wsl_build=False):
+    """Kill a step and every Windows process it started (its mGBA). Killing wsl.exe doesn't
+    stop the Linux side, so a build step also stops make in the WSL mirror (wsl_build)."""
+    if proc.poll() is None:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        else:
+            proc.kill()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    if wsl_build:
+        sys.path.insert(0, str(REPO / "dev"))
+        import fastbuild
+        subprocess.run(["wsl", "-d", fastbuild.DISTRO, "--exec", "pkill", "-x", "make"],
+                       capture_output=True)
 
 
 def other_emulators():
@@ -241,18 +247,18 @@ def sweep_scratch():
     return removed
 
 
-def run_step(command, log, timeout):
+def run_step(command, log, timeout, wsl_build=False):
     """Run one step with its output in log; returns the exit code (124 on timeout)."""
     with log.open("w", encoding="utf-8") as out:
         proc = subprocess.Popen(command, cwd=REPO, stdout=out, stderr=subprocess.STDOUT)
         try:
             return proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            kill_tree(proc)
+            kill_tree(proc, wsl_build)
             out.write(f"\n[regression] TIMEOUT after {timeout}s: step and its processes killed\n")
             return 124
         except BaseException:
-            kill_tree(proc)
+            kill_tree(proc, wsl_build)
             raise
 
 
@@ -298,7 +304,7 @@ def run(argv=None):
             log = run_dir / f"{i:02}_{step.id}.log"
             print(f"START {i}/{len(steps)} {step.id}", flush=True)
             start = time.monotonic()
-            code = run_step(record["command"], log, step.timeout)
+            code = run_step(record["command"], log, step.timeout, wsl_build=step.id == "build")
             output = log.read_text(encoding="utf-8", errors="replace")
             status, reason = evaluate(step, code, output)
             if code == 124:
