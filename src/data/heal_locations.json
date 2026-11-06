@@ -363,6 +363,14 @@
       "y": 11,
       "respawn_map": "MAP_TOWN_LAB_POKEMON_CENTER_1F",
       "respawn_npc": "LOCALID_TOWN_LAB_POKEMON_CENTER_1F_NURSE"
+    },
+    {
+      "id": "HEAL_LOCATION_WOODSTOCK_2",
+      "map": "MAP_WOODSTOCK_2",
+      "x": 29,
+      "y": 22,
+      "respawn_map": "MAP_WOODSTOCK_POKEMON_CENTER_1F",
+      "respawn_npc": "LOCALID_WOODSTOCK_POKEMON_CENTER_1F_NURSE"
     }
   ]
 }

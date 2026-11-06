@@ -1,0 +1,14 @@
+// Woodstock_House3_1F: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts Woodstock_House3_1F_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/Woodstock_House3_1F.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_WOODSTOCK_HOUSE3_1F_FARMER
+
+script Woodstock_House3_1F_EventScript_Farmer {
+    msgbox(format("I grew up on a farm up the river past Hartland. Potato fields as far as you can see!\pCarleton County grows some of the best potatoes in the country, you know."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

@@ -2,10 +2,10 @@ mapscripts Woodstock_2_MapScripts {
 }
 
 // ---- dev/events.py: generated from design/maps/Woodstock_2.events.toml. Edit the spec, not this block. ----
-// owns: Woodstock_2_EventScript_TownSign, Woodstock_2_EventScript_StationSign, Woodstock_2_EventScript_GardenSign, LOCALID_WOODSTOCK_2_GARDENER, FLAG_WOODSTOCK_2_GARDENER_GIFT, LOCALID_WOODSTOCK_2_STATION_WORKER, LOCALID_WOODSTOCK_2_KID, LOCALID_WOODSTOCK_2_ANGLER, LOCALID_WOODSTOCK_2_WALKER, LOCALID_WOODSTOCK_2_RIVER_NOOK_BALL, FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL
+// owns: Woodstock_2_EventScript_TownSign, Woodstock_2_EventScript_StationSign, Woodstock_2_EventScript_GardenSign, Woodstock_2_EventScript_CreekSign, Woodstock_2_EventScript_NorthSign, LOCALID_WOODSTOCK_2_GARDENER, FLAG_WOODSTOCK_2_GARDENER_GIFT, LOCALID_WOODSTOCK_2_STATION_WORKER, LOCALID_WOODSTOCK_2_KID, LOCALID_WOODSTOCK_2_ANGLER, LOCALID_WOODSTOCK_2_WALKER, LOCALID_WOODSTOCK_2_RIVER_NOOK_BALL, FLAG_ITEM_WOODSTOCK_2_RIVER_NOOK_BALL
 
 script Woodstock_2_EventScript_TownSign {
-    msgbox("WOODSTOCK\nThe river town in the woods.", MSGBOX_SIGN)
+    msgbox("WOODSTOCK\nThe town where two rivers meet.", MSGBOX_SIGN)
     end
 }
 
@@ -16,6 +16,16 @@ script Woodstock_2_EventScript_StationSign {
 
 script Woodstock_2_EventScript_GardenSign {
     msgbox("COMMUNITY GARDEN\nPlease share the harvest!", MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_2_EventScript_CreekSign {
+    msgbox("MEDUXNEKEAG RIVER\nIt joins the Saint John right here.", MSGBOX_SIGN)
+    end
+}
+
+script Woodstock_2_EventScript_NorthSign {
+    msgbox("NORTH: HARTLAND\nThe trail is closed past here.", MSGBOX_SIGN)
     end
 }
 
@@ -48,7 +58,7 @@ script Woodstock_2_EventScript_Kid {
 }
 
 script Woodstock_2_EventScript_Angler {
-    msgbox(format("Nothing's biting today. You need a fishing rod to catch Pokémon in the water.\pThe big ones stay out in the river."), MSGBOX_NPC)
+    msgbox(format("Nothing's biting today. You need a fishing rod to catch Pokémon in the water.\pThe big ones stay out in the Saint John."), MSGBOX_NPC)
     end
 }
 

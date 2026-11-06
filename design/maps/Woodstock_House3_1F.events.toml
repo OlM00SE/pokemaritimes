@@ -1,0 +1,15 @@
+# Woodstock, the two-storey house on King Street (milestone 15; provisional text).
+#   dev/events.py build design/maps/Woodstock_House3_1F.events.toml [--apply]
+map = "Woodstock_House3_1F"
+
+# By the kitchen window.
+[[person]]
+name = "Farmer"
+at = [7, 4]
+gfx = "MAN_2"
+facing = "down"
+text = """
+I grew up on a farm up the river past Hartland. Potato fields as far as you can see!
+
+Carleton County grows some of the best potatoes in the country, you know.
+"""

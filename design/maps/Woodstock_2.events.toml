@@ -1,43 +1,61 @@
-# Woodstock, the river town: its signs, townspeople and an item (provisional text).
+# Woodstock, the confluence town: its signs, townspeople and an item (provisional text).
 #   dev/events.py build design/maps/Woodstock_2.events.toml [--apply]
-# Woodstock is Tom's hand-painted map. The town sign's post is the only terrain this spec needed:
-# dev/mapgen.py patch Woodstock_2 s@9,16 (one cell). The garden and station posts are Tom's own.
-# Keep the walk from Route 201 down to Route 202 clear: the build prints the route numbers.
+# The terrain is design/maps/woodstock_design.py (milestone 15); every sign post is drawn there.
+# Keep the walk from Route 201 down to Route 202 and up over the bridge clear: the build prints
+# the route numbers.
 map = "Woodstock_2"
 
-# At the east end of the entrance road from Route 201, beside the stairs down into town.
+# Beside Main Street at the highway junction, seen from both roads.
 [[sign]]
 name = "TownSign"
-at = [9, 16]
+at = [24, 34]
 text = """
 WOODSTOCK
-The river town in the woods.
+The town where two rivers meet.
 """
 
-# Tom's post beside the station door.
+# Beside the station's front path.
 [[sign]]
 name = "StationSign"
-at = [19, 13]
+at = [30, 13]
 text = """
 WOODSTOCK WILDLIFE STATION
 Pokémon field research
 """
 
-# Tom's post in the garden by the first house, read from the garden path.
+# In the community garden by the first house on King Street.
 [[sign]]
 name = "GardenSign"
-at = [5, 11]
+at = [5, 12]
 text = """
 COMMUNITY GARDEN
 Please share the harvest!
 """
 
-# On the garden path, beside her plots. One Oran Berry, once.
+# At the bridge's south end, by the water.
+[[sign]]
+name = "CreekSign"
+at = [27, 31]
+text = """
+MEDUXNEKEAG RIVER
+It joins the Saint John right here.
+"""
+
+# Where Main Street ends at the north edge of town.
+[[sign]]
+name = "NorthSign"
+at = [24, 5]
+text = """
+NORTH: HARTLAND
+The trail is closed past here.
+"""
+
+# Tending the flower beds beside the garden house. One Oran Berry, once.
 [[person]]
 name = "Gardener"
-at = [6, 12]
+at = [12, 12]
 gfx = "WOMAN_2"
-facing = "left"
+facing = "up"
 gift = "ITEM_ORAN_BERRY"
 text = """
 The berry bushes came in so well this year, there's plenty to go around.
@@ -48,47 +66,47 @@ after = """
 A Pokémon holding an Oran Berry will eat it when it gets weak in battle.
 """
 
-# Out front of the station, in a field vest.
+# Out front of the station, by the door.
 [[person]]
 name = "StationWorker"
-at = [21, 14]
+at = [34, 12]
 gfx = "SCIENTIST_1"
-facing = "down"
+facing = "left"
 text = """
 We count the Pokémon living along the river and in the woods around town.
 
 Our field researchers go as far as the forestry village up Route 201.
 """
 
-# Playing on the town green.
+# Playing on the riverside green.
 [[person]]
 name = "Kid"
-at = [15, 19]
+at = [33, 17]
 gfx = "LITTLE_GIRL"
 facing = "wander"
-range = [2, 2]
+range = [1, 1]
 text = """
 I'm going to be a Pokémon researcher when I grow up!
 
 I already know every Pokémon in the garden.
 """
 
-# On the pond's north shore, looking over the water.
+# On the creek's south bank by the bridge, looking over the water.
 [[person]]
 name = "Angler"
-at = [6, 26]
+at = [29, 30]
 gfx = "FISHERMAN"
-facing = "down"
+facing = "up"
 text = """
 Nothing's biting today. You need a fishing rod to catch Pokémon in the water.
 
-The big ones stay out in the river.
+The big ones stay out in the Saint John.
 """
 
-# By the road south.
+# Beside the highway where it heads south.
 [[person]]
 name = "Walker"
-at = [16, 31]
+at = [24, 38]
 gfx = "MAN_3"
 facing = "right"
 text = """
@@ -97,8 +115,8 @@ This road heads south along the river to the city.
 It's a long walk, but it's pretty this time of year.
 """
 
-# The grassy nook between the station and the river.
+# The grassy nook by the river at the north edge of town, behind the station.
 [[item]]
 name = "RiverNookBall"
-at = [23, 6]
+at = [41, 1]
 item = "ITEM_POKE_BALL"

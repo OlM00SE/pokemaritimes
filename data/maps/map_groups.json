@@ -1192,7 +1192,12 @@
     "TownLab_OldaleHouse",
     "TownLab_TwoStoreyLeft_1F",
     "TownLab_TwoStoreyLeft_2F",
-    "TownLab_LeanTo"
+    "TownLab_LeanTo",
+    "Woodstock_PokemonCenter_1F",
+    "Woodstock_PokemonCenter_2F",
+    "Woodstock_Mart",
+    "Woodstock_House3_1F",
+    "Woodstock_House3_2F"
   ],
   "gMapGroup_DevMaritimes": [
     "LedgeLab",
