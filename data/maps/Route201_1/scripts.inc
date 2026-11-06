@@ -24,7 +24,7 @@ Route201_1_EventScript_BugCatcherRoss::
 
 Route201_1_EventScript_RouteSign_Text_0:
 # 8 "data/maps/Route201_1/scripts.pory"
-	.string "ROUTE 201\n{DOWN_ARROW} WOODSTOCK$"
+	.string "ROUTE 201\n{RIGHT_ARROW} WOODSTOCK$"
 
 Route201_1_EventScript_Forester_Text_0:
 # 13 "data/maps/Route201_1/scripts.pory"
@@ -46,6 +46,6 @@ Route201_1_EventScript_BugCatcherRoss_Text_1:
 
 Route201_1_EventScript_BugCatcherRoss_Text_2:
 # 19 "data/maps/Route201_1/scripts.pory"
-	.string "Bug Pokémon love this meadow under the\n"
-	.string "old road.\p"
+	.string "Bug Pokémon love the meadow up on the\n"
+	.string "slope.\p"
 	.string "I come here every day after school.$"

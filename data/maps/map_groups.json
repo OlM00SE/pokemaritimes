@@ -1197,7 +1197,9 @@
     "Woodstock_PokemonCenter_2F",
     "Woodstock_Mart",
     "Woodstock_House3_1F",
-    "Woodstock_House3_2F"
+    "Woodstock_House3_2F",
+    "HomeTown_Sawmill",
+    "Route201_Farmhouse"
   ],
   "gMapGroup_DevMaritimes": [
     "LedgeLab",

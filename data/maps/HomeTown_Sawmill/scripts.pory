@@ -1,0 +1,14 @@
+// HomeTown_Sawmill: map scripts in Poryscript. Started by dev/events.py when the map had no scripts;
+// fastbuild generates scripts.inc from this file (never edit the .inc).
+
+mapscripts HomeTown_Sawmill_MapScripts {}
+
+// ---- dev/events.py: generated from design/maps/HomeTown_Sawmill.events.toml. Edit the spec, not this block. ----
+// owns: LOCALID_HOME_TOWN_SAWMILL_SAWYER
+
+script HomeTown_Sawmill_EventScript_Sawyer {
+    msgbox(format("The brook turned a wheel here once. Now the saw runs on its own engine.\pWe cut the spruce from up in the hills. The old-timers floated the logs down the river; now it all goes out by truck to Woodstock."), MSGBOX_NPC)
+    end
+}
+
+// ---- end of dev/events.py block ----

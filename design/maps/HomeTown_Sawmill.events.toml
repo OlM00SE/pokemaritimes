@@ -1,0 +1,16 @@
+# HomeTown's sawmill (the building on the bench above the mill pond): its office (provisional text).
+#   dev/events.py build design/maps/HomeTown_Sawmill.events.toml [--apply]
+# The room is a copy of Petalburg's house with a bed (the night watchman's cot) until the mill gets
+# its own interior (Porytiles: log piles, a saw). The mill hand is outside in the yard.
+map = "HomeTown_Sawmill"
+
+[[person]]
+name = "Sawyer"
+at = [2, 5]
+gfx = "MAN_2"
+facing = "right"
+text = """
+The brook turned a wheel here once. Now the saw runs on its own engine.
+
+We cut the spruce from up in the hills. The old-timers floated the logs down the river; now it all goes out by truck to Woodstock.
+"""
