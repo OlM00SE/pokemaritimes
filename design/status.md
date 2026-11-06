@@ -5,8 +5,8 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Next session:** M16 is on branch `milestone16-start-valley` (state below: GATE/REVIEW/MERGE
-PENDING until this line says otherwise). Read `region_blueprint.md`, then "Next milestone" below.
+**Next session: Milestone 17, Route 202** (proposed below, not started; wait for Tom's go). M16
+is merged into `develop` as `8f3f5872b6` and on the phone; **not pushed** (needs Tom's okay). Read `region_blueprint.md`, then "Next milestone" below.
 Before any map work: `dev/corridor.py check` (0 errors, 0 warnings). The merge gate is
 `dev/regression.py` (must end `0 failed`; quote its evidence lines). A redesign of a map saves
 may stand on needs a world revision (below).
@@ -106,6 +106,17 @@ How it was verified (the gate: `milestone16-start-valley @ b8ed441ab5`, clean tr
 | Routes | crossings 53, 53, 30, 30 steps, 0 forced tall grass (observed): Route 201 plays the same length as before, 83 reachable tall grass |
 | In-game | conformance 547/547; playthrough (both gates call the player back; starter; Route 201 to Woodstock and back; heal); doors 20 round trips (HomeTown 3 with the sawmill, Route 201's farmhouse); buildings 22/22; respawn 3 real losses; world revision 35/35 in the gate, 99/99 with `--old-rom` for the M15 phone build and the one before; bridges 134/134 (HomeTown's and Route 201's decks found from their sketches); events 134/134 on 10 maps (HomeTown 23, Route 201 21, the sawmill 4, the farmhouse 4); ledges 509/509 on 8 maps (Route 201's tour 3/3 groups); flora 447/447; encounters 12 battles; four autowalks; save 45/45; shores 624/624 |
 | Negative controls | the M16 rows removed: an M15 HomeTown save continues inside the walls of the new house at (9,10), the wandering boy out of range; the gate test's per-trigger checks (any one trigger dropped opens a way out) |
+
+**Merged** into `develop` as `8f3f5872b6` (not pushed: waiting for Tom's okay). **Phone build
+published:** `2026-11-06_8f3f5872b6`, ROM sha256 `2fd03fa974c112a5…`, save line 2; `dev/mobile.py
+--full` 10/10 in mGBA (new game, save, CONTINUE, the play ZIP, the slice playthrough, byte-identical
+ROM); Google Drive confirmed `PokeMaritimes_save2.zip` and
+`builds/PokeMaritimes_2026-11-06_8f3f5872b6_save2.zip`. **SAVES CARRY OVER** (same play file name).
+
+**The previous playable build stays recoverable** (M15, `2026-11-06_3a43be36ca`, ROM `c6300120…`):
+on Drive in `PokeMaritimes playtest/builds/`; in git at `3a43be36ca`; locally with its `.map` in
+`dev/out/m16/oldrom/` (what `ingame_world_revision.py --old-rom` needs; the build before it is in
+`dev/out/m15/oldrom/`).
 
 Known limits:
 - **Visual:** the creek's banks step in straight runs (the shore kit has no diagonal bank piece);
