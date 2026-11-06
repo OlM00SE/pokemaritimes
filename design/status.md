@@ -5,8 +5,12 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 17 is merged into `develop`, not pushed** (pushing waits for Tom's okay). The phone
-build is published (below). Next milestone: proposed below, not started. Read `region_blueprint.md`,
+**Milestone 17 is merged into `develop` as `7ca4c45454`, not pushed** (pushing waits for Tom's
+okay). **Phone build published:** `2026-11-06_7ca4c45454`, ROM sha256 `104363e02ba13d1e…` (the ROM
+the gate tested), save line 2; `dev/mobile.py` 9/9 in mGBA (new game, save, CONTINUE, the play ZIP,
+byte-identical ROM); Google Drive confirmed `PokeMaritimes_save2.zip` and
+`builds/PokeMaritimes_2026-11-06_7ca4c45454_save2.zip`. **SAVES CARRY OVER.** A local copy with its
+`.map`, for M18's `--old-rom`: `dev/out/m18/oldrom/`. Next milestone: proposed below, not started. Read `region_blueprint.md`,
 then "Next milestone". Before any map work: `dev/corridor.py check` (0 errors, 0 warnings; it lists
 Route 202's interim Fredericton join as a plan change). The merge gate is `dev/regression.py` (must
 end `0 failed`; quote its evidence lines). A redesign of a map saves may stand on needs a world
