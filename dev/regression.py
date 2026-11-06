@@ -59,6 +59,7 @@ def manifest():
         Step("flora_pieces", ("dev/tests/flora_pieces.py",)),
         Step("stamp_pieces", ("dev/tests/stamp_pieces.py",)),
         Step("bridge_pieces", ("dev/tests/bridge_pieces.py",), check="result_ratio", timeout=360),
+        Step("cliff_pieces", ("dev/tests/cliff_pieces.py",), check="cliff_pieces", timeout=360),
         Step("resize_map", ("dev/tests/resize_map.py",), check="result_ratio"),
         Step("corridor_join", ("dev/tests/corridor_join.py",), check="result_ratio"),
         Step("corridor_plan", ("dev/tests/corridor_plan.py",)),
@@ -66,10 +67,11 @@ def manifest():
         Step("hometown_gate", ("dev/tests/hometown_gate.py",)),
         Step("reconstruction", ("dev/tests/reconstruction.py",), kind="observed", timeout=360),
         Step("roundtrip", ("dev/tests/roundtrip.py",)),
-        Step("route_metrics", ("dev/route_stats.py", "Route201_1", "Woodstock_2"), kind="observed"),
+        Step("route_metrics", ("dev/route_stats.py", "Route201_1", "Woodstock_2", "Route202_1"),
+             kind="observed"),
     ]
     for name in ("HomeTown_0", "HomeTown_House2_1F", "HomeTown_Sawmill", "Route201_1",
-                 "Route201_Farmhouse", "Woodstock_2",
+                 "Route201_Farmhouse", "Woodstock_2", "Route202_1",
                  "Woodstock_House1", "Woodstock_House2", "Woodstock_House3_1F", "Woodstock_Lab"):
         steps.append(Step("events_spec_" + name.lower(),
                           ("dev/events.py", "build", f"design/maps/{name}.events.toml"),
@@ -89,6 +91,9 @@ def manifest():
              check="encounters", timeout=180),
         Step("encounters_no_party", ("dev/tests/ingame_encounters.py", "Route201_1", "--no-party"),
              timeout=180),
+        Step("encounters_route202", ("dev/tests/ingame_encounters.py", "Route202_1"),
+             check="encounters", timeout=180),
+        Step("cliffs", ("dev/tests/ingame_cliffs.py",), check="cliffs", timeout=600),
     ]
     base = ("LittlerootTown_MyHouse_1F_0", "HomeTown_0", "Route201_1", "Woodstock_2")
     for id, route in (
@@ -145,10 +150,22 @@ def coverage_error(step, output):
     elif step.check == "encounters":
         if not re.search(r"^battle 1: wild ", output, re.M):
             return "no actual wild battle reported"
-    elif step.check in ("shores", "flora"):
-        m = re.search(r"TOTAL: (\d+)/(\d+) (?:shore|flora and forest-edge) cases", output)
+    elif step.check in ("shores", "flora", "cliffs"):
+        m = re.search(r"TOTAL: (\d+)/(\d+) (?:shore|flora and forest-edge|cliff) cases", output)
         if not m or int(m[2]) < 1 or int(m[1]) != int(m[2]):
             return "no positive, fully passing in-game case count reported"
+        if step.check == "cliffs" and re.search(r"^\S+: (?:bump|climb) +0/0 ", output, re.M):
+            return "a map had no walls or no stairs to test"
+    elif step.check == "cliff_pieces":
+        shapes = re.search(r"^shapes: (\d+)/(\d+) behave as expected", output, re.M)
+        pairs = re.search(r"^vanilla agreement: (\d+)/(\d+) piece adjacencies", output, re.M)
+        rt = re.findall(r"(\d+) cliff cells, (\d+) changed, (\d+) drawn elsewhere", output)
+        if not shapes or shapes[1] != shapes[2] or int(shapes[2]) < 10:
+            return "the cliff shapes didn't all behave as expected"
+        if not pairs or pairs[1] != pairs[2] or int(pairs[2]) < 20:
+            return "the resolver's piece adjacencies weren't all vanilla's"
+        if not rt or any(int(n) < 1 or int(c) or int(s) for n, c, s in rt):
+            return "no map's cliffs came back exactly through extract -> compile"
     return None
 
 
@@ -179,8 +196,16 @@ def evidence(step, output):
         steps = re.findall(r"^  \S+ -> \S+: (\d+) steps, (\d+) in tall grass", output, re.M)
         return ("crossings " + ", ".join(f"{s}" for s, _ in steps)
                 + f" steps; {sum(int(g) for _, g in steps)} forced tall grass") if steps else ""
-    if step.id == "encounters":
+    if step.id in ("encounters", "encounters_route202"):
         return f"{len(re.findall(r'^battle \d+: wild ', output, re.M))} wild battles"
+    if step.id == "cliffs":
+        ok, n, maps = _sum_fractions(r"^\S+: \w+ +(\d+)/(\d+) as the model says", output)
+        return f"{ok}/{n} cliff cases (bump, climb, cut) on {maps // 3} maps" if maps else ""
+    if step.id == "cliff_pieces":
+        bits = [m[0] for m in (re.search(r"^shapes: .*", output, re.M),
+                               re.search(r"^vanilla agreement: [^;\n]*", output, re.M),
+                               re.search(r"^roundtrip: .*", output, re.M)) if m]
+        return "; ".join(bits)[:200]
     unit = re.search(r"^Ran (\d+) tests? in .*\n\s*\n(OK.*|FAILED.*)$", output, re.M)
     if unit:      # unittest's summary (stderr, so it can land before the tests' own stdout)
         return f"{unit[1]} tests {unit[2]}"

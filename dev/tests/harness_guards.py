@@ -25,6 +25,7 @@ import regression
 import conformance
 import ingame_bridges
 import ingame_buildings
+import ingame_cliffs
 import ingame_doors
 import ingame_encounters
 import ingame_events
@@ -155,6 +156,31 @@ class HarnessGuards(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("NOT TESTED", output)
             self.assertNotIn("TOTAL: -", output)      # coverage failures don't skew the ratio
+
+    def test_cliffs_without_walls_or_stairs_fail(self):
+        for cases in ({"bump": [], "climb": [], "cut": []},
+                      {"bump": [(1, 2, ["N"], (1, 2))], "climb": [], "cut": []}):
+            with self.subTest(cases=cases), \
+                 mock.patch.object(ingame_cliffs, "Project"), \
+                 mock.patch.object(ingame_cliffs, "Emu", FakeEmu), \
+                 mock.patch.object(ingame_cliffs, "prepare_rom", return_value="unused"), \
+                 mock.patch.object(ingame_cliffs, "cases_for", return_value=cases):
+                code, output = quietly(ingame_cliffs.main, ["Empty"])
+            self.assertEqual(code, 1)
+            self.assertIn("NOT TESTED", output)
+        steps = {s.id: s for s in regression.manifest()}
+        self.assertEqual(regression.evaluate(steps["cliffs"], 0,
+            "TOTAL: 0/0 cliff cases behave as the model says")[0], "FAILED")
+        self.assertEqual(regression.evaluate(steps["cliffs"], 0,
+            "Lab: bump  4/4 as the model says\nLab: climb 0/0 as the model says\n"
+            "TOTAL: 4/4 cliff cases behave as the model says")[0], "FAILED")
+        good = ("shapes: 18/18 behave as expected\nvanilla agreement: 98/98 piece adjacencies vanilla uses\n"
+                "roundtrip: CliffLab 152 cliff cells, 0 changed, 0 drawn elsewhere (1 other blocks differ)\nPASS\n")
+        self.assertEqual(regression.evaluate(steps["cliff_pieces"], 0, good)[0], "PASSED")
+        for bad in (good.replace("0 changed", "3 changed"), good.replace("98/98", "97/98"),
+                    good.replace("roundtrip: CliffLab 152 cliff cells, 0 changed, 0 drawn elsewhere (1 other blocks differ)",
+                                 "roundtrip: NO MAP WITH CLIFFS")):
+            self.assertEqual(regression.evaluate(steps["cliff_pieces"], 0, bad)[0], "FAILED")
 
     def test_bridges_without_decks_fail(self):
         with mock.patch.object(ingame_bridges, "Project"), \

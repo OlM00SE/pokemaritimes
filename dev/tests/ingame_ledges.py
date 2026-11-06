@@ -27,7 +27,8 @@ from mapkit.engine import World, DIRS, DIR_NAME, OPPOSITE
 from mapkit import ledges, events
 from mapkit.checks import spawn_point
 
-DEFAULT_MAPS = ["LedgeLab", "Route203_1", "Route201_1", "HomeTown_0", "Route102", "Route103", "Route116", "Route123"]
+DEFAULT_MAPS = ["LedgeLab", "Route203_1", "Route201_1", "HomeTown_0", "CliffLab", "Route202_1", "Route102", "Route103",
+                "Route116", "Route123"]
 
 
 def elevations(e):
