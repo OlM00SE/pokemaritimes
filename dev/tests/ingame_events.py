@@ -153,24 +153,33 @@ class Run:
                                                f"(stood on {len(seen)} tiles: {sorted(seen)[:6]}"
                                                f"{'...' if len(seen) > 6 else ''})")
         self.check(len(seen) > 1, f"{tag}: it does wander")
-        for attempt in range(8):                  # it may step away between the warp and the A press
-            pos = next(((x, y) for l, x, y in self.e.objects() if l == lid), None)
-            spot = pos and next(((pos[0] - dx, pos[1] - dy, d) for d, (dx, dy) in DIRS.items()
-                                 if (pos[0] - dx, pos[1] - dy) in self.reach
-                                 and (pos[0] - dx, pos[1] - dy) not in self.sight), None)
-            if not spot:
-                self.e.wait(60)
-                continue
-            x, y, d = spot
+        # A warp reloads the map, which puts every object back on its home tile; the wanderer
+        # starts walking again after a short random delay. So talk to it at home, from a tile
+        # beside it, right after the warp; retry when it has already stepped away.
+        where = lambda: next(((x, y) for l, x, y in self.e.objects() if l == lid), None)
+        home = (o["x"], o["y"])
+        spots = [(home[0] - dx, home[1] - dy, d) for d, (dx, dy) in DIRS.items()
+                 if (home[0] - dx, home[1] - dy) in self.reach and (home[0] - dx, home[1] - dy) not in self.sight]
+        if not self.check(bool(spots), f"{tag}: a tile beside its home {home} to talk from"):
+            return
+        attempts = 20
+        for attempt in range(attempts):
+            x, y, d = spots[attempt % len(spots)]
             self.e.warp(self.name, x, y)
-            self.e.press(DIR_NAME[d], 2, 4)
-            now = next(((ox, oy) for l, ox, oy in self.e.objects() if l == lid), None)
-            if now != pos or self.e.facing() != d:
+            if where() != home:
                 continue
+            self.e.press(DIR_NAME[d], 2, 2)
+            try:
+                # A pressed mid-turn is ignored: wait until the turn has finished
+                self.e.wait_for_control(timeout_frames=60, settle=2)
+            except RuntimeError:
+                pass
+            if where() != home or self.e.facing() != d:
+                continue                          # it stepped away while the player turned
             if self.press_a(tag):
                 self.check(True, f"{tag}: talked to from ({x},{y}) facing {d} (attempt {attempt + 1})")
                 return
-        self.check(False, f"{tag}: could not be talked to in 8 attempts")
+        self.check(False, f"{tag}: could not be talked to in {attempts} attempts")
 
     def hidden(self, i, b, tag):
         if self.talk("bg_events", i, b, tag):
