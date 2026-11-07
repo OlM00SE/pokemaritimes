@@ -60,6 +60,7 @@ def manifest():
         Step("stamp_pieces", ("dev/tests/stamp_pieces.py",)),
         Step("bridge_pieces", ("dev/tests/bridge_pieces.py",), check="result_ratio", timeout=360),
         Step("cliff_pieces", ("dev/tests/cliff_pieces.py",), check="cliff_pieces", timeout=360),
+        Step("terrain_rules", ("dev/tests/terrain_rules.py",), check="result_ratio", timeout=600),
         Step("resize_map", ("dev/tests/resize_map.py",), check="result_ratio"),
         Step("corridor_join", ("dev/tests/corridor_join.py",), check="result_ratio"),
         Step("corridor_plan", ("dev/tests/corridor_plan.py",)),
