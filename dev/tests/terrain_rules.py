@@ -196,6 +196,21 @@ def scenes(p, kit, bands, verbose):
     check(sk.get(10, 9) == "b" and sk.get(10, 8) == "." and sk.get(22, 8) == "." and not rep["pairs"],
           f"uncrowd_saplings(hold=): the held sapling's trunk is a boulder, the other is grass, "
           f"no odd pairs ({len(rep['pairs'])})")
+    sk = scene_saplings(False)
+    try:
+        ls.uncrowd_saplings(sk, hold={(5, 5)})
+        stray = False
+    except ValueError:
+        stray = True
+    check(stray and sk.get(10, 8) == "y", "uncrowd_saplings refuses a hold that names no crowded sapling "
+                                          "(and changes nothing)")
+    sk = blank_sketch()
+    for x in (5, 6, 12, 13):
+        sk.set(x, 5, "*")
+    cleared = ls.loosen_flowers(sk, area={(5, 5), (12, 5), (13, 5)})
+    check(sk.get(5, 5) == "*" and sk.get(6, 5) == "*" and len(cleared) == 1,
+          f"loosen_flowers(area=) thins only inside the area (a bed crossing its edge keeps its outside "
+          f"part; cleared {cleared})")
     cols = 2
     tw = max(t.width for t in tiles)
     th = max(t.height for t in tiles)
@@ -264,12 +279,15 @@ def accepting():
     sk.accept("hedge", "a windbreak")          # a second accept replaces the first
     acc = C.accepted(sk.comments)
     check(ok and acc == {"hedge": "a windbreak"}, f"accept: refuses unknown rules and empty reasons; {acc}")
-    try:
-        C.report(Project(), None, None, "MAP_TYPE_ROUTE", ["// accept: hedgerow: typo"])
-        bad = False
-    except ValueError:
-        bad = True
-    check(bad, "report: an `// accept:` line naming no rule is an error")
+    bad = 0
+    for line in ("// accept: hedgerow: typo", "// accept: pairs: odd pairs are judged in JUDGED"):
+        try:
+            C.report(Project(), None, None, "MAP_TYPE_ROUTE", [line])
+        except ValueError:
+            bad += 1
+    check(bad == 2, "report: an `// accept:` line naming no guide is an error (pairs included)")
+    check(C.map_kind("MAP_TYPE_OCEAN_ROUTE") not in C.load_bands()["bands"],
+          "sea routes have no band (their guides read n/a, not judged against woodland routes)")
 
 
 def main():

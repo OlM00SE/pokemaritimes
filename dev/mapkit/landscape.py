@@ -366,12 +366,24 @@ def uncrowd_saplings(sk, keep_clear=frozenset(), hold=frozenset()):
     nothing else moves. A sapling may have closed a gap in the woods (its trunk is solid; the crown
     top is walk-behind): read the route numbers and mapgen's reach line after the build, and name
     such a sapling's cells in `hold`: its trunk becomes a boulder (as solid, and a boulder against a
-    tree is a pairing vanilla draws often), the rest grass. Returns the cells changed."""
+    tree is a pairing vanilla draws often), the rest grass. Only a two-tall sapling can be held (a
+    taller run has more than one solid cell, or is two saplings end to end), and every held cell
+    must belong to a crowded sapling: otherwise ValueError, so a hold that stops matching after a
+    redesign can't silently reopen the gap it was closing. Returns the cells changed."""
+    crowded = [run for run in crowded_saplings(sk) if not any(c in keep_clear for c in run)]
+    held = {c for run in crowded for c in run}
+    stray = sorted(set(hold) - held)
+    if stray:
+        raise ValueError(f"uncrowd_saplings: hold {stray} names no sapling standing against a tree "
+                         "(the design moved? re-check the gap it was closing)")
     out = []
-    for run in crowded_saplings(sk):
-        if any(c in keep_clear for c in run):
-            continue
-        boulder = run[-1] if any(c in hold for c in run) else None
+    for run in crowded:
+        boulder = None
+        if any(c in hold for c in run):
+            if len(run) != 2:
+                raise ValueError(f"uncrowd_saplings: can't hold the {len(run)}-tall run at {run[0]}: "
+                                 "only a two-tall sapling has one solid cell (its trunk)")
+            boulder = run[-1]
         for x, y in run:
             sk.rows[y][x] = "b" if (x, y) == boulder else "."
             out.append((x, y))
@@ -508,7 +520,8 @@ def loosen_flowers(sk, area=None):
     flowers, as vanilla's are: composition rule flower_singles). Each bed keeps the cells of one
     checkerboard colour (the colour holding more of it; the bed's first cell's on a tie), so a pair
     keeps one flower, a row of three keeps both ends. Only flower cells change (to grass): call it
-    last in a design script and nothing else moves. Returns the cells cleared."""
+    last in a design script and nothing else moves. area: only flowers inside it are thinned (a bed
+    crossing its edge is judged by its part inside). Returns the cells cleared."""
     beds, seen = [], set()
     for y in range(sk.h):
         for x in range(sk.w):
@@ -520,7 +533,8 @@ def loosen_flowers(sk, area=None):
                 cx, cy = stack.pop()
                 bed.append((cx, cy))
                 for c in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
-                    if c not in seen and 0 <= c[0] < sk.w and 0 <= c[1] < sk.h and sk.rows[c[1]][c[0]] == "*":
+                    if c not in seen and 0 <= c[0] < sk.w and 0 <= c[1] < sk.h and sk.rows[c[1]][c[0]] == "*" \
+                            and (area is None or c in area):      # a bed is thinned only inside the area
                         seen.add(c)
                         stack.append(c)
             beds.append(sorted(bed, key=lambda c: (c[1], c[0])))

@@ -9,7 +9,6 @@ from .events import check_events
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
 from .seams import seam_issues
 
-OUTDOOR_TYPES = ("MAP_TYPE_ROUTE", "MAP_TYPE_TOWN", "MAP_TYPE_CITY", "MAP_TYPE_OCEAN_ROUTE")
 EXPLORE_LIMIT = 200000     # states; a graph cut off at the limit is incomplete, so traps aren't judged
 
 
@@ -238,8 +237,8 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
     # what a player sees across each seam: the strip's tileset, people who'd pop in, cut pieces
     issues.extend(seam_issues(p, m, corpus))
     # inside the map: two tiles side by side that vanilla never draws (mapkit/composition.py, strict)
-    if corpus is not None and m.j.get("map_type") in OUTDOOR_TYPES:
-        from .composition import odd_pairs, describe_pairs
+    from .composition import odd_pairs, describe_pairs, OUTDOOR
+    if corpus is not None and m.j.get("map_type") in OUTDOOR:
         odd = odd_pairs(corpus, L)
         if odd:
             W("visual_pairs", f"{len(odd)} pairs of tiles side by side that vanilla never draws: "

@@ -135,15 +135,23 @@ def main():
     bands = C.load_bands()
     outdir = p.path("dev", "out", "terrain")
     os.makedirs(outdir, exist_ok=True)
+    failed = []
     for name in names:
         m = p.load_map(name)
-        rep = C.report(p, corpus, m.layout, m.j.get("map_type"), C.sketch_comments(p, name), bands)
+        try:
+            rep = C.report(p, corpus, m.layout, m.j.get("map_type"), C.sketch_comments(p, name), bands)
+        except ValueError as ex:          # an `// accept:` line naming no rule: report the rest
+            print(f"== {name}: ERROR {ex}")
+            failed.append(name)
+            continue
         print_report(name, rep)
         if not a.no_png:
             out = os.path.join(outdir, f"{name}.png")
             render(p, name, rep, out)
             print(f"  -> {os.path.relpath(out, p.root)}")
-    return 0
+    if failed:
+        print(f"{len(failed)} map(s) not reported: {', '.join(failed)}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

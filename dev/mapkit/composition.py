@@ -89,22 +89,24 @@ JUDGED_KINDS = {
     **{("P", d, cap): "a path's edge beside the grass over a tree's crown"
        for d in "WE" for cap in (0x1CE, 0x1CF)},
 }
-_BUILDINGS = []
+_BUILDINGS = {}
 
 
-def building_ids():
-    """General's building pieces: every primary metatile of a stamp in the catalog (stamps.toml)."""
-    if not _BUILDINGS:
-        from .project import Project
-        from . import stamps
-        _BUILDINGS.append({b & 0x3FF for s in stamps.catalog(Project()).values() for b in s.cells.values()
-                           if b & 0x3FF < NUM_METATILES_IN_PRIMARY})
-    return _BUILDINGS[0]
+def building_ids(project=None):
+    """General's building pieces: every primary metatile of a stamp in the project's catalog
+    (stamps.toml), read once per project root (the default project's when none is given)."""
+    from .project import Project
+    from . import stamps
+    project = project or Project()
+    if project.root not in _BUILDINGS:
+        _BUILDINGS[project.root] = frozenset(b & 0x3FF for s in stamps.catalog(project).values()
+                                             for b in s.cells.values() if b & 0x3FF < NUM_METATILES_IN_PRIMARY)
+    return _BUILDINGS[project.root]
 
 
-def kind(mid):
+def kind(mid, project=None):
     """The piece's kind for JUDGED_KINDS: a tree quarter (TL TR BL BR), LD a ledge, P a light path
-    tile, BLD a building piece, else None."""
+    tile, BLD a building piece of the project's stamps, else None."""
     for q, ids in TREE.items():
         if mid in ids:
             return q
@@ -112,12 +114,12 @@ def kind(mid):
         return "LD"
     if mid in PATH:
         return "P"
-    if mid in building_ids():
+    if mid in building_ids(project):
         return "BLD"
     return None
 
 
-def family(mid):
+def family(mid, project=None):
     """A designer's name for a General metatile, for messages."""
     if mid in TREE_IDS:
         return "tree"
@@ -135,7 +137,7 @@ def family(mid):
         return "grass"
     if mid == 0x002:
         return "bank grass"          # the grass below water; also the terrace line's middle
-    if mid in building_ids():
+    if mid in building_ids(project):
         return "building"
     if mid in cliffs.LINE_PIECES:
         return "terrace line"
@@ -156,10 +158,11 @@ def family(mid):
     return f"{mid:03X}"
 
 
-def is_judged(a, d, b):
+def is_judged(a, d, b, project=None):
     """(reason or None) for the pairing: piece a with neighbour b in direction d."""
     for p, dd, q in ((a, d, b), (b, OPPOSITE[d], a)):
-        for key in ((p, dd, q), (p, dd, kind(q)), (kind(p), dd, q), (kind(p), dd, kind(q))):
+        kp, kq = kind(p, project), kind(q, project)
+        for key in ((p, dd, q), (p, dd, kq), (kp, dd, q), (kp, dd, kq)):
             why = JUDGED.get(key) or JUDGED_KINDS.get(key)
             if why:
                 return why
@@ -193,7 +196,7 @@ def odd_pairs(corpus, layout, judged=True):
                     continue
                 if corpus.neigh.get(key_of(L.entry, a), {}).get(d, {}).get(key_of(L.entry, b), 0):
                     continue
-                if judged and is_judged(a, d, b):
+                if judged and is_judged(a, d, b, L.project):
                     continue
                 out.append((x, y, d, a, b))
     return out
@@ -480,7 +483,11 @@ def measure(project, layout, map_type="MAP_TYPE_ROUTE"):
 
 # ---------------------------------------------------------------------------- calibration ----
 def map_kind(map_type):
-    return "town" if map_type in TOWN_TYPES else "route"
+    """town, ocean or route. Sea routes have no calibration band yet (vanilla's are open water: the
+    land routes' woods and meadows say nothing about them), so their guides read n/a."""
+    if map_type in TOWN_TYPES:
+        return "town"
+    return "ocean" if map_type == "MAP_TYPE_OCEAN_ROUTE" else "route"
 
 
 def calibration_maps(project, corpus):
@@ -493,7 +500,8 @@ def calibration_maps(project, corpus):
         m = project.load_map(name)
         t = m.j.get("map_type")
         L = m.layout
-        if t not in OUTDOOR or L.primary != PRIMARY or L.entry["id"] not in vanilla:
+        if t not in OUTDOOR or L.primary != PRIMARY or L.entry["id"] not in vanilla \
+                or map_kind(t) not in out:              # (sea routes: no band yet)
             continue
         f = Features(project, L, t)
         n = f.w * f.h
@@ -574,7 +582,7 @@ def report(project, corpus, layout, map_type, comments=(), bands=None):
     bands = bands or load_bands()
     band = bands["bands"].get(map_kind(map_type), {})
     acc = accepted(comments)
-    unknown = set(acc) - set(RULES) - {"pairs"}
+    unknown = set(acc) - set(RULES)        # (odd pairs are judged in JUDGED, not accepted per map)
     if unknown:
         raise ValueError(f"// accept: unknown rule(s) {sorted(unknown)}; rules are {sorted(RULES)}")
     guides = []
