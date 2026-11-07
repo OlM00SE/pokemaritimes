@@ -198,7 +198,11 @@ def border_labels(p, vocab, m, depth=2, layout=None):
     labelled in this map's tilesets. compile_sketch's `border`: edge cells are tiled for it (caps
     and shadows beside the border's trees), and trees cut by such an edge line up with the
     border's where the sketch's forest allows. layout: the version of this map whose edge water is
-    carried on (the saved map by default)."""
+    carried on (the saved map by default: a design that moves water at such an edge sees the old
+    water's run until it's rebuilt once more, as with the neighbours' seams: rebuild until a rebuild
+    changes nothing). Outdoor maps only: indoors the border is a void nothing is shaped around."""
+    if m.j.get("map_type") not in OUTDOOR:
+        return {}
     L = layout or m.layout
     return {xy: vocab.label(L.entry, block & 0x3FF)
             for xy, block in border_cells(p, m, depth, layout).items()}
@@ -209,17 +213,19 @@ def border_pairs(corpus, p, m, layout=None):
     lies (border trees, edge water) in a pairing vanilla never draws: [((x, y), mine, beyond,
     direction)]. The border-side counterpart of unvanilla_pairs."""
     L = layout or m.layout
+    w, h = L.width, L.height
     beyond = border_cells(p, m, 1, layout)
+    edges = (("N", (0, -1), [(x, 0) for x in range(w)]), ("S", (0, 1), [(x, h - 1) for x in range(w)]),
+             ("W", (-1, 0), [(0, y) for y in range(h)]), ("E", (1, 0), [(w - 1, y) for y in range(h)]))
     out = []
-    for d, (dx, dy) in (("N", (0, -1)), ("S", (0, 1)), ("W", (-1, 0)), ("E", (1, 0))):
-        for y in range(L.height):
-            for x in range(L.width):
-                o = (x + dx, y + dy)
-                if o not in beyond:
-                    continue
-                a, b = L.mid(x, y), beyond[o] & 0x3FF
-                if not corpus.neigh.get(key_of(L.entry, a), {}).get(d, {}).get(key_of(L.entry, b), 0):
-                    out.append(((x, y), a, b, d))
+    for d, (dx, dy), cells in edges:
+        for x, y in cells:
+            o = (x + dx, y + dy)
+            if o not in beyond:
+                continue
+            a, b = L.mid(x, y), beyond[o] & 0x3FF
+            if not corpus.neigh.get(key_of(L.entry, a), {}).get(d, {}).get(key_of(L.entry, b), 0):
+                out.append(((x, y), a, b, d))
     return out
 
 

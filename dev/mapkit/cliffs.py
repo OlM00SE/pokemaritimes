@@ -211,6 +211,16 @@ def is_cliff_block(block):
     return mid in FAMILY and (mid not in LINE_PIECES or (block >> 10) & 3 != 0)
 
 
+def is_terrace_edge(L, x, y):
+    """A solid line piece on layout L that is part of a terrace's outline: a cliff piece (or the
+    map's side) beside it in its row. Vanilla's 002/0D3/0D4 are walkable grass, so tools that
+    follow vanilla's attributes (fix_attrs, the checker's attrs) must leave these alone; a lone
+    solid 002 is still an invisible wall to them."""
+    if L.primary != "gTileset_General" or L.mid(x, y) not in LINE_PIECES or not is_cliff_block(L.get(x, y)):
+        return False
+    return any(not L.inb(x + dx, y) or is_cliff_block(L.get(x + dx, y)) for dx in (-1, 1))
+
+
 def level_issues(cls, levels, w, h):
     """Errors [(x, y, msg)] where the terrain contradicts the levels: walkable cells side by side
     at different levels, or a wall touching water. The one exception is a graded road climbing

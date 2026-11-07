@@ -203,7 +203,11 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         shores.keep_unrebuildable(sk.rows, L.width, L.height, lambda x, y: L.mid(x, y),
                                   lambda ch: CHAR_TO_CLASS[ch])
         if verify_shores:
-            keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus)
+            # verified as mapgen builds: with what lies past each edge (seams, border)
+            from . import seams as seam_kit
+            keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus,
+                                            seams=seam_kit.outside_labels(project, vocab, m),
+                                            border=seam_kit.border_labels(project, vocab, m))
     if L.primary == PRIMARY:
         recheck_bridges(project, L, sk.rows)       # the passes above may have kept a deck's neighbours
     return sk
@@ -296,7 +300,8 @@ def whole_tree(labels, x, y, w, h):
     return {(x0 + dx, y0 + dy) for dx in (0, 1) for dy in (0, 1) if 0 <= x0 + dx < w and 0 <= y0 + dy < h}
 
 
-def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None):
+def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden=None, corpus=None,
+                                    seams=None, border=None):
     """Compile the extracted sketch and keep ('#') every shore or flora cell whose block wouldn't
     come back exactly: e.g. vanilla beach sand that meets grass without a rim, sand at
     elevation 0, or flowers under a canopy overhang. If a cell beside flora wouldn't come back,
@@ -317,7 +322,8 @@ def keep_unrebuildable_shore_blocks(project, vocab, rules, sk, layout, forbidden
     while True:
         refused = None
         try:
-            blocks, report = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden)
+            blocks, report = compile_sketch(project, corpus, rules, sk, layout, vocab, forbidden,
+                                            seams=seams, border=border)
             cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
             # a hand-painted join the grammar forbids (a tree beside a sand lane): the repair
             # would turn a drawn cell into grass. Keep both sides as they are, a tree whole.
@@ -414,9 +420,9 @@ def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None, border=None):
     row or column off the border's grid can give up a cell on its inner fringe (the forest's edge
     moves by a row) to line up with the border's trees. The tiling kept is the one with the fewest
     cells dropped at an edge with forest inside them (a strip of grass against the trees beyond,
-    often a new walkway along the edge), then the fewest trees
-    cut out of line with the border, then the fewest cells dropped anywhere; ties keep the old
-    placement, then the plain greedy tiling."""
+    often a new walkway along the edge), then the lowest cost: two for each edge tree out of
+    line with the border, one for each cell dropped anywhere; ties keep the old placement, then
+    the plain greedy tiling."""
     border, outside = border or {}, outside or {}
     soft = frozenset(border) - frozenset(outside)      # a neighbour's strip always wins
     outside = {**border, **outside}
@@ -471,7 +477,11 @@ def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None, border=None):
                     scratch[y][x] = "T"
                 n = _tile_trees(scratch, w, h, hh, box, outside, grid, soft)
                 result = {(x, y): scratch[y][x] for x, y in comp}
-                trials.append(((strip_drops(result), misaligned(result, border), n), result, n))
+                # a tree out of line with the border shows at the edge; a fringe cell given up
+                # moves the forest's edge by a row: one counts as two dropped cells, so a grove
+                # isn't stripped of its staggered fringe to line up one tree
+                cost = 2 * misaligned(result, border) + n
+                trials.append(((strip_drops(result), cost), result, n))
                 for x, y in comp:
                     scratch[y][x] = "X"
             _, result, n = min(trials, key=lambda t: t[0])    # ties: the first (the old placement)

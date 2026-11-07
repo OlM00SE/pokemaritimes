@@ -38,6 +38,7 @@ def check_attributes(p, corpus, m, E, W):
     is walkable (invisible wall) is a WARN. Elevation-only differences are left to the
     movement checks, which judge their actual effect."""
     from .terrain import TREE, PRIMARY
+    from .cliffs import is_terrace_edge
     L = m.layout
     tree_ids = set().union(*TREE.values()) if L.primary == PRIMARY else set()
     trees, walk_through, walls = [], [], []
@@ -49,8 +50,8 @@ def check_attributes(p, corpus, m, E, W):
             have = L.coll(x, y)
             if want[0] and not have:
                 (trees if L.mid(x, y) in tree_ids else walk_through).append((x, y))
-            elif have and not want[0]:
-                walls.append((x, y))
+            elif have and not want[0] and not is_terrace_edge(L, x, y):
+                walls.append((x, y))     # (a terrace's edge line is solid on purpose)
     # Vanilla never makes trees walkable; it does deliberately make some rocks/cave tiles
     # walkable (hidden paths), so those are only a warning.
     if trees:
