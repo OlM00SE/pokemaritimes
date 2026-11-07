@@ -175,7 +175,7 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
         out = []
         for x, c in enumerate(row):
             mid = L.mid(x, y)
-            if L.primary == PRIMARY and mid in cliffs.PIECES:
+            if L.primary == PRIMARY and cliffs.is_cliff_block(L.get(x, y)):
                 out.append("#")         # cliffs are kept: their levels aren't recovered (yet)
                 continue
             if c == "LD":
@@ -375,7 +375,28 @@ def keep_unrebuildable_ledges(rows, w, h, mid_at):
             stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
 
 
-def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None):
+QUARTERS = ("TL", "TR", "BL", "BR")
+
+
+def misaligned(quarters, beyond):
+    """How many tree quarters in `quarters` ({(x, y): class}) sit beside a tree quarter of `beyond`
+    (the cells past an edge) that doesn't continue their 2x2 pattern: across a side seam the next
+    tree's half in the same row (TL's east is TR, TR's east is TL), across a top or bottom one the
+    next tree's half in the same column (TL's north is BL)."""
+    n = 0
+    for (x, y), q in quarters.items():
+        if q not in QUARTERS:
+            continue
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            o = beyond.get((x + dx, y + dy))
+            if o not in QUARTERS:
+                continue
+            want = q[0] + {"L": "R", "R": "L"}[q[1]] if dx else {"T": "B", "B": "T"}[q[0]] + q[1]
+            n += o != want
+    return n
+
+
+def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None, border=None):
     """Turn 'T' cells into whole 2x2 trees (TL TR / BL BR). Greedy row-major tiling: the first
     free T cell becomes a tree's top-left if the 2x2 block from it is all free T. This places
     trees at any alignment (single trees, staggered rows). Leftover T cells can't hold a whole
@@ -386,9 +407,21 @@ def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None):
     edge, e.g. staggered trees beside old aligned ones, is tiled afresh, so old trees that
     straddle the new ones don't knock them out.
     outside ({(x, y): class} across connected seams, compile_sketch's `seams`): a tree is cut by a
-    connected edge only where the neighbour holds its other half."""
-    if not hint:
-        return _tile_trees(cls_grid, w, h, None, outside=outside)
+    connected edge only where the neighbour holds its other half.
+    border ({(x, y): class} past the edges no neighbour covers, compile_sketch's `border`): the
+    same, softly: a leftover edge cell is still cut freely when nothing matches (_tile_trees'
+    `soft`). A grove that touches an edge is also tiled on each of the four 2x2 grids, so a band a
+    row or column off the border's grid can give up a cell on its inner fringe (the forest's edge
+    moves by a row) to line up with the border's trees. The tiling kept is the one with the fewest
+    cells dropped at an edge with forest inside them (a strip of grass against the trees beyond,
+    often a new walkway along the edge), then the fewest trees
+    cut out of line with the border, then the fewest cells dropped anywhere; ties keep the old
+    placement, then the plain greedy tiling."""
+    border, outside = border or {}, outside or {}
+    soft = frozenset(border) - frozenset(outside)      # a neighbour's strip always wins
+    outside = {**border, **outside}
+    if not hint and not outside:
+        return _tile_trees(cls_grid, w, h, None)
     seen, dropped = set(), 0
     scratch = [["X"] * w for _ in range(h)]
     for y0 in range(h):
@@ -407,33 +440,66 @@ def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None):
             # tile the grove alone, on one shared scratch grid, within its bounding box
             box = (min(x for x, _ in comp), min(y for _, y in comp),
                    max(x for x, _ in comp), max(y for _, y in comp))
+            at_edge = lambda x, y: x in (0, w - 1) or y in (0, h - 1)
+
+            def strip_drops(result):
+                """Cells dropped at an edge with a tree on their inner side (grass between the
+                forest and what lies past the edge; a corner given up on the fringe is harmless),
+                or on a connected seam where the neighbour's cell is open ground (a gap there can
+                open a way between the maps) or half a tree whose other half is this cell."""
+                n = 0
+                if not outside:                 # no context: the old choice (fewest dropped)
+                    return 0
+                for (x, y), q in result.items():
+                    if q != "G" or not at_edge(x, y):
+                        continue
+                    inward = [(x + (x == 0) - (x == w - 1), y), (x, y + (y == 0) - (y == h - 1))]
+                    seam = False
+                    for dx, dy, into in ((-1, 0, "L"), (1, 0, "R"), (0, -1, "T"), (0, 1, "B")):
+                        o = (x + dx, y + dy)
+                        if o in outside and o not in soft:
+                            lab = outside[o]
+                            seam |= lab not in QUARTERS or into in lab
+                    n += seam or any(result.get(c, "G") in QUARTERS for c in inward if c != (x, y))
+                return n
+            variants = ([(hint, None)] if hint else []) + [(None, None)]
+            if outside and any(at_edge(x, y) for x, y in comp):
+                variants += [(None, g) for g in ((0, 0), (1, 0), (0, 1), (1, 1))]
             trials = []
-            for hh in (hint, None):
+            for hh, grid in variants:
                 for x, y in comp:
                     scratch[y][x] = "T"
-                n = _tile_trees(scratch, w, h, hh, box, outside)
-                trials.append((n, {(x, y): scratch[y][x] for x, y in comp}))
+                n = _tile_trees(scratch, w, h, hh, box, outside, grid, soft)
+                result = {(x, y): scratch[y][x] for x, y in comp}
+                trials.append(((strip_drops(result), misaligned(result, border), n), result, n))
                 for x, y in comp:
                     scratch[y][x] = "X"
-            n, result = min(trials, key=lambda t: t[0])     # ties keep the old placement (first)
+            _, result, n = min(trials, key=lambda t: t[0])    # ties: the first (the old placement)
             dropped += n
             for (x, y), q in result.items():
                 cls_grid[y][x] = q
     return dropped
 
 
-def _tile_trees(cls_grid, w, h, hint, box=None, outside=None):
+def _tile_trees(cls_grid, w, h, hint, box=None, outside=None, grid=None, soft=frozenset()):
     """box (x0, y0, x1, y1): only cells in it can be forest; loops stay inside it.
-    outside: classes across connected seams; there a cut tree's off-map half must be the
-    neighbour's matching quarter (an unconnected edge cuts trees freely, as the border hides it)."""
+    outside: classes past the edges (a neighbour's or the border's); there a cut tree's off-map
+    half must be the matching quarter (an edge with no labels cuts trees freely).
+    soft: off-map cells whose labels are the border's: a leftover edge cell that matches nothing
+    is still cut there (the old free cut, a seam vanilla never draws) rather than dropped to grass,
+    which would open a strip between the forest and the border's trees.
+    grid (gx, gy): whole trees inside the map only with their top-left at x = gx, y = gy mod 2."""
     x0, y0, x1, y1 = box or (0, 0, w - 1, h - 1)
     inside = lambda x, y: 0 <= x < w and 0 <= y < h
     outside = outside or {}
 
-    def place(x, y, allow_offmap):
+    def place(x, y, allow_offmap, free=frozenset()):
+        if grid and not allow_offmap and ((x - grid[0]) % 2 or (y - grid[1]) % 2):
+            return
         quad = [(x, y, "TL"), (x + 1, y, "TR"), (x, y + 1, "BL"), (x + 1, y + 1, "BR")]
         ok = all((inside(qx, qy) and cls_grid[qy][qx] == "T") or
-                 (allow_offmap and not inside(qx, qy) and outside.get((qx, qy), q) == q)
+                 (allow_offmap and not inside(qx, qy) and
+                  ((qx, qy) in free or outside.get((qx, qy), q) == q))
                  for qx, qy, q in quad)
         if ok and any(inside(qx, qy) for qx, qy, _ in quad):
             for qx, qy, q in quad:
@@ -451,9 +517,10 @@ def _tile_trees(cls_grid, w, h, hint, box=None, outside=None):
                 if not c.startswith("t"):
                     continue
                 # a provisional quarter is kept only if its whole tree is still forest in the sketch
+                # (and a half off the map is what lies there: the neighbour's or the border's)
                 q = c[1:]
                 ox, oy = x - (q[1] == "R"), y - (q[0] == "B")
-                ok = all(not inside(ox + dx, oy + dy) or
+                ok = all(outside.get((ox + dx, oy + dy), qq) == qq if not inside(ox + dx, oy + dy) else
                          cls_grid[oy + dy][ox + dx] in ("t" + qq, qq)
                          for dx, dy, qq in ((0, 0, "TL"), (1, 0, "TR"), (0, 1, "BL"), (1, 1, "BR")))
                 cls_grid[y][x] = q if ok else "T"
@@ -466,17 +533,19 @@ def _tile_trees(cls_grid, w, h, hint, box=None, outside=None):
     # tree tops along the bottom read from x = -1 pairs every top with the wrong neighbour.
     # Only a tree whose top-left is at x = -1 or w - 1 (or y = -1 or h - 1) can be cut, so only
     # those lines are visited.
+    # Pass 3 (with `soft`): what's left beside the border is cut anyway.
     xs = [x for x in (-1, w - 1) if x0 - 1 <= x <= x1]
     ys = [y for y in (-1, h - 1) if y0 - 1 <= y <= y1]
-    for x in xs:                                     # cut by the left or right border
-        for y in range(y0, min(y1, h - 2) + 1):
-            place(x, y, True)
-    for y in ys:                                     # cut by the top or bottom border
-        for x in range(max(x0, 0), min(x1, w - 2) + 1):
-            place(x, y, True)
-    for y in ys:                                     # the corners
-        for x in xs:
-            place(x, y, True)
+    for free in (frozenset(), soft) if soft else (frozenset(),):
+        for x in xs:                                 # cut by the left or right border
+            for y in range(y0, min(y1, h - 2) + 1):
+                place(x, y, True, free)
+        for y in ys:                                 # cut by the top or bottom border
+            for x in range(max(x0, 0), min(x1, w - 2) + 1):
+                place(x, y, True, free)
+        for y in ys:                                 # the corners
+            for x in xs:
+                place(x, y, True, free)
     dropped = 0
     for y in range(y0, y1 + 1):
         for x in range(x0, x1 + 1):
@@ -487,7 +556,7 @@ def _tile_trees(cls_grid, w, h, hint, box=None, outside=None):
 
 
 def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden=None, fresh=False,
-                   seams=None):
+                   seams=None, border=None):
     """Sketch -> new block list for `layout` (same size). Returns (blocks, report dict).
     vocab + not fresh: keep the layout's existing tree placement where the sketch keeps forest.
     forbidden: class pairs to repair with a grass margin (terrain.enforce_grammar).
@@ -495,7 +564,11 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     walkable). Ledge warnings (a ledge nobody can reach) go in the report.
     seams: {(x, y): class} for the cells just across each connected edge (seams.outside_labels):
     edge cells are tiled for what the player sees beyond them, and trees are cut by a connected
-    edge only where the neighbour holds the other half. None: off the map is unknown (OUT)."""
+    edge only where the neighbour holds the other half. None: off the map is unknown (OUT).
+    border: {(x, y): class} for the cells past the edges no neighbour covers (seams.border_labels:
+    the border's trees, edge water): edge cells are tiled for them too, and trees cut there line up
+    with the border's where the forest allows (assign_tree_quarters)."""
+    outside = {**(border or {}), **(seams or {})} or None
     from .terrain import enforce_grammar, PRIMARY
     w, h = sketch.w, sketch.h
     if (w, h) != (layout.width, layout.height):
@@ -527,7 +600,7 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     repaired = {}                       # cell -> (class the sketch drew, the cell that outranked it)
     grammar = dict(enforce_grammar(cls, w, h, forbidden, where=repaired)) if forbidden else {}
     hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
-    dropped = assign_tree_quarters(cls, w, h, hint, outside=seams)
+    dropped = assign_tree_quarters(cls, w, h, hint, outside=seams, border=border)
     # flora (flowers, boulders, saplings): resolved by shape; for everything else they read as grass
     fpieces, flora_errors = flora.resolve(cls, w, h)
     if fpieces and layout.primary != PRIMARY:
@@ -587,11 +660,11 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         learn_view = [[("G" if (x, y) in stamp_blocks else c) for x, c in enumerate(row)]
                       for y, row in enumerate(learn_view)]
     # vanilla labels its cliff stairs as grass; the rules must never draw them in open ground
-    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=seams)
+    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=outside)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
         view = shores.sand_view(learn_view, w, h)
-        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=seams)[0] \
+        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=outside)[0] \
             if view != learn_view else None
         shore_tiles = shores.apply(gview, mids, w, h, sand_mids)
     if fpieces:

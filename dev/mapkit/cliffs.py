@@ -46,11 +46,19 @@ FACE1, FACE_TOP, FACE_MID, FACE_BOTTOM = 0x079, 0x07C, 0x0A9, 0x091
 FACE_TOP_W, FACE_TOP_E = 0x07B, 0x07D       # a tall face's top beside the west / east flank
 INNER = {"NW": 0x0BE, "NE": 0x0BF, "SW": 0x089, "SE": 0x074}
 STAIR_L, STAIR_R = 0x0AF, 0x0CF
-WALL_PIECES = {RIM, RIM_NW, RIM_NE, FLANK_W, FLANK_E, FOOT_W, FOOT_E, FACE1, FACE_TOP, FACE_TOP_W,
-               FACE_TOP_E, FACE_MID, FACE_BOTTOM, *INNER.values()}
+# A grass-topped terrace's north edge (vanilla's Safari Zone): a thin line along the top of the
+# high ground, 002, with ends 0D3 (after the NW corner 068) and 0D4 (before the NE corner 06A).
+# The rock rim 069 and the north inside corners 0BE/0BF are a rock-topped plateau's (Routes 111,
+# 116: vanilla never puts grass south of 069), so grass terraces draw them as the line too.
+LINE, LINE_W, LINE_E = 0x002, 0x0D3, 0x0D4
+LINE_PIECES = {LINE, LINE_W, LINE_E}
+ROCK_TOP_ONLY = {RIM, INNER["NW"], INNER["NE"]}   # never drawn now: kept for rock-topped ground
+WALL_PIECES = {RIM_NW, RIM_NE, FLANK_W, FLANK_E, FOOT_W, FOOT_E, FACE1, FACE_TOP, FACE_TOP_W,
+               FACE_TOP_E, FACE_MID, FACE_BOTTOM, INNER["SW"], INNER["SE"], *LINE_PIECES}
 FACES = {FACE1, FACE_TOP, FACE_TOP_W, FACE_TOP_E, FACE_MID, FACE_BOTTOM}
 STAIR_PIECES = {STAIR_L, STAIR_R}
 PIECES = WALL_PIECES | STAIR_PIECES
+FAMILY = PIECES | ROCK_TOP_ONLY          # every piece a built map's cliff may hold (older builds too)
 WALL_ATTRS = (1, 0)
 STAIR_ATTRS = (0, 3)
 NAMES = {"CL": "a cliff wall", "ST": "stairs"}
@@ -128,6 +136,8 @@ def resolve(chars, levels, w, h):
             errors.append((x, y, "a face more than two rows tall can't end against a flank "
                                  "(vanilla has no piece for it): make it two rows there, or end it "
                                  "in an inside corner or off the map"))
+    # grass-topped terraces: the north edge is a thin line, not a rock rim (grass_top)
+    pieces.update(grass_top(pieces))
     is_st = lambda x, y: 0 <= x < w and 0 <= y < h and chars[y][x] == STAIRS
     for y in range(h):
         for x in range(w):
@@ -172,6 +182,33 @@ def resolve(chars, levels, w, h):
                     errors.append((x, y, "stairs climb a south face only (not a rim, a flank or a corner)"))
                     break
     return pieces, sorted(set(errors))
+
+
+def grass_top(pieces):
+    """{(x, y): metatile} replacing the rock-topped pieces of a terrace's north edge with the grass
+    terrace's line (vanilla's Safari Zone: `068 0D3 002 ... 002 0D4 06A`, the flanks 070/072 below
+    the corners). The rim 069 becomes 002, or 0D3 just after a NW corner and 0D4 just before a NE
+    corner (a single cell between two corners takes 0D4, the end that meets the flank going down
+    on its right); the north inside corners 0BE/0BF, where a flank coming down meets the next
+    stretch of edge, become 002: the flank's foot rests on the line."""
+    out = {}
+    for (x, y), mid in pieces.items():
+        if mid == RIM:
+            # a stretch of two between the corners is 068 002 0D4 06A (vanilla puts 002 after
+            # 068, never 0D3 before 0D4)
+            out[(x, y)] = (LINE_E if pieces.get((x + 1, y)) == RIM_NE else
+                           LINE_W if pieces.get((x - 1, y)) == RIM_NW
+                           and pieces.get((x + 2, y)) != RIM_NE else LINE)
+        elif mid in (INNER["NW"], INNER["NE"]):
+            out[(x, y)] = LINE
+    return out
+
+
+def is_cliff_block(block):
+    """A map block that is one of the cliff pieces (the line pieces only when solid: vanilla's 002
+    is also plain walkable grass)."""
+    mid = block & 0x3FF
+    return mid in FAMILY and (mid not in LINE_PIECES or (block >> 10) & 3 != 0)
 
 
 def level_issues(cls, levels, w, h):

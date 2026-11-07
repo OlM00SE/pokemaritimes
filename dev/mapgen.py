@@ -27,7 +27,7 @@ from mapkit.terrain import (Vocabulary, learn, vanilla_maps, class_adjacency, fo
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, CHAR_TO_CLASS
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
-from mapkit.seams import outside_labels
+from mapkit.seams import outside_labels, border_labels
 from mapkit import landscape, routes, buildings
 from mapkit.layout import SharedLayoutError
 from mapkit.transaction import edit
@@ -141,9 +141,11 @@ def main():
     rules = learn(p, vocab, entries)
     forbidden = forbidden_pairs(class_adjacency(p, vocab, entries))
     try:
-        # the neighbours across connected seams: edge cells are tiled for what lies beyond them
+        # the neighbours across connected seams, and the border past the other edges: edge cells are
+        # tiled for what lies beyond them
         blocks, report = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden, fresh=a.fresh,
-                                        seams=outside_labels(p, vocab, m))
+                                        seams=outside_labels(p, vocab, m),
+                                        border=border_labels(p, vocab, m))
     except SketchError as ex:
         print(f"{sk.map_name}: NOT BUILT, the sketch has {len(ex.problems)} problem(s) (x,y = column,row):")
         print(ex)
