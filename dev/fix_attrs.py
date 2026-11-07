@@ -12,6 +12,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mapkit.project import Project, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
+from mapkit.cliffs import is_terrace_edge
 from check_maps import maritimes_maps
 from mapkit.layout import SharedLayoutError
 from mapkit.transaction import edit
@@ -26,6 +27,8 @@ def propose(p, corpus, name, surfable_only):
             mid = L.mid(x, y)
             if surfable_only and not p.tile_flags.get(tp.behavior(mid), 0) & TILE_FLAG_SURFABLE:
                 continue
+            if is_terrace_edge(L, x, y):
+                continue        # vanilla's walkable line art, solid here as a terrace's edge
             want = corpus.default_attrs(L.entry, mid)
             have = (L.coll(x, y), L.elev(x, y))
             if want and want != have:

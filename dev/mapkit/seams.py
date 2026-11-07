@@ -142,6 +142,43 @@ def unvanilla_pairs(corpus, m, n, direction, offset, skip=frozenset()):
     return out
 
 
+def _margin_depth(L, x, y):
+    """0 for a cell just outside the map (beside an edge or at a corner), 1 for the next ring..."""
+    return max(-1 - x, x - L.width, -1 - y, y - L.height)
+
+
+def strip_cells(p, m, depth=MAP_OFFSET):
+    """{(x, y): (neighbour map, nx, ny)} for the margin cells (within `depth` rings of the map)
+    that the engine fills from a connected neighbour's strip."""
+    out = {}
+    for c in m.connections:
+        name = p.const_to_map.get(c["map"])
+        if c["direction"] not in EDGES or not name:
+            continue
+        n = p.load_map(name)
+        for x, y, nx, ny in _span(m, n, c["direction"], int(c["offset"])):
+            if _margin_depth(m.layout, x, y) < depth:
+                out[(x, y)] = (n, nx, ny)
+    return out
+
+
+def border_cells(p, m, depth=2, layout=None):
+    """{(x, y): block} for the margin cells (within `depth` rings) that no neighbour's strip
+    covers: the map's own edge water carried on where the engine does (margin_fill), else the
+    border's 2x2 pattern (GetBorderBlockAt). This is what a player sees past an edge with no
+    neighbour, or past the ends of a neighbour's strip. layout: a preview's blocks."""
+    L = layout or m.layout
+    strips = strip_cells(p, m, depth)
+    fill = margin_fill(p, m, layout)
+    out = {}
+    for y in range(-depth, L.height + depth):
+        for x in range(-depth, L.width + depth):
+            if L.inb(x, y) or (x, y) in strips:
+                continue
+            out[(x, y)] = fill.get((x, y), L.border_block(x, y))
+    return out
+
+
 def outside_labels(p, vocab, m, depth=2):
     """{(x, y): class} for the cells just across each connected edge of map m, `depth` deep (2:
     the 8-neighbourhood needs 1, a cut tree's other half needs 2), as the vocabulary labels the
@@ -151,16 +188,51 @@ def outside_labels(p, vocab, m, depth=2):
     (an error on the plan's joins), not something an edge can be shaped around.
     Not yet seen by the grammar's forbidden-pair repair, flora, shores or cliffs: a forbidden pair
     across a seam shows up as `seam_tiles` instead."""
-    out = {}
-    for c in m.connections:
-        name = p.const_to_map.get(c["map"])
-        if c["direction"] not in EDGES or not name:
-            continue
-        n = p.load_map(name)
-        N = n.layout
-        for x, y, nx, ny in _span(m, n, c["direction"], int(c["offset"])):
-            if max(-1 - x, x - m.layout.width, -1 - y, y - m.layout.height) < depth:
-                out[(x, y)] = vocab.label(N.entry, N.mid(nx, ny))
+    return {xy: vocab.label(n.layout.entry, n.layout.mid(nx, ny))
+            for xy, (n, nx, ny) in strip_cells(p, m, depth).items()}
+
+
+def border_labels(p, vocab, m, depth=2, layout=None):
+    """{(x, y): class} for the cells just outside map m that no neighbour's strip covers: what the
+    engine draws there, the border's 2x2 trees or the edge water carried on (border_cells),
+    labelled in this map's tilesets. compile_sketch's `border`: edge cells are tiled for it (caps
+    and shadows beside the border's trees), and trees cut by such an edge line up with the
+    border's where the sketch's forest allows. layout: the version of this map whose edge water is
+    carried on (the saved map by default: a design that moves water at such an edge sees the old
+    water's run until it's rebuilt once more, as with the neighbours' seams: rebuild until a rebuild
+    changes nothing). Outdoor maps only: indoors the border is a void nothing is shaped around."""
+    if m.j.get("map_type") not in OUTDOOR:
+        return {}
+    L = layout or m.layout
+    return {xy: vocab.label(L.entry, block & 0x3FF)
+            for xy, block in border_cells(p, m, depth, layout).items()}
+
+
+def compile_context(p, vocab, m):
+    """compile_sketch's keyword arguments for map m as mapgen builds it: the neighbours across
+    connected seams and the border past the other edges. Anything that compiles a real map and
+    compares with it (extract's checks, the round trips) passes these, or edge cells differ."""
+    return {"seams": outside_labels(p, vocab, m), "border": border_labels(p, vocab, m)}
+
+
+def border_pairs(corpus, p, m, layout=None):
+    """Edge cells side by side with what the engine draws past an edge where no neighbour's strip
+    lies (border trees, edge water) in a pairing vanilla never draws: [((x, y), mine, beyond,
+    direction)]. The border-side counterpart of unvanilla_pairs."""
+    L = layout or m.layout
+    w, h = L.width, L.height
+    beyond = border_cells(p, m, 1, layout)
+    edges = (("N", (0, -1), [(x, 0) for x in range(w)]), ("S", (0, 1), [(x, h - 1) for x in range(w)]),
+             ("W", (-1, 0), [(0, y) for y in range(h)]), ("E", (1, 0), [(w - 1, y) for y in range(h)]))
+    out = []
+    for d, (dx, dy), cells in edges:
+        for x, y in cells:
+            o = (x + dx, y + dy)
+            if o not in beyond:
+                continue
+            a, b = L.mid(x, y), beyond[o] & 0x3FF
+            if not corpus.neigh.get(key_of(L.entry, a), {}).get(d, {}).get(key_of(L.entry, b), 0):
+                out.append(((x, y), a, b, d))
     return out
 
 
@@ -205,6 +277,16 @@ def seam_issues(p, m, corpus=None, only=None, accept=frozenset()):
                                f"{direction} -> {name}: {len(odd)} of {len(pairs)} pairs across the seam "
                                f"are ones vanilla never draws side by side (a cut tree, a bank or cliff "
                                f"that stops), e.g. {ex}"))
+    if corpus is not None and only is None and m.j.get("map_type") in OUTDOOR:
+        odd = [o for o in border_pairs(corpus, p, m) if o[0] not in accept]
+        if odd:
+            ex = ", ".join(f"({x},{y}) {a:03X}|{b:03X} {d}" for (x, y), a, b, d in odd[:5])
+            # WARN: a grove that meets both the border and a neighbour's seam can need two grids
+            # at once (the compiler then keeps the seam's); the design moves the forest's edge
+            issues.append(("WARN", "seam_border",
+                           f"{len(odd)} edge cells meet the border's trees (or the edge water) past "
+                           f"an edge with no neighbour in a way vanilla never draws (a tree a column "
+                           f"or row off the border's grid, a cliff running into it), e.g. {ex}"))
     return issues
 
 

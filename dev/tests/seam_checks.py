@@ -7,6 +7,8 @@ Each check has a negative control: the same rule on a case built to break it.
               caught
   trees       a cut tree at a connected edge needs the neighbour's other half; an unconnected edge
               cuts freely
+  border      past an edge with no neighbour: the border's pattern and edge water; woods tiled on
+              its grid where they can be, a leftover still cut beside it (no grass strip)
   signature   across a seam the autotiler sees the neighbour, not OUT
   margin      edge water and its verges, and the border-pattern widening, on a made-up edge
   gate        corridor.py check turns a person back at HomeTown's old spot into an error
@@ -87,6 +89,60 @@ def main():
     check(refused[0][2] == "G", "a connected edge whose neighbour starts its own tree refuses the cut")
     matched = tile({(3, 0): "TR", (3, 1): "BR"})
     check(matched[0][2] == "TL", "a connected edge whose neighbour holds the other half keeps it")
+
+    print("border (seams.border_cells / border_pairs, sketch.assign_tree_quarters(border=))")
+    bc = seams.border_cells(p, r201, 1)
+    covered = [xy for xy in bc if xy in seams.strip_cells(p, r201, 1)]
+    check(bc and not covered, f"Route 201: {len(bc)} margin cells past its edges are the border's, "
+                              "none under a neighbour's strip")
+    corner = (r201.layout.width, r201.layout.height)        # bottom-right, past every strip
+    check(bc.get(corner) == r201.layout.border_block(*corner),
+          "a cell past no neighbour draws the border's 2x2 pattern")
+    fill = seams.margin_fill(p, home)
+    check(fill and all(seams.border_cells(p, home, 1).get(xy, b) == b for xy, b in fill.items()),
+          "edge water carried on is what the border cells hold there")
+    from mapkit.terrain import Vocabulary
+    indoor = p.load_map("Woodstock_Lab")
+    check(not seams.border_labels(p, Vocabulary(p, corpus), indoor),
+          "an indoor map gets no border context (its border is a void)")
+    check(not seams.border_pairs(corpus, p, r201),
+          "Route 201's woods meet the border on its grid: no pair vanilla never draws")
+    shifted = copy.copy(r201)
+    shifted.layout = copy.copy(r201.layout)
+    shifted.layout.blocks = list(r201.layout.blocks)
+    L = shifted.layout
+    for x in range(0, 10):          # the bottom row's trees a row off the border's grid (M17's)
+        L.set(x, L.height - 1, mid=0x1D4 if x % 2 == 0 else 0x1D5)
+    off = seams.border_pairs(corpus, p, shifted)
+    check(len(off) >= 10, f"tree tops on the bottom row under the border's tops are caught ({len(off)})")
+    from mapkit.sketch import assign_tree_quarters, misaligned
+    def quarters(rows, border, outside=None):
+        g = [list(r) for r in rows]
+        assign_tree_quarters(g, len(g[0]), len(g), None, outside=outside, border=border)
+        return g
+    # a band three rows deep at the bottom edge, the border's tops below it (TL at even x, even y)
+    band = ["....", "TTTT", "TTTT", "TTTT"]
+    below = {(x, 4): ("TL" if x % 2 == 0 else "TR") for x in range(-2, 6)}
+    g = quarters(band, below)
+    check(g[3][0] == "BL" and g[1][0] == "G", "against the border the band keeps whole trees on the "
+                                              "border's grid and gives up its inner row")
+    check(not misaligned({(x, y): q for y, r in enumerate(g) for x, q in enumerate(r)}, below),
+          "and lines up with it")
+    g = quarters(band, None)
+    check(g[1][0] == "TL" and g[3][0] == "TL", "without the border the band is tiled from its top "
+                                               "(the last row cut freely)")
+    # soft: three columns between two edges whose beyond starts a tree on the wrong side each time,
+    # so nothing in the sketch can match: the leftover column is still cut (no grass strip)
+    sides = {(-1, 0): "TR", (-1, 1): "BR", (3, 0): "TL", (3, 1): "BL"}
+    g = quarters(["TTT", "TTT"], sides)
+    check(all(q != "G" for r in g for q in r), f"a leftover beside the border is still cut, not "
+                                               f"dropped to grass ({g[0]})")
+    g = quarters(["TTT", "TTT"], None, outside=sides)
+    check(sum(q == "G" for r in g for q in r) == 2,
+          f"beside a neighbour's strip the same cut is refused (strict: {g[0]})")
+    g = quarters(["TTT", "TTT"], {(3, 0): "TL", (3, 1): "BL"})
+    check(g[0] == ["TR", "TL", "TR"], "with one side free, the tiling cuts there and lines up with "
+                                      "the border on the other")
 
     print("signature")
     lab = [["G", "G"], ["G", "G"]]

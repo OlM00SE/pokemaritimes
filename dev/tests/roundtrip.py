@@ -11,14 +11,16 @@ from mapkit.corpus import Corpus
 from mapkit.terrain import Vocabulary, learn, vanilla_maps, class_adjacency, forbidden_pairs
 from mapkit.sketch import extract, compile_sketch
 from mapkit.render import render_layout
+from mapkit.seams import compile_context
 
 maps = sys.argv[1:] or ["HomeTown_0", "Route201_1", "Woodstock_2", "Route202_1", "Fredericton_0",
                         "Route203_1", "Route203_1_2"]
 p = Project(); c = Corpus(p); v = Vocabulary(p, c)
 entries = vanilla_maps(c)
 rules = learn(p, v, entries)
-# compile the way mapgen build does, grammar repair included: a repair that touches an
-# extracted map is terrain a rebuild would damage (e.g. the sand beside hand-painted trees)
+# compile the way mapgen build does, grammar repair and the context past each edge included: a
+# repair that touches an extracted map is terrain a rebuild would damage (e.g. the sand beside
+# hand-painted trees)
 forbidden = forbidden_pairs(class_adjacency(p, v, entries))
 out = p.path("dev", "out")
 damaged = 0
@@ -26,7 +28,8 @@ for name in maps:
     m = p.load_map(name)
     before = render_layout(p, m.layout)
     sk = extract(p, v, name, rules, forbidden, c)
-    blocks, rep = compile_sketch(p, c, rules, sk, m.layout, v, forbidden)
+    blocks, rep = compile_sketch(p, c, rules, sk, m.layout, v, forbidden,
+                                 **compile_context(p, v, m))
     if rep["grammar_cells"]:
         damaged += 1
         print(f"{name:14} FAIL: the grammar repairs {len(rep['grammar_cells'])} extracted cells, "

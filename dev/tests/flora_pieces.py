@@ -25,6 +25,7 @@ from mapkit.terrain import Vocabulary, vanilla_maps, load_blocks, learn, class_a
 from mapkit.sketch import (Sketch, SketchError, extract, compile_sketch, assign_tree_quarters, CHAR_TO_CLASS,
                            verify_owned)
 from mapkit import flora, landscape as ls
+from mapkit.seams import compile_context
 
 VANILLA = ["ROUTE116", "ROUTE102", "ROUTE103", "ROUTE104", "ROUTE110", "ROUTE111", "ROUTE117",
            "ROUTE118", "ROUTE119", "ROUTE120", "ROUTE121", "ROUTE123", "SAFARI_ZONE_SOUTH",
@@ -54,7 +55,8 @@ def vanilla(p, c, v, rules, forbidden, verbose):
         for (x, y), ch in heads.items():
             found[KIND[ch]] += 1
             kept[KIND[ch]] += sk.rows[y][x] == "#"
-        blocks, _ = compile_sketch(p, c, rules, sk, L, v, forbidden)
+        blocks, _ = compile_sketch(p, c, rules, sk, L, v, forbidden,
+                                   **compile_context(p, v, p.load_map(name)))   # as extract checks it
         cls = [[CHAR_TO_CLASS[ch] for ch in row] for row in sk.rows]
         changed += sum(1 for y in range(L.height) for x in range(L.width)
                        if ((x, y) in modeled or verify_owned(cls, x, y, L.width, L.height))

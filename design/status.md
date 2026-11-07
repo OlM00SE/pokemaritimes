@@ -1,10 +1,68 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-07 (foundations: seams and edges, after Tom's phone play). Read this first in a new session. The world's geography and
+> Updated 2026-11-07 (edges and cliffs v2). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Edges and cliffs v2** (branch `edges-cliffs-v2`, 2026-11-07). Tooling-led follow-up to Tom's phone
+play: the cliff and rock tiles that didn't transition, and the map edges against the border. **SAVES
+CARRY OVER** (save line 2, no layout change, no world revision: no tile a walker could reach turned
+solid on any map; checked against `develop` cell by cell). **Next: M18 Nackawic, held until Tom says go.**
+
+| Tom saw / known limit | Cause | Done |
+|---|---|---|
+| Cliff and rock tiles not transitioning | The rock rim `069` (and corners `0BE`/`0BF`) over grass: vanilla draws it only over rock-topped plateaus | Grass-topped terraces' north edges are vanilla's Safari Zone line `068 0D3 002 .. 002 0D4 06A` (`cliffs.grass_top`); Route 202's 79 rim cells and CliffLab's rebuilt. The line is solid like every wall (vanilla's is walkable, held by elevation): `cliffs.is_cliff_block` / `is_terrace_edge` tell it from vanilla's walkable `002` grass (extract, `fix_attrs`, the checker) |
+| The check that missed it | cliff_pieces compared pieces only with pieces | **Ground agreement:** every built cliff piece against the ground on each side; a pairing vanilla never draws must be judged in `GROUND_OK` (per piece and side, with a reason; 37 judged: trees, ledges and roads beside walls, cuttings, corners). Negative control: the M17 Route 202 fails it (`069` over grass, 35 cells) |
+| Edges against the border (93-114 odd cells) | The compiler read past an unconnected edge as unknown (`OUT`) while the engine draws the border's 2x2 trees there, on the even grid | **Border context:** `seams.border_labels` / `compile_context` (border trees, edge water) for every compile of a real map; groves at edges are tiled on the border's grid where they can be (the inner fringe gives up a row; never a grass strip against the border, never a gap on a neighbour's seam); a leftover is still cut (soft). Checker `seam_border`. Corridor maps' odd border pairs **114 -> 58**: Route 201 32 -> 0, HomeTown 34 -> 12, Route 202 10 -> 8, Woodstock 38 -> 38 (below) |
+
+Evidence (gitignored): `dev/out/edges_cliffs/ingame_before_after.png` (seven spots in mGBA: the phone
+build vs this one), `render_<Map>_before_after.png` (the five maps against `develop`),
+`ground_pairs.png` (each judged pairing). Phone-build ROM for the comparison: `dev/out/next/oldrom/`.
+
+**Maps:** Route 202 (84 cells: the rims become lines; no walkability change), CliffLab (123),
+Route 201 (168: its south woods line up with the border, the woods' north fringe gives up a row along
+the road, 40 cells turn walkable), HomeTown (76: the top woods on the border's grid, 6 walkable),
+Woodstock (16, art only). Crossings unchanged: 53, 53, 29, 29, 51, 51. Every map rebuilds to itself.
+
+**Code review** (`/code-review medium`): 10 findings; 8 fixed, 2 answered.
+- **Fixed:** the line pieces would be undone by tools following vanilla's attributes (`fix_attrs`, the
+  checker): not reachable today (vanilla's use of `002`/`0D3`/`0D4` is too mixed for a confident
+  default) but now guarded by `is_terrace_edge`; the tree tiler let one tree out of line with the
+  border outweigh any number of dropped cells (now one counts as two dropped cells); the ground check
+  keyed secondary tiles as primary and exempted whole classes (now `key_of`, and per piece and side);
+  extract verified kept cells without the edge context (and then the gate caught three tests
+  compiling without it: `seams.compile_context` is now the one way to compile a real map); the
+  border context applied to indoor maps; the in-game wall finder missed older rock pieces;
+  `border_pairs` scanned the whole map.
+- **Answered:** the border's edge water comes from the saved map, so a design that moves water at an
+  unconnected edge sees the old run until it's rebuilt once more (the same "rebuild until nothing
+  changes" rule as the seams; documented). World revision: not a redesign; no reachable tile turned
+  solid on any map (cell by cell against `develop`), so a phone save continues where it stood; its
+  saved view can show the old trees near an edge until the next map load (cosmetic, as last milestone).
+
+How it was verified (the gate: `edges-cliffs-v2 @ 1477e56b46`, clean tree, ROM `847106d1…`,
+**55 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261107_151732_431500/`).
+The first full run failed 4 (harness guard sample, and three tests compiling without the edge
+context: above); fixed and re-run.
+| Area | Result |
+|---|---|
+| Static | checker 41 maps, 0 errors (new `seam_border` warnings on Woodstock, HomeTown, Route 202, CliffLab and the prototypes); vanilla baseline 0 unexpected; corridor 7 maps, 0 errors, 0 warnings; seam_checks 36/36 |
+| Pieces | cliff_pieces: shapes 21/21, piece adjacencies 108/108, **ground agreement 114 pairings: 77 vanilla's, 37 judged, 0 not**, sketch agreement (CliffLab 152, Route 202 164 cliff cells, 0 differ), extract round trip 0 cliff blocks changed; roundtrip 78.8-100% (the corridor maps 100%; the Route 203 prototype 78.8%: rebuilt with the border it would line its south woods up, giving up 59 fringe cells; observed, prototype); shore, flora, stamp, ledge, bridge pieces PASS |
+| Routes | crossings 53, 53, 29, 29, 51, 51 steps, 0 forced tall grass (observed): unchanged |
+| In-game | cliffs 477/477 (every line cell bumped: solid); edge water 18498/18498; conformance 571/571; events 185/185; playthrough; doors 20; buildings 22/22; world revision 47/47 (with `--old-rom` for the current phone build the test refuses as vacuous: that build is already on revision 3 and this milestone adds none); bridges 162/162; ledges 521/521; shores 624/624; flora 448/448; encounters; autowalks; save 45/45 |
+
+Known limits:
+- **Woodstock's 38 and HomeTown's 12 border cells:** groves that touch both the border and a
+  neighbour's seam (Woodstock's south-west below the highway and its far bank down to Route 202;
+  HomeTown's south-east beside Route 201) need two grids at once; the tiler keeps the seam's. Fixing
+  them is a design pass on both sides of the seam (tried on Woodstock's south-west: it would turn 10
+  reachable cells solid, so it waits for a milestone that touches Woodstock anyway, with a world
+  revision). Route 202's 8 are cliffs and grass running into the border on its west and top.
+- **The line is subtle:** a thin edge, as vanilla's grass terraces have; Tom should judge it on the
+  phone. Rock-topped plateaus (`069` with `071` tops) are still a later item, for the highlands.
+- Cliffs into water, the interim Route 202 / Fredericton seam, and Fredericton's fence column as before.
+
 **Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; merged into `develop` as
 `f48b4a92d4` and pushed to `origin/develop`, Tom okayed, 2026-11-07). **Phone build published:**
 `2026-11-07_f48b4a92d4`, ROM sha256 `d46d7a2355086f18…` (the ROM the gate tested), save line 2;
@@ -1176,24 +1234,10 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ## Next milestone (proposed, not started)
 The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton. Neither milestone below has started: wait for Tom's go before beginning either.
 
-**Recommended first: edges and cliffs v2** (small, tooling-led). First the seam context's other
-half: on an edge with no neighbour, give the compiler the border pattern (and edge water) as what
-lies beyond, so trees cut by the edge line up with the border's and caps sit right (93 edge cells on
-the four corridor maps today; "Known limits" above), rebuilding the four maps with a save check.
-Then the cliff vocabulary (from Tom's phone play, diagnosed in the seams work, `mapping_reference.md` §16 "The rim's high side"). Our terraces' north edges use
-vanilla's rock rim over grass, which vanilla never does. Every later map with elevation (Nackawic's
-bluffs, the highlands) inherits the fix, so it goes before them:
-- **Grass-topped terraces:** a north edge drawn with vanilla's thin-wall family (`087` line, `0D5`/`0D6`
-  ends, `085`/`086` sides, `06E 06F 08D 08E` corners, `0FE`/`0FF` top ends), or no visible north edge
-  (forest or map edge over it, as Lilycove and Route 120 do); the rock rim only above rock-topped
-  ground (`071`, a later highlands item). The open question is the joint where a thin side meets a
-  rock face, which vanilla never draws: design it in CliffLab, judge it in renders and in-game.
-- **The check that missed it:** cliff_pieces compares pieces with pieces; make it compare every piece
-  with every neighbour, ground included (vanilla never draws grass under `069`), on every built map.
-- Then rebuild Route 202 and CliffLab, with a world revision if any reachable tile changes.
-- Cliffs into water (below) could join it as the tooling half for Nackawic.
+~~Edges and cliffs v2~~: done (above). The thin-wall family turned out not to be the answer (it can't
+close an outline); vanilla's own grass terrace edge (Safari Zone's `002` line) is.
 
-**Milestone 18 (proposed): Nackawic, the bridge town** (`corridor.toml`: 36x42, a new map east of
+**Recommended next: Milestone 18, Nackawic, the bridge town** (`corridor.toml`: 36x42, a new map east of
 Route 202). The road stays on the south bank (Pokiok); a long bridge crosses the widening headpond
 to Nackawic on the north bank: the mill and the giant axe (stand-ins until Porytiles). A Pokémon
 Center halfway along the corridor.
