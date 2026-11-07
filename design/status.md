@@ -5,8 +5,9 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Milestone 17 is merged into `develop` as `7ca4c45454`, not pushed** (pushing waits for Tom's
-okay). **Phone build published:** `2026-11-06_7ca4c45454`, ROM sha256 `104363e02ba13d1e…` (the ROM
+**Milestone 17 is merged into `develop` as `7ca4c45454` and pushed to `origin/develop`** (Tom
+okayed, 2026-11-06). **Next session: M18 is proposed below, not started; Tom asked to hold it
+until he says go.** **Phone build published:** `2026-11-06_7ca4c45454`, ROM sha256 `104363e02ba13d1e…` (the ROM
 the gate tested), save line 2; `dev/mobile.py` 9/9 in mGBA (new game, save, CONTINUE, the play ZIP,
 byte-identical ROM); Google Drive confirmed `PokeMaritimes_save2.zip` and
 `builds/PokeMaritimes_2026-11-06_7ca4c45454_save2.zip`. **SAVES CARRY OVER.** A local copy with its
