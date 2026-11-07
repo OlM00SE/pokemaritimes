@@ -187,9 +187,11 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
 #if OW_EDGE_WATER
 // Maritimes: a river or lake that reaches an edge with no connection runs on into the margin,
 // with a grass verge, instead of stopping against the border pattern (a map built before its
-// neighbour, or a brook that comes down out of the hills). Cells a connection filled are left
-// alone; filled cells carry the border's collision, so nobody walks or surfs into them, and
-// GetMapBorderIdAt never sees them (the player can't reach them). Modelled cell for cell by
+// neighbour, or a brook that comes down out of the hills). Only a side with no connection at all
+// is filled: GetMapBorderIdAt then reads that side's flag as FALSE and answers CONNECTION_INVALID
+// for the filled cells, as it did for the undefined ones, so even a move that ignores collision
+// (no-clip, a scripted move) can't start a camera transition there. Filled cells carry the
+// border's collision, so nobody walks or surfs into them. Modelled cell for cell by
 // dev/mapkit/seams.py margin_fill; checked in-game by dev/tests/ingame_edge_water.py.
 struct EdgeLine
 {
@@ -271,10 +273,15 @@ static void ExtendEdgeWater(const struct MapHeader *mapHeader)
     if (mapHeader->mapType != MAP_TYPE_TOWN && mapHeader->mapType != MAP_TYPE_CITY
      && mapHeader->mapType != MAP_TYPE_ROUTE && mapHeader->mapType != MAP_TYPE_OCEAN_ROUTE)
         return;
-    ExtendEdgeWaterLine(&up);
-    ExtendEdgeWaterLine(&down);
-    ExtendEdgeWaterLine(&left);
-    ExtendEdgeWaterLine(&right);
+    // the flags were set (or cleared) by InitBackupMapLayoutConnections just before
+    if (!sMapConnectionFlags.north)
+        ExtendEdgeWaterLine(&up);
+    if (!sMapConnectionFlags.south)
+        ExtendEdgeWaterLine(&down);
+    if (!sMapConnectionFlags.west)
+        ExtendEdgeWaterLine(&left);
+    if (!sMapConnectionFlags.east)
+        ExtendEdgeWaterLine(&right);
 }
 #endif // OW_EDGE_WATER
 
@@ -298,12 +305,15 @@ static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader)
     const struct MapConnection *connection;
     const struct MapHeader *cMap;
 
+    // Maritimes: cleared first, also for a map with no connections (vanilla returned before
+    // clearing, leaving the previous map's flags; harmless while every margin cell of such a map
+    // was undefined, but edge water defines some, and GetMapBorderIdAt reads the flags for them)
+    sMapConnectionFlags = sDummyConnectionFlags;
     if (!mapHeader->connections)
         return;
 
     count = mapHeader->connections->count;
     connection = mapHeader->connections->connections;
-    sMapConnectionFlags = sDummyConnectionFlags;
     for (i = 0; i < count; i++, connection++)
     {
         cMap = GetMapHeaderFromConnection(connection);
