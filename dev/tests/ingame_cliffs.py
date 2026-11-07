@@ -45,7 +45,7 @@ def cases_for(p, name):
     warps = {(wv["x"], wv["y"]) for wv in m.events("warp_events")}
     near = lambda x, y: any(abs(x - ox) + abs(y - oy) <= 2 for ox, oy in objs)
     inb = lambda x, y: 0 <= x < L.width and 0 <= y < L.height
-    wall = lambda x, y: inb(x, y) and L.mid(x, y) in cliffs.WALL_PIECES and cliffs.is_cliff_block(L.get(x, y))
+    wall = lambda x, y: inb(x, y) and cliffs.is_cliff_block(L.get(x, y)) and L.mid(x, y) not in cliffs.STAIR_PIECES
     stair = lambda x, y: inb(x, y) and L.mid(x, y) in cliffs.STAIR_PIECES
     open_ = lambda x, y: inb(x, y) and L.coll(x, y) == 0 and (x, y) not in warps and not near(x, y)
     out = {"bump": [], "climb": [], "cut": []}

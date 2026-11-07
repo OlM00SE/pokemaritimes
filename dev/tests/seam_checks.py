@@ -101,6 +101,10 @@ def main():
     fill = seams.margin_fill(p, home)
     check(fill and all(seams.border_cells(p, home, 1).get(xy, b) == b for xy, b in fill.items()),
           "edge water carried on is what the border cells hold there")
+    from mapkit.terrain import Vocabulary
+    indoor = p.load_map("Woodstock_Lab")
+    check(not seams.border_labels(p, Vocabulary(p, corpus), indoor),
+          "an indoor map gets no border context (its border is a void)")
     check(not seams.border_pairs(corpus, p, r201),
           "Route 201's woods meet the border on its grid: no pair vanilla never draws")
     shifted = copy.copy(r201)

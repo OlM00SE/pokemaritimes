@@ -17,7 +17,7 @@
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mapkit.project import Project
-from mapkit.corpus import Corpus
+from mapkit.corpus import Corpus, key_of
 from mapkit.terrain import PRIMARY
 from mapkit import cliffs, ledges
 from mapkit.sketch import Sketch, CHAR_TO_CLASS, assign_tree_quarters
@@ -283,10 +283,22 @@ GROUND_OK = {
     (0x0D4, "N", 0x002): "the same",
     (0x07A, "S", 0x1CF): "the cap of a tree row standing below a foot corner",
 }
-# Whole classes: a forest's tiles beside a wall (the learned rules pick the tree variant for a
-# grass neighbour: a wall reads as grass to them), a ledge whose end runs under a wall (M17), and a
-# road's edge tile beside the wall of its cutting (vanilla's roads never cut General's cliffs).
-GROUND_OK_CLASSES = {"TL", "TR", "BL", "BR", "LD", "P"}
+# By the neighbour's class, still per piece and side (any variant of that class): a forest's tiles
+# beside a wall (the learned rules pick the tree variant for a grass neighbour: a wall reads as
+# grass to them), a ledge whose end runs under a wall (M17), a road's edge tile beside the wall of
+# its cutting (vanilla's roads never cut General's cliffs).
+TREE = "a tree's variant beside a wall (the rules read the wall as grass)"
+LEDGE = "a ledge's end running under the wall (M17)"
+ROAD = "a road's edge tile beside the wall of its cutting"
+GROUND_OK_CLASSES = {
+    (0x002, "S", "TL"): TREE, (0x002, "S", "TR"): TREE, (0x002, "W", "BR"): TREE,
+    (0x06A, "E", "BL"): TREE, (0x079, "N", "BR"): TREE, (0x07B, "N", "BL"): TREE,
+    (0x07C, "E", "BL"): TREE, (0x091, "S", "TL"): TREE, (0x091, "S", "TR"): TREE,
+    (0x0D3, "S", "TL"): TREE, (0x0D4, "S", "TR"): TREE,
+    (0x072, "N", "LD"): LEDGE, (0x072, "S", "LD"): LEDGE, (0x079, "E", "LD"): LEDGE,
+    (0x079, "W", "LD"): LEDGE,
+    (0x068, "W", "P"): ROAD, (0x06A, "E", "P"): ROAD, (0x06A, "N", "P"): ROAD, (0x072, "E", "P"): ROAD,
+}
 
 
 def ground_agreement(p, verbose):
@@ -297,7 +309,8 @@ def ground_agreement(p, verbose):
     corpus = Corpus(p)
     vocab = learned(p)["vocab"]
     seen, odd, judged = {}, {}, set()
-    for name, _ in built_maps(p):
+    maps = built_maps(p)
+    for name, _ in maps:
         m = p.load_map(name)
         L = m.layout
         for y in range(L.height):
@@ -312,15 +325,15 @@ def ground_agreement(p, verbose):
                     b = L.mid(nx, ny)
                     key = (a, d, b)
                     seen[key] = seen.get(key, 0) + 1
-                    if corpus.neigh.get((PRIMARY, a), {}).get(d, {}).get((PRIMARY, b), 0):
+                    if corpus.neigh.get(key_of(L.entry, a), {}).get(d, {}).get(key_of(L.entry, b), 0):
                         continue
-                    if key in GROUND_OK or vocab.label(L.entry, b) in GROUND_OK_CLASSES:
+                    if key in GROUND_OK or (a, d, vocab.label(L.entry, b)) in GROUND_OK_CLASSES:
                         judged.add(key)
                     else:
                         odd.setdefault(key, []).append(f"{name} ({x},{y})")
     print(f"ground agreement: {len(seen) - len(odd) - len(judged)}/{len(seen)} piece-ground pairings "
           f"vanilla uses, {len(judged)} judged (GROUND_OK), {len(odd)} not "
-          f"({sum(seen.values())} cells' sides on {len(built_maps(p))} maps)"
+          f"({sum(seen.values())} cells' sides on {len(maps)} maps)"
           + "".join(f"\n  never in vanilla: {a:03X} -{d}-> {b:03X} x{len(v)}, e.g. {v[0]}"
                     for (a, d, b), v in sorted(odd.items())))
     return not odd and bool(seen)
@@ -405,7 +418,9 @@ def roundtrip(p):
         if not cells:
             continue
         sk = extract(p, vocab, name, rules, forbidden, corpus)
-        blocks, _ = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden)
+        from mapkit.seams import outside_labels, border_labels       # as mapgen builds
+        blocks, _ = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden,
+                                   seams=outside_labels(p, vocab, m), border=border_labels(p, vocab, m))
         cliff_changed = sum(1 for i in cells if blocks[i] != m.layout.blocks[i])
         stray = sum(1 for i, b in enumerate(blocks) if C.is_cliff_block(b) and i not in set(cells))
         others = sum(1 for a, b in zip(blocks, m.layout.blocks) if a != b) - cliff_changed
