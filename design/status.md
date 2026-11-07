@@ -11,6 +11,12 @@ the surroundings, transitions, larger features and the composition, with strict 
 Studied on vanilla's outdoor General maps; findings with their numbers in `mapping_reference.md`
 §18; tooling in `../dev/README.md`, "Visual rules". **SAVES CARRY OVER** (save line 2, no layout
 change, no world revision: art only; no reachable tile turned solid on any map, engine model).
+**Merged into `develop` as `d3ed430359`; not pushed (waiting for Tom's okay).** **Phone build
+published:** `2026-11-07_d3ed430359`, ROM sha256 `80c417073e2ea96f…` (the ROM the gate tested), save
+line 2; `dev/mobile.py` 9/9 in mGBA; Google Drive confirmed `PokeMaritimes_save2.zip` and
+`builds/PokeMaritimes_2026-11-07_d3ed430359_save2.zip`. A local copy with its `.map` for Nackawic's
+`--old-rom`: `dev/out/nackawic/oldrom/` (the edges-cliffs-v2 build moved to
+`dev/out/terrain/oldrom_a9180ede6a/`).
 How it was verified (the gate: `terrain-rules @ c6d5b40fd3`, clean tree, ROM `80c417073e2ea96f…`,
 **56 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261107_163846_633700/`):
 terrain_rules 30/30 (bands reproducible, vanilla clean, every scene flagged bad and passed good,
