@@ -36,7 +36,11 @@ sawmill hedge corner beside Route 201's woods).
 tile a walker could reach became solid (Woodstock's (3,41) and its bank at (43,41) were unreachable,
 checked on the old maps with the engine model). A first try put a boulder at Route 202's (28,0) to
 keep a bank tile apart; the old map showed that tile reachable on foot (the far shore joins
-Fredericton's interim seam), so the bank was mended from Woodstock's side instead. Old saves keep
+Fredericton's interim seam), so the bank was mended from Woodstock's side instead. That first
+reopened the same way round from the other end: the new water cell took the woods' first column as
+its verge, joining Route 202's far shore to Woodstock's unreachable east bank (the gate's route
+numbers caught it: Route 202's crossing read 23 steps instead of 51). A boulder on that verge's
+seam tile (44,41), a tree in the phone build so no save stands there, closes it again. Old saves keep
 their people where they saved them until the map next loads.
 
 **Code review** (`/code-review medium`): 10 findings; 6 fixed, 4 answered.
