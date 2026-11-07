@@ -5,14 +5,14 @@
 //         y sapling  s sign  r rock  H bridge  B building  v ledge  # keep
 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
-TTTTTTTTTTTTTTTTTTTTTTTT....bTTTTTTTTTT.........bTTT
-TTTTTTTTTTTTTTTTTTTTTTTT.....TTTTTTTTTT,..~~~~~..TTT
-TTb...,,,,,TTTTTTTT.......==.....TTTT....~~~~~~~.TTT
-TT.,,,,,,,,TTTTTTTT.vvvvv.==.vvvvTTTT,..~~~rr~~~.TTT
-TT..,,,,,,,...bTTTTy......==......,,,,,.~~~rr~~~.TTT
-TT,....,,,.....TTTTy......==......y,,y,..~~~~~~~.TTT
-TTy........,.......**.............y,,y,y...~~~~..TTT
-TTyvvvvvvv............~~~~HH~~~~.....y.y.........TTT
+TTTTTTTTTTTTTTTTTTTTTTTT....bTTTTTTTTTT.........b.TT
+TTTTTTTTTTTTTTTTTTTTTTTT.....TTTTTTTTTT,..~~~~~...TT
+TTb...,,,,,TTTTTTTT.......==.....TTTT....~~~~~~~..TT
+TT.,,,,,,,,TTTTTTTT.vvvvv.==.vvvvTTTT,..~~~rr~~~..TT
+TT..,,,,,,,...bTTTTy......==......,,,,,.~~~rr~~~..TT
+TT,....,,,.....TTTTy......==......y,,y,..~~~~~~~..TT
+TTy........,.......**.............y,,y,y...~~~~...TT
+TTyvvvvvvv............~~~~HH~~~~.....y.y..........TT
 TT..............~~~~~~~~~~HH~~~~~~~...........TTTTTT
 TT...........~~~~~rr~~~~~~HH~~~~~~~~~.........TTTTTT
 ...........~~~~~~~rr~~~~~~HH~~~~~~~~~~~~~~~....bTTTT

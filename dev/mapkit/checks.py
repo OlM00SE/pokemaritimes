@@ -7,6 +7,7 @@ from collections import deque
 from .engine import World, DIRS, MAP_OFFSET
 from .events import check_events
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
+from .seams import seam_issues
 
 EXPLORE_LIMIT = 200000      # states; a graph cut off at the limit is incomplete, so traps aren't judged
 
@@ -232,6 +233,8 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
             W("connection", f"{c['direction']} -> {dest}: no walkable crossing along the shared edge")
         if crossable:
             entries.append((f"edge {c['direction']}->{dest}", crossable))
+    # what a player sees across each seam: the strip's tileset, people who'd pop in, cut pieces
+    issues.extend(seam_issues(p, m, corpus))
 
     # ---- warps ----
     step_on, door, arrow, stair = _warp_kinds(p)

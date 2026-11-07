@@ -30,7 +30,7 @@ Pokémon like the young woods. The tall grass between the saplings is full of th
 # sight. The road is on the other bank, so the battle is optional.
 [[trainer]]
 name = "BugCatcherRoss"
-at = [6, 11]
+at = [7, 11]
 gfx = "BUG_CATCHER"
 facing = "up"
 sight = 3

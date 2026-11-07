@@ -74,9 +74,9 @@ The flats down here flood every spring. That's why the soil grows such good hay.
 # Up the logging trail, in the upland clearing.
 [[trainer]]
 name = "HikerGordon"
-at = [39, 32]
+at = [34, 32]
 gfx = "HIKER"
-facing = "left"
+facing = "right"
 sight = 3
 class = "Hiker"
 trainer_name = "GORDON"
@@ -91,7 +91,7 @@ The cliffs across the water are the far bank. Nobody gets over there without a b
 
 [[item]]
 name = "UplandBall"
-at = [35, 33]
+at = [34, 33]
 item = "ITEM_POKE_BALL"
 
 # Where the brook meets the river, on its south bank (the island in the river waits for Surf:

@@ -64,6 +64,7 @@ def manifest():
         Step("corridor_join", ("dev/tests/corridor_join.py",), check="result_ratio"),
         Step("corridor_plan", ("dev/tests/corridor_plan.py",)),
         Step("corridor", ("dev/corridor.py", "check")),
+        Step("seam_checks", ("dev/tests/seam_checks.py",), check="result_ratio"),
         Step("hometown_gate", ("dev/tests/hometown_gate.py",)),
         Step("reconstruction", ("dev/tests/reconstruction.py",), kind="observed", timeout=360),
         Step("roundtrip", ("dev/tests/roundtrip.py",)),
@@ -110,6 +111,7 @@ def manifest():
         Step("save", ("dev/tests/ingame_save.py",), timeout=180),
         Step("shores", ("dev/tests/ingame_shores.py",), check="shores", timeout=180),
         Step("flora", ("dev/tests/ingame_flora.py",), check="flora", timeout=180),
+        Step("edge_water", ("dev/tests/ingame_edge_water.py",), check="edge_water", timeout=300),
         Step("mobile_publish_scratch", ("dev/tests/mobile_publish.py",), timeout=180),
     ]
     assert len({s.id for s in steps}) == len(steps), "duplicate regression step ID"
@@ -156,6 +158,11 @@ def coverage_error(step, output):
             return "no positive, fully passing in-game case count reported"
         if step.check == "cliffs" and re.search(r"^\S+: (?:bump|climb) +0/0 ", output, re.M):
             return "a map had no walls or no stairs to test"
+    elif step.check == "edge_water":
+        m = re.search(r"TOTAL: margin (\d+)/(\d+) cells as the model says on (\d+) maps, (\d+) filled "
+                      r"by edge water; bumps (\d+)/(\d+) stay put", output)
+        if not m or int(m[1]) != int(m[2]) or int(m[4]) < 1 or int(m[6]) < 1 or m[5] != m[6]:
+            return "the margin didn't match the model everywhere, or no edge water or bump was tested"
     elif step.check == "cliff_pieces":
         shapes = re.search(r"^shapes: (\d+)/(\d+) behave as expected", output, re.M)
         pairs = re.search(r"^vanilla agreement: (\d+)/(\d+) piece adjacencies", output, re.M)

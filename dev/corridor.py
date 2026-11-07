@@ -224,6 +224,23 @@ def check(plan, project=None):
             lines.append(f"  add    {a} -{d}-> {b} offset {off}")
         for a, d, b, off in sorted(current - planned):
             lines.append(f"  remove {a} -{d}-> {b} offset {off}")
+        # the seams the plan already has in the game must look like one landscape: no strip drawn
+        # in the wrong tileset, nobody who pops in, no pair vanilla never draws side by side
+        # (mapkit/seams.py). Interim joins the plan will replace are listed above, not judged.
+        from mapkit.corpus import Corpus
+        from mapkit.seams import seam_issues
+        corpus = Corpus(project)
+        built = sorted(planned & current)
+        # seam_ok: [x, y, why] on a map's entry, an edge cell whose pair vanilla never draws but
+        # which reads right (judged in a render and in-game)
+        accepted = {m["map"]: {(int(c[0]), int(c[1])) for c in m.get("seam_ok", [])}
+                    for m in plan.maps if m.get("map", "new") != "new"}
+        lines.append(f"Built seams on the plan: {len(built)} joins (each side), "
+                     f"{sum(len(v) for v in accepted.values())} cells accepted (seam_ok)")
+        for a, d, b, off in built:
+            for sev, code, msg in seam_issues(project, project.load_map(a), corpus, only={b},
+                                              accept=accepted.get(a, set())):
+                errors.append(f"{a}: {code}: {msg}")
         news = [m["name"] for m in plan.maps if m.get("map", "new") == "new"]
         if news:
             lines.append(f"  new maps: {', '.join(news)} (their joins come when they're created)")

@@ -123,11 +123,16 @@ def grid_labels(vocab, entry, blocks, w, h):
     return [[vocab.label(entry, blocks[y * w + x] & 0x3FF) for x in range(w)] for y in range(h)]
 
 
-def signature(lab, x, y, w, h):
+def signature(lab, x, y, w, h, outside=None):
+    """The 8 neighbours' classes; off the map, OUT, or with `outside` ({(x, y): class}, a
+    connected neighbour's cells across the seam) what the player sees there."""
     out = []
     for dx, dy in NEIGH8:
         nx, ny = x + dx, y + dy
-        out.append(lab[ny][nx] if 0 <= nx < w and 0 <= ny < h else OUT)
+        if 0 <= nx < w and 0 <= ny < h:
+            out.append(lab[ny][nx])
+        else:
+            out.append(outside.get((nx, ny), OUT) if outside else OUT)
     return tuple(out)
 
 
@@ -325,9 +330,10 @@ def enforce_grammar(cls_grid, w, h, forbidden, max_passes=4, where=None):
     return fixed
 
 
-def autotile(rules, lab, w, h, keep=None, exclude=frozenset()):
+def autotile(rules, lab, w, h, keep=None, exclude=frozenset(), outside=None):
     """lab: class grid (F and LD cells need `keep[y][x]` metatile). Returns (metatile grid, stats).
-    exclude: metatiles the rules must never choose (Rules.pick)."""
+    exclude: metatiles the rules must never choose (Rules.pick). outside: the classes across
+    connected seams (signature), so edge cells are tiled for what really lies beyond them."""
     out = [[0] * w for _ in range(h)]
     levels = Counter()
     for y in range(h):
@@ -336,7 +342,7 @@ def autotile(rules, lab, w, h, keep=None, exclude=frozenset()):
             if c in KEPT:
                 out[y][x] = keep[y][x] if keep else 0x001
                 continue
-            mid, lvl = rules.pick(c, signature(lab, x, y, w, h), exclude)
+            mid, lvl = rules.pick(c, signature(lab, x, y, w, h, outside), exclude)
             out[y][x] = mid if mid is not None else 0x001
             levels[lvl] += 1
     return out, levels

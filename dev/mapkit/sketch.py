@@ -375,7 +375,7 @@ def keep_unrebuildable_ledges(rows, w, h, mid_at):
             stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
 
 
-def assign_tree_quarters(cls_grid, w, h, hint=None):
+def assign_tree_quarters(cls_grid, w, h, hint=None, outside=None):
     """Turn 'T' cells into whole 2x2 trees (TL TR / BL BR). Greedy row-major tiling: the first
     free T cell becomes a tree's top-left if the 2x2 block from it is all free T. This places
     trees at any alignment (single trees, staggered rows). Leftover T cells can't hold a whole
@@ -384,9 +384,11 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
     hint (the existing map's labels): each grove (a 4-connected group of T cells) keeps the old
     map's tree placement if that drops no more cells than tiling it afresh. A redesigned grove
     edge, e.g. staggered trees beside old aligned ones, is tiled afresh, so old trees that
-    straddle the new ones don't knock them out."""
+    straddle the new ones don't knock them out.
+    outside ({(x, y): class} across connected seams, compile_sketch's `seams`): a tree is cut by a
+    connected edge only where the neighbour holds its other half."""
     if not hint:
-        return _tile_trees(cls_grid, w, h, None)
+        return _tile_trees(cls_grid, w, h, None, outside=outside)
     seen, dropped = set(), 0
     scratch = [["X"] * w for _ in range(h)]
     for y0 in range(h):
@@ -409,7 +411,7 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
             for hh in (hint, None):
                 for x, y in comp:
                     scratch[y][x] = "T"
-                n = _tile_trees(scratch, w, h, hh, box)
+                n = _tile_trees(scratch, w, h, hh, box, outside)
                 trials.append((n, {(x, y): scratch[y][x] for x, y in comp}))
                 for x, y in comp:
                     scratch[y][x] = "X"
@@ -420,15 +422,19 @@ def assign_tree_quarters(cls_grid, w, h, hint=None):
     return dropped
 
 
-def _tile_trees(cls_grid, w, h, hint, box=None):
-    """box (x0, y0, x1, y1): only cells in it can be forest; loops stay inside it."""
+def _tile_trees(cls_grid, w, h, hint, box=None, outside=None):
+    """box (x0, y0, x1, y1): only cells in it can be forest; loops stay inside it.
+    outside: classes across connected seams; there a cut tree's off-map half must be the
+    neighbour's matching quarter (an unconnected edge cuts trees freely, as the border hides it)."""
     x0, y0, x1, y1 = box or (0, 0, w - 1, h - 1)
     inside = lambda x, y: 0 <= x < w and 0 <= y < h
+    outside = outside or {}
 
     def place(x, y, allow_offmap):
         quad = [(x, y, "TL"), (x + 1, y, "TR"), (x, y + 1, "BL"), (x + 1, y + 1, "BR")]
-        ok = all((inside(qx, qy) and cls_grid[qy][qx] == "T") or (allow_offmap and not inside(qx, qy))
-                 for qx, qy, _ in quad)
+        ok = all((inside(qx, qy) and cls_grid[qy][qx] == "T") or
+                 (allow_offmap and not inside(qx, qy) and outside.get((qx, qy), q) == q)
+                 for qx, qy, q in quad)
         if ok and any(inside(qx, qy) for qx, qy, _ in quad):
             for qx, qy, q in quad:
                 if inside(qx, qy):
@@ -480,12 +486,16 @@ def _tile_trees(cls_grid, w, h, hint, box=None):
     return dropped
 
 
-def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden=None, fresh=False):
+def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden=None, fresh=False,
+                   seams=None):
     """Sketch -> new block list for `layout` (same size). Returns (blocks, report dict).
     vocab + not fresh: keep the layout's existing tree placement where the sketch keeps forest.
     forbidden: class pairs to repair with a grass margin (terrain.enforce_grammar).
     Raises SketchError if the ledges can't be built as drawn (shape, or a landing that isn't
-    walkable). Ledge warnings (a ledge nobody can reach) go in the report."""
+    walkable). Ledge warnings (a ledge nobody can reach) go in the report.
+    seams: {(x, y): class} for the cells just across each connected edge (seams.outside_labels):
+    edge cells are tiled for what the player sees beyond them, and trees are cut by a connected
+    edge only where the neighbour holds the other half. None: off the map is unknown (OUT)."""
     from .terrain import enforce_grammar, PRIMARY
     w, h = sketch.w, sketch.h
     if (w, h) != (layout.width, layout.height):
@@ -517,7 +527,7 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
     repaired = {}                       # cell -> (class the sketch drew, the cell that outranked it)
     grammar = dict(enforce_grammar(cls, w, h, forbidden, where=repaired)) if forbidden else {}
     hint = grid_labels(vocab, layout.entry, layout.blocks, w, h) if vocab and not fresh else None
-    dropped = assign_tree_quarters(cls, w, h, hint)
+    dropped = assign_tree_quarters(cls, w, h, hint, outside=seams)
     # flora (flowers, boulders, saplings): resolved by shape; for everything else they read as grass
     fpieces, flora_errors = flora.resolve(cls, w, h)
     if fpieces and layout.primary != PRIMARY:
@@ -577,11 +587,11 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         learn_view = [[("G" if (x, y) in stamp_blocks else c) for x, c in enumerate(row)]
                       for y, row in enumerate(learn_view)]
     # vanilla labels its cliff stairs as grass; the rules must never draw them in open ground
-    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES)
+    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=seams)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
         view = shores.sand_view(learn_view, w, h)
-        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES)[0] \
+        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=seams)[0] \
             if view != learn_view else None
         shore_tiles = shores.apply(gview, mids, w, h, sand_mids)
     if fpieces:
