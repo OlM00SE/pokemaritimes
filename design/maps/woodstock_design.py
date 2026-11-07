@@ -150,6 +150,11 @@ for x in range(0, 25):
     for cx in run[:len(run) - len(run) % 2]:
         sk.set(cx, H - 1, "T")
     run = []
+# the bank's step at the seam (above) takes the woods' first column back as its verge; a boulder on
+# that verge's seam tile keeps Route 202's far shore from joining this bank, which would open a way
+# around the route (it was a tree before, so no save stands there)
+assert sk.get(44, H - 1) == ".", f"the verge at (44,{H - 1}) is {sk.get(44, H - 1)!r}"
+sk.set(44, H - 1, "b")
 
 # --- gardens, the green, accents -------------------------------------------------------------
 GARDEN = [((4, 11), 4), ((12, 11), 3), ((11, 9), 3), ((6, 16), 3)]   # the community garden
