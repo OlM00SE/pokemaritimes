@@ -8,7 +8,12 @@
 **Edges and cliffs v2** (branch `edges-cliffs-v2`, 2026-11-07). Tooling-led follow-up to Tom's phone
 play: the cliff and rock tiles that didn't transition, and the map edges against the border. **SAVES
 CARRY OVER** (save line 2, no layout change, no world revision: no tile a walker could reach turned
-solid on any map; checked against `develop` cell by cell). **Next: M18 Nackawic, held until Tom says go.**
+solid on any map; checked against `develop` cell by cell). **Merged into `develop` as `a9180ede6a`,
+not pushed (waiting for Tom's okay).** **Phone build published:** `2026-11-07_a9180ede6a`, ROM sha256
+`847106d1fad80e72…` (the ROM the gate tested), save line 2; `dev/mobile.py` 9/9 in mGBA; Google Drive
+confirmed `PokeMaritimes_save2.zip` and `builds/PokeMaritimes_2026-11-07_a9180ede6a_save2.zip`. A
+local copy with its `.map` for the next milestone's `--old-rom`: `dev/out/nackawic/oldrom/` (the
+previous build stays in `dev/out/next/oldrom/`). **Next: M18 Nackawic, held until Tom says go.**
 
 | Tom saw / known limit | Cause | Done |
 |---|---|---|
