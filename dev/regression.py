@@ -173,6 +173,9 @@ def coverage_error(step, output):
             return "the resolver's piece adjacencies weren't all vanilla's"
         if not rt or any(int(n) < 1 or int(c) or int(s) for n, c, s in rt):
             return "no map's cliffs came back exactly through extract -> compile"
+        ground = re.search(r"^ground agreement: \d+/(\d+) .*?, (\d+) not \((\d+) cells' sides", output, re.M)
+        if not ground or int(ground[2]) or int(ground[1]) < 20 or int(ground[3]) < 100:
+            return "a built cliff meets ground in a way vanilla never draws (and nobody judged it)"
     return None
 
 
@@ -211,8 +214,9 @@ def evidence(step, output):
     if step.id == "cliff_pieces":
         bits = [m[0] for m in (re.search(r"^shapes: .*", output, re.M),
                                re.search(r"^vanilla agreement: [^;\n]*", output, re.M),
+                               re.search(r"^ground agreement: [^(\n]*", output, re.M),
                                re.search(r"^roundtrip: .*", output, re.M)) if m]
-        return "; ".join(bits)[:200]
+        return "; ".join(bits)[:260]
     unit = re.search(r"^Ran (\d+) tests? in .*\n\s*\n(OK.*|FAILED.*)$", output, re.M)
     if unit:      # unittest's summary (stderr, so it can land before the tests' own stdout)
         return f"{unit[1]} tests {unit[2]}"

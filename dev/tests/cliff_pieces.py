@@ -148,7 +148,8 @@ ROAD = (["..=..",
 
 CASES = [
     ("plateau, one-row face", *PLATEAU,
-     {(1, 1): C.RIM_NW, (3, 1): C.RIM, (5, 1): C.RIM_NE, (1, 2): C.FLANK_W, (5, 2): C.FLANK_E,
+     {(1, 1): C.RIM_NW, (2, 1): C.LINE_W, (3, 1): C.LINE, (4, 1): C.LINE_E, (5, 1): C.RIM_NE,
+      (1, 2): C.FLANK_W, (5, 2): C.FLANK_E,
       (1, 3): C.FOOT_W, (3, 3): C.FACE1, (5, 3): C.FOOT_E}),
     ("two-row face", *FACE2,
      {(1, 3): C.FLANK_W, (2, 3): C.FACE_TOP_W, (3, 3): C.FACE_TOP, (4, 3): C.FACE_TOP_E,
@@ -161,8 +162,8 @@ CASES = [
     ("inside corner under a tall face", *INSIDE,
      {(3, 2): C.FACE_TOP, (3, 3): C.INNER["SE"], (3, 4): C.FLANK_E, (4, 2): C.FACE_TOP,
       (4, 3): C.FACE_BOTTOM}),
-    ("plus: rim and face inside corners", *PLUS,
-     {(4, 3): C.INNER["NW"], (8, 3): C.INNER["NE"], (4, 5): C.INNER["SW"], (8, 5): C.INNER["SE"],
+    ("plus: north edge (line) and face inside corners", *PLUS,
+     {(4, 3): C.LINE, (8, 3): C.LINE, (4, 5): C.INNER["SW"], (8, 5): C.INNER["SE"],
       (1, 3): C.RIM_NW, (11, 3): C.RIM_NE, (1, 5): C.FOOT_W, (11, 5): C.FOOT_E}),
     ("stairs two and one wide", *STAIRS,
      {(3, 3): C.STAIR_L, (4, 3): C.STAIR_R, (3, 4): C.STAIR_L, (4, 4): C.STAIR_R, (7, 3): C.STAIR_L,
@@ -250,6 +251,14 @@ def vanilla_agreement(p, made, verbose):
     for m in sorted(C.PIECES):
         a = corpus.attrs.get((PRIMARY, m))
         want = C.STAIR_ATTRS if m in C.STAIR_PIECES else C.WALL_ATTRS
+        if m in C.LINE_PIECES:
+            # vanilla's grass-terrace line is walkable high ground (0/3, 0/5) and the terrace's
+            # edge is held by an elevation change; ours keeps every level at elevation 3 and holds
+            # every wall by collision, so the line is solid. Vanilla's tile must stay walkable
+            # grass art (no collision of its own) for that to read right.
+            if not a or a.most_common(1)[0][0][0] != 0:
+                attrs_bad.append(f"{m:03X}: vanilla {a.most_common(2) if a else 'never'}, expected walkable")
+            continue
         if not a or a.most_common(1)[0][0] != want:
             attrs_bad.append(f"{m:03X}: vanilla {a.most_common(2) if a else 'never'}, ours {want}")
     print(f"vanilla agreement: {len(pairs) - len(missing)}/{len(pairs)} piece adjacencies vanilla uses; "
@@ -257,6 +266,64 @@ def vanilla_agreement(p, made, verbose):
           + (f"\n  never in vanilla: {', '.join(missing)}" if missing else "")
           + (f"\n  attributes: {'; '.join(attrs_bad)}" if attrs_bad else ""))
     return not missing and not attrs_bad and len(pairs) > 20
+
+
+# Ground beside a piece that vanilla never draws but that is judged right (in renders and in-game,
+# edges-cliffs-v2: dev/out/edges_cliffs/ground_pairs.png), with the reason. Grass is listed pairing
+# by pairing, so a new joint on the grass side (the rock rim over a lawn was one) still fails.
+CUTTING = "a graded road's cutting: the wall ends beside the road a level down"
+CORNER = "a terrace's corner or a face's top beside its flank, with the terrace's grass behind it"
+GROUND_OK = {
+    (0x068, "S", 0x001): CUTTING, (0x068, "S", 0x003): CUTTING, (0x06A, "S", 0x001): CUTTING,
+    (0x070, "N", 0x001): CUTTING, (0x072, "N", 0x001): CUTTING, (0x06A, "W", 0x001): CORNER,
+    (0x07A, "W", 0x001): CORNER, (0x07B, "N", 0x001): CORNER, (0x07D, "N", 0x001): CORNER,
+    (0x07C, "E", 0x001): CORNER, (0x07C, "W", 0x001): CORNER,
+    (0x002, "N", 0x004): "the line under a flower tuft's grass", (0x0D4, "N", 0x004): "the same",
+    (0x0D3, "N", 0x002): "the line under the river bank's grass (002 there is walkable shore grass)",
+    (0x0D4, "N", 0x002): "the same",
+    (0x07A, "S", 0x1CF): "the cap of a tree row standing below a foot corner",
+}
+# Whole classes: a forest's tiles beside a wall (the learned rules pick the tree variant for a
+# grass neighbour: a wall reads as grass to them), a ledge whose end runs under a wall (M17), and a
+# road's edge tile beside the wall of its cutting (vanilla's roads never cut General's cliffs).
+GROUND_OK_CLASSES = {"TL", "TR", "BL", "BR", "LD", "P"}
+
+
+def ground_agreement(p, verbose):
+    """Every built map's cliff pieces against the ground around them (not just other pieces: M17's
+    check compared pieces with pieces and missed the rock rim 069 over grass, which vanilla never
+    draws). Each (piece, direction, neighbour) on CliffLab and Route 202, where the neighbour isn't
+    a cliff piece, must be a pairing vanilla uses, or be judged in GROUND_OK."""
+    corpus = Corpus(p)
+    vocab = learned(p)["vocab"]
+    seen, odd, judged = {}, {}, set()
+    for name, _ in built_maps(p):
+        m = p.load_map(name)
+        L = m.layout
+        for y in range(L.height):
+            for x in range(L.width):
+                if not C.is_cliff_block(L.get(x, y)):
+                    continue
+                a = L.mid(x, y)
+                for d, (dx, dy) in C.DIRS.items():
+                    nx, ny = x + dx, y + dy
+                    if not L.inb(nx, ny) or C.is_cliff_block(L.get(nx, ny)):
+                        continue
+                    b = L.mid(nx, ny)
+                    key = (a, d, b)
+                    seen[key] = seen.get(key, 0) + 1
+                    if corpus.neigh.get((PRIMARY, a), {}).get(d, {}).get((PRIMARY, b), 0):
+                        continue
+                    if key in GROUND_OK or vocab.label(L.entry, b) in GROUND_OK_CLASSES:
+                        judged.add(key)
+                    else:
+                        odd.setdefault(key, []).append(f"{name} ({x},{y})")
+    print(f"ground agreement: {len(seen) - len(odd) - len(judged)}/{len(seen)} piece-ground pairings "
+          f"vanilla uses, {len(judged)} judged (GROUND_OK), {len(odd)} not "
+          f"({sum(seen.values())} cells' sides on {len(built_maps(p))} maps)"
+          + "".join(f"\n  never in vanilla: {a:03X} -{d}-> {b:03X} x{len(v)}, e.g. {v[0]}"
+                    for (a, d, b), v in sorted(odd.items())))
+    return not odd and bool(seen)
 
 
 def level_lines():
@@ -314,7 +381,7 @@ def sketch_agreement(p):
         m = p.load_map(name)
         blocks, _ = compile_sketch(p, L["corpus"], L["rules"], sk, m.layout, L["vocab"], L["forbidden"],
                                    fresh=True)
-        cells = [i for i, b in enumerate(blocks) if (b & 0x3FF) in C.PIECES]
+        cells = [i for i, b in enumerate(blocks) if C.is_cliff_block(b)]
         differ = sum(1 for i in cells if blocks[i] != m.layout.blocks[i])
         ok &= differ == 0 and bool(cells)
         checked.append(f"{name} {len(cells)} cliff cells, {differ} differ")
@@ -334,13 +401,13 @@ def roundtrip(p):
     ok, checked = True, []
     for name in (n for n in ROUNDTRIP_MAPS if n in p.map_names):
         m = p.load_map(name)
-        cells = [i for i, b in enumerate(m.layout.blocks) if (b & 0x3FF) in C.PIECES]
+        cells = [i for i, b in enumerate(m.layout.blocks) if C.is_cliff_block(b)]
         if not cells:
             continue
         sk = extract(p, vocab, name, rules, forbidden, corpus)
         blocks, _ = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden)
         cliff_changed = sum(1 for i in cells if blocks[i] != m.layout.blocks[i])
-        stray = sum(1 for i, b in enumerate(blocks) if (b & 0x3FF) in C.PIECES and i not in set(cells))
+        stray = sum(1 for i, b in enumerate(blocks) if C.is_cliff_block(b) and i not in set(cells))
         others = sum(1 for a, b in zip(blocks, m.layout.blocks) if a != b) - cliff_changed
         ok &= cliff_changed == 0 and stray == 0
         checked.append(f"{name} {len(cells)} cliff cells, {cliff_changed} changed, {stray} drawn elsewhere "
@@ -357,8 +424,9 @@ def main(argv):
     for name, _ in built_maps(p):
         L = p.load_map(name).layout
         made.append((None, {(x, y): L.mid(x, y) for y in range(L.height) for x in range(L.width)
-                            if L.mid(x, y) in C.PIECES or L.mid(x, y) in ledges.PIECES}))
+                            if C.is_cliff_block(L.get(x, y)) or L.mid(x, y) in ledges.PIECES}))
     ok = vanilla_agreement(p, made, verbose) and ok
+    ok = ground_agreement(p, verbose) and ok
     ok = level_lines() and ok
     ok = sketch_agreement(p) and ok
     ok = roundtrip(p) and ok
