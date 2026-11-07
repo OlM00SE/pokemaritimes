@@ -83,19 +83,24 @@ def main(argv):
                   f"({filled} filled by edge water)")
             for (gx, gy), b, got in wrong[:6]:
                 print(f"    ({gx - MAP_OFFSET},{gy - MAP_OFFSET}): model {b:04X}, game {got:04X}")
-            # bumps: walkable edge cells beside a filled margin cell
-            cases = []
+            # bumps: edge cells beside a filled margin cell, on foot from the verges and surfing
+            # from the water (the dev warp onto water starts Surf), every foot case and up to four
+            # surf cases a map
+            foot, surf = set(), set()
             for (fx, fy) in fill:
                 for d, (dx, dy) in OUTWARD.items():
                     ex, ey = fx - dx, fy - dy          # the map cell the fill lies outward from
-                    if L.inb(ex, ey) and L.coll(ex, ey) == 0 and not \
-                            p.tile_flags.get(L.tiles.behavior(L.mid(ex, ey)), 0) & TILE_FLAG_SURFABLE:
-                        cases.append((ex, ey, d))
+                    if not L.inb(ex, ey) or L.coll(ex, ey):
+                        continue
+                    wet = p.tile_flags.get(L.tiles.behavior(L.mid(ex, ey)), 0) & TILE_FLAG_SURFABLE
+                    (surf if wet else foot).add((ex, ey, d))
+            surf = sorted(surf)[::max(1, len(surf) // 4)][:4]
+            cases = [(c, False) for c in sorted(foot)] + [(c, True) for c in surf]
             shot, mine, mine_bad = False, 0, 0
-            for ex, ey, d in sorted(set(cases)):
+            for (ex, ey, d), surfing in cases:
                 pos = e.warp(name, ex, ey)
-                if pos[2:] != (ex, ey):
-                    print(f"    bump ({ex},{ey}): the warp landed at {pos[2:]}")
+                if pos[2:] != (ex, ey) or bool(e.surfing()) != surfing:
+                    print(f"    bump ({ex},{ey}): the warp landed at {pos[2:]}, surfing {e.surfing()}")
                     bad_bumps += 1; bumps += 1
                     continue
                 if not shot:
@@ -109,9 +114,10 @@ def main(argv):
                 bumps += 1; mine += 1
                 if tuple(got) != tuple(pos):          # (group, num, x, y): same map, same tile
                     bad_bumps += 1; mine_bad += 1
-                    print(f"    bump ({ex},{ey}) {d}: moved to {got}")
+                    print(f"    bump ({ex},{ey}) {d}{' surfing' if surfing else ''}: moved to {got}")
             if cases:
-                print(f"{name}: bumps into filled cells {mine - mine_bad}/{mine} stay put")
+                print(f"{name}: bumps into filled cells {mine - mine_bad}/{mine} stay put "
+                      f"({len(foot)} on foot, {len(surf)} surfing)")
     print(f"\nTOTAL: margin {total_cells - bad_cells}/{total_cells} cells as the model says on {len(maps)} maps, "
           f"{filled_seen} filled by edge water; bumps {bumps - bad_bumps}/{bumps} stay put")
     if not filled_seen:

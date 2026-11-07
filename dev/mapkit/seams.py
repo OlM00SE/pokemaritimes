@@ -13,8 +13,10 @@ Engine facts (pokeemerald-expansion 1.17.2; design/mapping_reference.md, "Seams"
 - The screen is 15 x 10 tiles: the player's tile has 7 columns beside it on each side, 4 rows above
   and 5 below; a person's 32-pixel sprite on the row just below the screen still shows its head.
   The step that crosses a seam loads the new map's people as it starts, while the next column or
-  row scrolls in, so what a player sees before crossing (from the edge, or as each step there
-  scrolls in) is: 6 columns into the neighbour beside it, 5 rows below, 3 rows above.
+  row scrolls in, so what a player standing just across an edge sees of this map before crossing
+  is: 7 columns in beside it (the edge column and 6 more), 6 rows in when looking down (5 and a
+  head), 4 rows in when looking up. As distances from the edge (0 = the edge row or column): the
+  SEEN_ACROSS limits below.
 - A margin cell with no connection draws the map's border pattern; with OW_EDGE_WATER the engine
   first carries water that reaches such an edge on into the margin (fieldmap.c ExtendEdgeWater;
   margin_fill below is its model).
@@ -143,7 +145,12 @@ def unvanilla_pairs(corpus, m, n, direction, offset, skip=frozenset()):
 def outside_labels(p, vocab, m, depth=2):
     """{(x, y): class} for the cells just across each connected edge of map m, `depth` deep (2:
     the 8-neighbourhood needs 1, a cut tree's other half needs 2), as the vocabulary labels the
-    neighbour's blocks (tree quarters TL TR BL BR, G, S...). compile_sketch's `seams`."""
+    neighbour's blocks (tree quarters TL TR BL BR, G, S...). compile_sketch's `seams`.
+    Labelled in the neighbour's own tilesets, i.e. what the land there is: across a seam between
+    tilesets the player sees other graphics in the strip, and that is `seam_tileset`'s to report
+    (an error on the plan's joins), not something an edge can be shaped around.
+    Not yet seen by the grammar's forbidden-pair repair, flora, shores or cliffs: a forbidden pair
+    across a seam shows up as `seam_tiles` instead."""
     out = {}
     for c in m.connections:
         name = p.const_to_map.get(c["map"])
@@ -201,9 +208,12 @@ def seam_issues(p, m, corpus=None, only=None, accept=frozenset()):
     return issues
 
 
-def margin_fill(p, m):
+def margin_fill(p, m, layout=None):
     """Model of fieldmap.c ExtendEdgeWater: {(x, y): block} for margin cells (outside the map) that
-    the engine fills by carrying edge water on outward where no connection covers the margin.
+    the engine fills by carrying edge water on outward, on each side with no connection at all (a
+    side with any connection is left to it: GetMapBorderIdAt must keep answering INVALID for
+    what's filled). layout: draw from this version of the map's blocks (a preview) instead of the
+    saved one.
 
     Each water cell (surfable: MetatileBehavior_IsSurfableWaterOrUnderwater) on an edge runs on
     straight out to the margin's depth. So does a verge beside each run of it: the edge cell next to
@@ -213,17 +223,15 @@ def margin_fill(p, m):
     bits). Outdoor maps only (MAP_TYPE_TOWN, CITY, ROUTE, OCEAN_ROUTE)."""
     if m.j.get("map_type") not in OUTDOOR:
         return {}
-    L = m.layout
+    L = layout or m.layout
     tp = L.tiles
     w, h = L.width, L.height
-    covered = set()
-    for c in m.connections:
-        name = p.const_to_map.get(c["map"])
-        if c["direction"] in EDGES and name:
-            covered |= {(x, y) for x, y, _, _ in _span(m, p.load_map(name), c["direction"], int(c["offset"]))}
+    connected = {c["direction"] for c in m.connections if c["direction"] in EDGES}
     wet = lambda x, y: bool(p.tile_flags.get(tp.behavior(L.mid(x, y)), 0) & TILE_FLAG_SURFABLE)
     out = {}
     for direction in EDGES:
+        if direction in connected:
+            continue
         n_along = w if direction in ("up", "down") else h
         depth = strip_depth(direction)
         edge = {"up": lambda k: (k, 0), "down": lambda k: (k, h - 1),
@@ -249,8 +257,6 @@ def margin_fill(p, m):
                     break
         for k, src in source.items():
             block = L.get(*edge(src)) | COLLISION_MASK
-            for s in range(depth):
-                cell = out_cell(k, s)
-                if cell not in covered:
-                    out[cell] = block
+            for s in range(depth):        # straight out from the map's own edge: no connection
+                out[out_cell(k, s)] = block   # strip lies there (a side's strip stays on its side)
     return out

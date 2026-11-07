@@ -15,7 +15,7 @@ Each check has a negative control: the same rule on a case built to break it.
 """
 import copy, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from mapkit.project import Project, MAP_OFFSET
+from mapkit.project import Project, MAP_OFFSET, TILE_FLAG_SURFABLE
 from mapkit.corpus import Corpus
 from mapkit import seams
 from mapkit.sketch import _tile_trees
@@ -102,7 +102,7 @@ def main():
           and len([1 for x, y in fill if y < 0]) == len(up) * MAP_OFFSET,
           f"HomeTown's brook runs on north {MAP_OFFSET} deep over columns {up}")
     water = [x for x in range(home.layout.width)
-             if p.tile_flags.get(home.layout.tiles.behavior(home.layout.mid(x, 0)), 0) & 2]
+             if p.tile_flags.get(home.layout.tiles.behavior(home.layout.mid(x, 0)), 0) & TILE_FLAG_SURFABLE]
     check(set(water) < set(up) and min(up) < min(water) and max(up) > max(water),
           f"with a verge each side (water {water})")
     # border pairing: a verge whose next cell shares its border tree widens by one
@@ -120,6 +120,21 @@ def main():
           f"an indoor map ({lab_map.j.get('map_type')}) gets nothing")
     covered = seams.margin_fill(p, r201)
     check(not covered, "Route 201's water meets its edges only where neighbours connect: nothing filled")
+    # a side with any connection is never filled (GetMapBorderIdAt would read its flag as set)
+    joined = copy.copy(home)
+    joined.j = copy.deepcopy(home.j)
+    joined.j["connections"] = list(home.connections) + [
+        {"map": r201.id, "direction": "up", "offset": 40}]      # covers none of the brook
+    check(not any(y < 0 for x, y in seams.margin_fill(p, joined)),
+          "with any connection on its north side, HomeTown's brook isn't carried north")
+    stray = []
+    for n in ("HomeTown_0", "Route201_1", "Woodstock_2", "Route202_1", "ShoreLab"):
+        mm = p.load_map(n)
+        W2, H2 = mm.layout.width, mm.layout.height
+        side_of = lambda x, y: "up" if y < 0 else "down" if y >= H2 else "left" if x < 0 else "right"
+        on = {c["direction"] for c in mm.connections}
+        stray += [(n, x, y) for x, y in seams.margin_fill(p, mm) if side_of(x, y) in on]
+    check(not stray, f"no filled cell on a connected side of five maps ({stray[:3]})")
 
     print("gate (corridor.py check's seam_issues)")
     clean = seams.seam_issues(p, home, corpus, only={"Route201_1"}, accept={(33, 5)})
