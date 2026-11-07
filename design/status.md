@@ -5,8 +5,14 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; merged into `develop`
-locally, **not pushed: waiting for Tom's okay**; phone build at the end of this section). Tom played the M17 phone build and reported three things: cliff and rock
+**Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; merged into `develop` as
+`f48b4a92d4`, **not pushed: waiting for Tom's okay**). **Phone build published:**
+`2026-11-07_f48b4a92d4`, ROM sha256 `d46d7a2355086f18…` (the ROM the gate tested), save line 2;
+`dev/mobile.py` 9/9 in mGBA; Google Drive confirmed `PokeMaritimes_save2.zip` and
+`builds/PokeMaritimes_2026-11-07_f48b4a92d4_save2.zip`. **SAVES CARRY OVER.** A local copy with its
+`.map` for the next milestone's `--old-rom`: `dev/out/next/oldrom/` (the M17 build stays in
+`dev/out/m18/oldrom/`). **Next: proposed below ("edges and cliffs v2"), not started; M18 Nackawic
+still held until Tom says go.** Tom played the M17 phone build and reported three things: cliff and rock
 tiles that don't transition smoothly, terrain changes and people popping in at map boundaries,
 rivers ending against the forest at a map's edge. Investigated in renders, in mGBA and against the
 vanilla corpus; the systemic causes are fixed, the cliff vocabulary's is diagnosed for the next
