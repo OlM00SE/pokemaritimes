@@ -184,6 +184,10 @@ for i, ((x, y), n) in enumerate([((12, 19), 2), ((16, 15), 3), ((24, 16), 2), ((
 INNER = ls.rect(2, 0, W - 3, H - 1)               # never on a seam's column
 ls.nestle(sk, INNER - ls.rect(0, 13, W - 1, H - 1), 5, seed=2140, min_gap=7, keep_clear=CLEAR)
 ls.nestle(sk, INNER & ls.rect(0, 13, W - 1, 21), 4, seed=2141, min_gap=10, keep_clear=CLEAR)
+# last, so nothing above moves (terrain-rules): a route's flowers are singles, as vanilla's are, and
+# no sapling stands against a tree
+ls.loosen_flowers(sk)
+ls.uncrowd_saplings(sk)
 
 # --- the route sign (its text: design/maps/Route201_1.events.toml) -----------------------------
 SIGN = (3, 21)

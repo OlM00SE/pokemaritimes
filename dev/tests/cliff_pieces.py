@@ -271,34 +271,10 @@ def vanilla_agreement(p, made, verbose):
 # Ground beside a piece that vanilla never draws but that is judged right (in renders and in-game,
 # edges-cliffs-v2: dev/out/edges_cliffs/ground_pairs.png), with the reason. Grass is listed pairing
 # by pairing, so a new joint on the grass side (the rock rim over a lawn was one) still fails.
-CUTTING = "a graded road's cutting: the wall ends beside the road a level down"
-CORNER = "a terrace's corner or a face's top beside its flank, with the terrace's grass behind it"
-GROUND_OK = {
-    (0x068, "S", 0x001): CUTTING, (0x068, "S", 0x003): CUTTING, (0x06A, "S", 0x001): CUTTING,
-    (0x070, "N", 0x001): CUTTING, (0x072, "N", 0x001): CUTTING, (0x06A, "W", 0x001): CORNER,
-    (0x07A, "W", 0x001): CORNER, (0x07B, "N", 0x001): CORNER, (0x07D, "N", 0x001): CORNER,
-    (0x07C, "E", 0x001): CORNER, (0x07C, "W", 0x001): CORNER,
-    (0x002, "N", 0x004): "the line under a flower tuft's grass", (0x0D4, "N", 0x004): "the same",
-    (0x0D3, "N", 0x002): "the line under the river bank's grass (002 there is walkable shore grass)",
-    (0x0D4, "N", 0x002): "the same",
-    (0x07A, "S", 0x1CF): "the cap of a tree row standing below a foot corner",
-}
-# By the neighbour's class, still per piece and side (any variant of that class): a forest's tiles
-# beside a wall (the learned rules pick the tree variant for a grass neighbour: a wall reads as
-# grass to them), a ledge whose end runs under a wall (M17), a road's edge tile beside the wall of
-# its cutting (vanilla's roads never cut General's cliffs).
-TREE = "a tree's variant beside a wall (the rules read the wall as grass)"
-LEDGE = "a ledge's end running under the wall (M17)"
-ROAD = "a road's edge tile beside the wall of its cutting"
-GROUND_OK_CLASSES = {
-    (0x002, "S", "TL"): TREE, (0x002, "S", "TR"): TREE, (0x002, "W", "BR"): TREE,
-    (0x06A, "E", "BL"): TREE, (0x079, "N", "BR"): TREE, (0x07B, "N", "BL"): TREE,
-    (0x07C, "E", "BL"): TREE, (0x091, "S", "TL"): TREE, (0x091, "S", "TR"): TREE,
-    (0x0D3, "S", "TL"): TREE, (0x0D4, "S", "TR"): TREE,
-    (0x072, "N", "LD"): LEDGE, (0x072, "S", "LD"): LEDGE, (0x079, "E", "LD"): LEDGE,
-    (0x079, "W", "LD"): LEDGE,
-    (0x068, "W", "P"): ROAD, (0x06A, "E", "P"): ROAD, (0x06A, "N", "P"): ROAD, (0x072, "E", "P"): ROAD,
-}
+# The judged pairings live with the visual rules (mapkit/composition.py JUDGED), which hold every
+# piece on every map to the same evidence; by the neighbour's class (JUDGED_KINDS): a forest's tiles
+# beside a wall, a ledge whose end runs under a wall (M17), a road's edge beside its cutting's wall.
+from mapkit.composition import JUDGED as GROUND_OK, JUDGED_KINDS as GROUND_OK_CLASSES
 
 
 def ground_agreement(p, verbose):

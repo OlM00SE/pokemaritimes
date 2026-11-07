@@ -9,7 +9,7 @@ from .events import check_events
 from .project import max_map_area_ok, TILE_FLAG_SURFABLE, TILE_FLAG_HAS_ENCOUNTERS, ELEVATION_DEFAULT
 from .seams import seam_issues
 
-EXPLORE_LIMIT = 200000      # states; a graph cut off at the limit is incomplete, so traps aren't judged
+EXPLORE_LIMIT = 200000     # states; a graph cut off at the limit is incomplete, so traps aren't judged
 
 
 def _warp_kinds(p):
@@ -236,6 +236,13 @@ def check_map(p, name, wild_maps=None, corpus=None, mapdata=None, detail=None):
             entries.append((f"edge {c['direction']}->{dest}", crossable))
     # what a player sees across each seam: the strip's tileset, people who'd pop in, cut pieces
     issues.extend(seam_issues(p, m, corpus))
+    # inside the map: two tiles side by side that vanilla never draws (mapkit/composition.py, strict)
+    from .composition import odd_pairs, describe_pairs, OUTDOOR
+    if corpus is not None and m.j.get("map_type") in OUTDOOR:
+        odd = odd_pairs(corpus, L)
+        if odd:
+            W("visual_pairs", f"{len(odd)} pairs of tiles side by side that vanilla never draws: "
+                              + "; ".join(describe_pairs(odd, 4)) + " (dev/terrain_report.py draws them)")
 
     # ---- warps ----
     step_on, door, arrow, stair = _warp_kinds(p)

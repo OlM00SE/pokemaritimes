@@ -28,7 +28,7 @@ from mapkit.sketch import Sketch, SketchError, extract, compile_sketch, CHAR_TO_
 from mapkit.render import render_layout, render_diff, render_contexts
 from mapkit.checks import check_map
 from mapkit.seams import compile_context
-from mapkit import landscape, routes, buildings
+from mapkit import landscape, routes, buildings, composition
 from mapkit.layout import SharedLayoutError
 from mapkit.transaction import edit
 
@@ -223,6 +223,24 @@ def main():
         print("  in the changed area x {}-{}, y {}-{}: straight edge {} -> {}; bare square {} -> {}"
               .format(box[0], box[2], box[1], box[3], before_box["straight_edge"], after["straight_edge"],
                       before_box["open_square"], after["open_square"]))
+    # the visual rules (mapkit/composition.py): pairs vanilla never draws, and each guide outside
+    # vanilla's band, before -> after (dev/terrain_report.py draws them on the map)
+    if m.j.get("map_type") in composition.OUTDOOR and m.layout.primary == composition.PRIMARY:
+        bands = composition.load_bands()
+        new_blocks = m.layout.blocks
+        try:
+            m.layout.blocks = old_blocks
+            before_rep = composition.report(p, corpus, m.layout, m.j.get("map_type"), sk.comments, bands)
+            m.layout.blocks = new_blocks
+            after_rep = composition.report(p, corpus, m.layout, m.j.get("map_type"), sk.comments, bands)
+        except ValueError as ex:          # an `// accept:` line naming no rule
+            print(f"  ERROR visual rules: {ex}   <- NEW")
+            guard = guard or str(ex)
+        else:                             # (the odd pairs themselves: the checker's visual_pairs line)
+            print(f"visual rules: before {composition.summary_line(before_rep)}")
+            print(f"              after  {composition.summary_line(after_rep)}")
+        finally:
+            m.layout.blocks = new_blocks
     # gameplay: each crossing's length and unavoidable tall grass, and the encounter ground,
     # so a redesign can show it still plays the same
     if m.connections:

@@ -164,6 +164,13 @@ BANKS = [((4, 30), 3), ((15, 34), 3), ((21, 32), 3), ((29, 31), 3), ((6, 39), 2)
 for i, ((x, y), n) in enumerate(GARDEN + GREEN + TOWN + BANKS):
     ls.flower_bed(sk, x, y, n, seed=160 + i, keep_clear=CLEAR - RING)
 ls.nestle(sk, land, 4, seed=171, min_gap=9, keep_clear=CLEAR)
+# last, so nothing above moves (terrain-rules): no lane one tile wide (the path family has no
+# pieces for one: the rim showed on one side only), no sapling against a tree (vanilla doesn't)
+ls.widen_paths(sk)
+# The sapling at (18, 39-40) closes a gap in the bottom woods onto Route 202 (without it the crossing reads 23
+# steps instead of 29), and the one at (4, 39-40) a nook from the town down to the border's trees:
+# their trunks become boulders
+ls.uncrowd_saplings(sk, hold={(18, 40), (4, 40)})
 
 # --- sign posts (their text: design/maps/Woodstock_2.events.toml) ----------------------------
 SIGNS = {
