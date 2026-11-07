@@ -242,14 +242,26 @@ def neighbour_origin(c, w, h, other):
 
 def render_contexts(project, name, layouts, margin=8, scale=1, dim=0.45):
     """For each layout in `layouts` (versions of the map, e.g. before and after an edit): that
-    layout plus a `margin`-tile strip of each directly connected neighbour, as the player sees
-    it walking across a seam. Neighbours are dimmed (`dim` = how much grey is blended in) and
-    the map's own outline is drawn, so seams can be judged at a glance. The neighbours are
+    layout plus a `margin`-tile strip of what surrounds it, as the engine draws it for a player
+    on the map: each directly connected neighbour drawn with THIS map's tilesets (a neighbour's
+    secondary metatiles come out as the game shows them across the seam), and elsewhere the
+    map's border pattern, with edge water carried on into it (mapkit/seams.margin_fill, the
+    model of fieldmap.c ExtendEdgeWater). The surroundings are dimmed (`dim` = how much grey is
+    blended in) and the map's own outline is drawn, so seams can be judged at a glance. They are
     rendered once and shared."""
+    from .seams import margin_fill
     m = project.load_map(name)
     w, h = layouts[0].width, layouts[0].height
     x0, y0, x1, y1 = -margin, -margin, w + margin, h + margin     # canvas, in the map's tiles
+    mine = layouts[0]
+    mr = MetatileRenderer(mine.tiles)
     base = Image.new("RGB", ((x1 - x0) * 16, (y1 - y0) * 16), (24, 24, 32))
+    for y in range(y0, y1):                                        # the border pattern
+        for x in range(x0, x1):
+            base.paste(mr.metatile(m.layout.border_block(x, y) & 0x3FF), ((x - x0) * 16, (y - y0) * 16))
+    for (x, y), block in margin_fill(project, m).items():
+        if x0 <= x < x1 and y0 <= y < y1:
+            base.paste(mr.metatile(block & 0x3FF), ((x - x0) * 16, (y - y0) * 16))
     for c in m.connections:
         other = project.const_to_map.get(c["map"])
         if not other:
@@ -258,10 +270,13 @@ def render_contexts(project, name, layouts, margin=8, scale=1, dim=0.45):
         origin = neighbour_origin(c, w, h, ol)
         if origin is None:
             continue
-        img = render_layout(project, ol, 1)
-        if dim:
-            img = Image.blend(img, Image.new("RGB", img.size, (40, 40, 48)), dim)
-        base.paste(img, ((origin[0] - x0) * 16, (origin[1] - y0) * 16))
+        for ny in range(ol.height):
+            for nx in range(ol.width):
+                x, y = origin[0] + nx, origin[1] + ny
+                if x0 <= x < x1 and y0 <= y < y1:
+                    base.paste(mr.metatile(ol.mid(nx, ny)), ((x - x0) * 16, (y - y0) * 16))
+    if dim:
+        base = Image.blend(base, Image.new("RGB", base.size, (40, 40, 48)), dim)
     out = []
     for lay in layouts:
         canvas = base.copy()
