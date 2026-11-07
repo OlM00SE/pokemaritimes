@@ -5,6 +5,67 @@
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; NOT MERGED YET: see the
+end of this section). Tom played the M17 phone build and reported three things: cliff and rock
+tiles that don't transition smoothly, terrain changes and people popping in at map boundaries,
+rivers ending against the forest at a map's edge. Investigated in renders, in mGBA and against the
+vanilla corpus; the systemic causes are fixed, the cliff vocabulary's is diagnosed for the next
+milestone. Engine facts: `mapping_reference.md` §16 (the rim) and §17 (seams). Tooling:
+`dev/README.md`, "Seams".
+
+| Tom saw | Cause | Kind | Done |
+|---|---|---|---|
+| People popping in between maps | The engine spawns only the current map's people; six of ours stood where a player across a seam sees the spot (Gordon 2 tiles in, the researcher 2, the mill hand 3, the walker 3, Ross 6, the Poké Ball 6). Nothing checked it. | Systemic: engine fact, no check | `seam_person` check (warn everywhere, error on the plan's joins); the six moved out of view |
+| Terrain changes at boundaries | (a) Maps compiled alone: past the edge the autotiler saw `OUT`, so Woodstock's bottom row got tree caps over Route 202's grass (17 pairs vanilla never draws), and Route 201's woods ended in half trees against Woodstock's whole ones (11). (b) A neighbour's strip is drawn with this map's tileset: Route 203 shows Fredericton's Rustboro fence as a black column. (c) Route 202 / Fredericton is the known interim seam (M18). | (a) systemic: tooling; (b) systemic: engine fact, no check; (c) known | Compiler seam context (`compile_sketch(seams=)`), `seam_tiles` and `seam_tileset` checks, corridor gate; the three planned seams rebuilt clean (0 pairs). Fredericton's fence column left as is: a prototype the plan rebuilds (checker warns) |
+| Rivers ending at the forest/map border | Water reaching an edge with no neighbour meets the border pattern (trees): HomeTown's brook (north), Woodstock's Saint John (north, toward Hartland, unbuilt), Route 202's brook (west), ShoreLab's lake. Route 203_1_2's river also ends inside the map against trees (prototype design). | Systemic: engine; one isolated prototype | Engine `OW_EDGE_WATER`: edge water runs on into the margin with banks and verges, impassable; model `seams.margin_fill`, matched in RAM cell for cell |
+| Cliff and rock tiles not transitioning | Vanilla's rim pieces (`068 069 06A`) are the top edge of **rock-topped** plateaus: grass south of `069` in 0 of 261 vanilla uses. Our resolver puts them over grass on every terrace's north edge, so a rock strip floats on the lawn (Route 202: 127 cliff-piece pairs vanilla never draws). M17's adjacency check compared pieces only with each other. | Systemic: the cliff vocabulary | **Diagnosed, not fixed:** next milestone (below). Vanilla's answers: faces-only grass terraces with hidden north edges (Lilycove, Route 120), or its thin-wall family (`087`...) |
+
+Evidence: renders and mGBA shots before/after, `dev/out/seams/` (gitignored).
+
+**Tooling** (`mapkit/seams.py`, checker, `corridor.py check`, compiler, renderer): see the commit
+`tooling: seams` and `dev/README.md`, "Seams". `render_map.py --context` now shows what the engine
+draws (it had hidden both the wrong-tileset strip and the border trees). **Engine:** `OW_EDGE_WATER`
+(`src/fieldmap.c` `ExtendEdgeWater`, `include/config/overworld.h`). **Maps:** HomeTown, Route 201,
+Woodstock, Route 202 rebuilt from their designs with the seam context (2, 31, 37, 2 cells, all at
+the seams; two rebuild rounds converge); Route 201's east woods two columns beside the pond glade;
+Woodstock's bottom row steps its bank out to meet Route 202's river; six people moved. Route numbers
+unchanged (53, 53, 29, 29, 51, 51). `corridor.toml` gains `seam_ok` (two judged cells: HomeTown's
+sawmill hedge corner beside Route 201's woods).
+
+**Save compatibility: SAVES CARRY OVER** (save line 2, no layout change, no world revision): no
+tile a walker could reach became solid (Woodstock's (3,41) and its bank at (43,41) were unreachable,
+checked on the old maps with the engine model). A first try put a boulder at Route 202's (28,0) to
+keep a bank tile apart; the old map showed that tile reachable on foot (the far shore joins
+Fredericton's interim seam), so the bank was mended from Woodstock's side instead. Old saves keep
+their people where they saved them until the map next loads.
+
+**Code review** (`/code-review medium`): 10 findings; 6 fixed, 4 answered.
+- **Engine, fixed:** a filled margin cell is no longer undefined, so on a side with a partial
+  connection `GetMapBorderIdAt` would answer `CONNECTION_EAST` for it; a move that ignores collision
+  (no-clip, a scripted move) would then start a transition with no connection to find. Edge water
+  now fills only sides with no connection at all, and the connection flags are cleared first for
+  every map (vanilla kept the previous map's on a map with none). No map's fill changed.
+- **Fixed:** the context render took edge water from the saved map, so a preview's "after" showed
+  the old water (now drawn per version); edge-water bumps now include surfing (10 of 25); the
+  module's notes said 6/5/3 tiles where the code (rightly) uses 7/6/4 columns and rows in from an
+  edge; the render pasted every neighbour cell (now only the overlap); a test hardcoded the
+  surfable flag; a negative control for the connected-side rule.
+- **Answered:** Woodstock's (3,41) turning solid needs no world revision (unreachable on the old map,
+  by the engine model's reach from every entrance; above). The grammar's forbidden-pair repair,
+  flora, shores and cliffs don't see the seam context yet: a pair they'd get wrong shows up as
+  `seam_tiles`, an error on the plan's joins (a known limit). The seam context labels a neighbour
+  in its own tilesets on purpose: across tilesets the strip is wrong anyway and `seam_tileset`
+  says so. The researcher's "!" now shows from the screen's edge column when the exit trigger fires
+  on the road (from the trail, rows 14-15, he was off-screen before too): the price of keeping him
+  out of view from Route 201.
+
+Known limits:
+- Fredericton's fence column still draws black from Route 203 (prototype; the checker warns, the
+  corridor gate will hold its rebuild). Route 203_1_2's river ends against trees inside the map
+  (prototype design). The interim Route 202 / Fredericton seam until Nackawic.
+- Water on a side with a partial connection still meets the border beyond the neighbour.
+- The cliffs (above): the next milestone.
+
 **Milestone 17 is merged into `develop` as `7ca4c45454` and pushed to `origin/develop`** (Tom
 okayed, 2026-11-06). **Next session: M18 is proposed below, not started; Tom asked to hold it
 until he says go.** **Phone build published:** `2026-11-06_7ca4c45454`, ROM sha256 `104363e02ba13d1e…` (the ROM
@@ -1029,6 +1090,7 @@ Tom's decisions so far: forestry/mill HomeTown; possible wildlife station in Woo
 | Story var block 0x4100–0x41FF in SaveBlock3 (first field; asserted inside sectors 0–4); other ids below 0x8000 aren't vars; Maritimes flag block 768 | `include/constants/vars.h`, `flags.h`, `include/global.h`, `src/event_data.c`, `src/save.c` |
 | Save slot sector checksums cover the SaveBlock3 chunk (`CalculateSectorChecksum`) | `src/save.c` |
 | Script macros, the debug var editor and the test framework's script header know the story vars | `asm/macros/event.inc`, `src/debug.c`, `include/test/overworld_script.h` |
+| Edge water (`OW_EDGE_WATER`): water at an edge with no connection runs on into the margin, impassable | `src/fieldmap.c` (ExtendEdgeWater), `include/config/overworld.h` |
 
 ## Regression set (run before merging anything)
 **`dev/regression.py`** runs all of it, serially, and is the merge gate: 55 steps since M17, about 20 minutes. It must end `0 failed`; quote its evidence lines in the handoff (the report is `dev/out/regression/<run>/report.json`, and says if the tree was dirty). `--only <id>...` for a subset while working (the build always runs). How it guards against silent passes and emulator interference: `dev/README.md`, "Test suites".
@@ -1086,6 +1148,20 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ## Next milestone (proposed, not started)
 The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton.
 
+**Recommended first: cliff vocabulary v2** (small, tooling-led; from Tom's phone play, diagnosed in
+the seams work, `mapping_reference.md` §16 "The rim's high side"). Our terraces' north edges use
+vanilla's rock rim over grass, which vanilla never does. Every later map with elevation (Nackawic's
+bluffs, the highlands) inherits the fix, so it goes before them:
+- **Grass-topped terraces:** a north edge drawn with vanilla's thin-wall family (`087` line, `0D5`/`0D6`
+  ends, `085`/`086` sides, `06E 06F 08D 08E` corners, `0FE`/`0FF` top ends), or no visible north edge
+  (forest or map edge over it, as Lilycove and Route 120 do); the rock rim only above rock-topped
+  ground (`071`, a later highlands item). The open question is the joint where a thin side meets a
+  rock face, which vanilla never draws: design it in CliffLab, judge it in renders and in-game.
+- **The check that missed it:** cliff_pieces compares pieces with pieces; make it compare every piece
+  with every neighbour, ground included (vanilla never draws grass under `069`), on every built map.
+- Then rebuild Route 202 and CliffLab, with a world revision if any reachable tile changes.
+- Cliffs into water (below) could join it as the tooling half for Nackawic.
+
 **Milestone 18 (proposed): Nackawic, the bridge town** (`corridor.toml`: 36x42, a new map east of
 Route 202). The road stays on the south bank (Pokiok); a long bridge crosses the widening headpond
 to Nackawic on the north bank: the mill and the giant axe (stand-ins until Porytiles). A Pokémon
@@ -1123,6 +1199,8 @@ Ideas, not done:
 - A `landscape.path()` helper for wandering dirt paths and clearing floors (vanilla's Safari Zone style). Route 201's road is drawn from rectangles; a helper that routes a road between two seams with a verge would make the next one quicker.
 
 ## Gotchas learned
+- **Seams:** two maps built apart only look like one landscape if each compile sees the other: `mapgen build` does (seam context), so after changing a map beside a built neighbour, rebuild both until a rebuild changes nothing. Keep people 7 columns from a side seam, 6 rows from a top one and 4 from a bottom one, or they pop in. A neighbour on another secondary tileset shows wrong graphics in its strip. `corridor.py check` holds the plan's joins to all three. Before turning any tile solid on a map saves may stand on, check it wasn't reachable on the old map (the engine model's `detail["foot"]`), or add a world revision: a boulder on Route 202's far shore looked harmless and wasn't.
+- **Renders:** judge seams with `render_map.py --context`; before this work it drew neighbours in their own tilesets and left unconnected margins dark, hiding exactly what Tom saw on his phone.
 - **Cliffs:** raise terraces low to high with `landscape.terrace`, then draw water, roads and forest (a wall replaces whatever its cell held). Give each terrace's interior an even width and start its bands on the tree grid, or plant leaves one-row grass pockets behind the rims (Route 202's upland steps sit on odd rows for that). A one-tile diagonal staircase with faces taller than one row isn't vanilla (inside corners beside face tops): step scarps in blocks. A road through a wall is a `cutting` at the lower level; stairs only cut south faces. Read the route numbers after any change near water or a seam: a tile of shore turned to land opened a way around Route 202. After changing `cliffs.py`, `tests/cliff_pieces.py` shows whether a built map's cliffs would change (sketch agreement).
 - **Redesigning a map saves may stand on:** resize with `dev/resize_map.py` first (a reused folder must match the plan's size), then add a world revision (`sWorldRevisions`, raise `MARITIMES_WORLD_REVISION`) in the same milestone, and prove it with `tests/ingame_world_revision.py --old-rom` against the last phone build (Drive's `builds/` holds it; `dev/out/mobile/check.map` is that build's symbol map while `mobile.py` hasn't run since). Without it a phone save lands at its old coordinates, inside whatever stands there now, with the old people and the old terrain's saved view around it.
 - **Bridges:** draw `H` two columns wide over every water row where the river runs east-west, with grass at both ends; the road keeps its one-tile grass margin from the deck as from water. A map on a tileset without the pieces is refused with the import command (`dev/tile_import.py bridge <tileset> --apply`). Tree bands: where a street's margin and a creek's leave an odd pair of rows, plant that area on the odd grid (`parity=(0, 1)`) or it stays bare (Woodstock's design does both).
