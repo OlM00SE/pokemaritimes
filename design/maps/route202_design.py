@@ -156,6 +156,11 @@ ls.meadow(sk, ls.blob(18, 3, 2, 2.4, seed=2212), seed=2213, tufts=2, keep_clear=
 ls.meadow(sk, ls.blob(6, 7, 2, 1, seed=2214), seed=2215, tufts=1, keep_clear=CLEAR)
 for i, ((x, y), n) in enumerate([((33, 10), 2), ((24, 19), 2), ((36, 33), 3), ((7, 15), 2)]):
     ls.flower_bed(sk, x, y, n, seed=2230 + i, keep_clear=CLEAR - ISLAND)
+# last, so nothing above moves (terrain-rules): a route's flowers are singles, as vanilla's are, and
+# no sapling stands against a tree
+ls.loosen_flowers(sk)
+ls.uncrowd_saplings(sk)
+sk.accept("grass_rect", "the hay fields on the Meductic intervale are fields: rectangles on purpose")
 
 # --- signs (their text: design/maps/Route202_1.events.toml) ------------------------------------------
 # the route sign by the road out of Woodstock; Meductic's by the farm lane at the bend

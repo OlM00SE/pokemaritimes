@@ -1,4 +1,4 @@
-﻿"""HomeTown: the hamlet in the Meduxnekeag hills (milestone 16). Writes design/maps/HomeTown_0.txt.
+"""HomeTown: the hamlet in the Meduxnekeag hills (milestone 16). Writes design/maps/HomeTown_0.txt.
 
 Run:  python design/maps/hometown_design.py
       python dev/mapgen.py build design/maps/HomeTown_0.txt --fresh [--apply]
@@ -135,6 +135,10 @@ ls.nestle(sk, land - ls.rect(0, 20, W - 1, H - 1), 3, seed=1620, min_gap=7, keep
 for (x, y) in [(31, 11), (32, 13)]:                  # the mill yard: logs waiting (boulders for now)
     if sk.get(x, y) == ".":
         sk.set(x, y, "b")
+# last, so nothing above moves (terrain-rules): no lane one tile wide (the path family has no
+# pieces for one: the rim showed on one side only), no sapling against a tree (vanilla doesn't)
+ls.widen_paths(sk)
+ls.uncrowd_saplings(sk)
 
 # --- sign posts (their text: design/maps/HomeTown_0.events.toml) -------------------------------
 SIGNS = {
