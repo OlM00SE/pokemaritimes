@@ -262,6 +262,8 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
 
     saps = []
     for x, y in leftovers:
+        # (a sapling here usually stands against its run's tree, which vanilla doesn't do: a design
+        # script finishes with uncrowd_saplings, after every other placement)
         if saplings and (x, y) not in taken and (x, y + 1) not in taken and (x, y - 1) not in taken \
                 and not (inmap(x, y - 1) and sk.rows[y - 1][x] in "Ty" and (x, y - 1) not in area) \
                 and stand(x, y + 2):
@@ -286,6 +288,94 @@ def plant(sk, mask, area, parity=(0, 0), saplings=True, keep_clear=frozenset()):
             f"{sorted(after[1] - before[1])[:4]}). Make the area cover whole trees: whole 2-row "
             "bands on the forest's grid, and both tiles of every sapling.")
     return len(trees), offset, len(saps)
+
+
+def narrow_paths(sk, ch="="):
+    """Runs of path one tile wide: [(cells, side)], side the direction ('E' or 'S') across the run.
+    The light path and sand families have no one-wide pieces: the compiler gives such a lane its rim
+    on one side only and a ragged edge on the other (composition rule `pairs`: path | grass)."""
+    is_p = lambda x, y: 0 <= x < sk.w and 0 <= y < sk.h and sk.rows[y][x] == ch
+    out = []
+    for vertical in (True, False):
+        seen = set()
+        for y in range(sk.h):
+            for x in range(sk.w):
+                if (x, y) in seen or not is_p(x, y):
+                    continue
+                if vertical:
+                    narrow = lambda cx, cy: is_p(cx, cy) and not is_p(cx - 1, cy) and not is_p(cx + 1, cy)
+                    step = (0, 1)
+                else:
+                    narrow = lambda cx, cy: is_p(cx, cy) and not is_p(cx, cy - 1) and not is_p(cx, cy + 1)
+                    step = (1, 0)
+                if not narrow(x, y):
+                    continue
+                run, cx, cy = [], x, y
+                while narrow(cx, cy):
+                    run.append((cx, cy))
+                    cx, cy = cx + step[0], cy + step[1]
+                seen.update(run)
+                if len(run) >= 2:
+                    out.append((run, "E" if vertical else "S"))
+    return out
+
+
+def widen_paths(sk, keep_clear=frozenset(), ch="="):
+    """Widen every one-tile-wide run of path (narrow_paths) to two, on the side where every cell of
+    the run has open grass ('.') beside it (east or south first, else west or north); a run with
+    neither stays as it is. Only grass becomes path, so nothing turns solid: call it last in a design
+    script and nothing else moves. Returns the cells added."""
+    out = []
+    for run, side in narrow_paths(sk, ch):
+        d = (1, 0) if side == "E" else (0, 1)
+        for sx, sy in (d, (-d[0], -d[1])):
+            cells = [(x + sx, y + sy) for x, y in run]
+            if all(0 <= x < sk.w and 0 <= y < sk.h and sk.rows[y][x] == "." and (x, y) not in keep_clear
+                   for x, y in cells):
+                for x, y in cells:
+                    sk.rows[y][x] = ch
+                out += cells
+                break
+    return out
+
+
+def crowded_saplings(sk):
+    """Saplings (runs of 'y') with a tree ('T') among the 8 neighbours of any of their cells.
+    Vanilla doesn't stand a sapling against a tree: of 5817 sapling-piece cells in its General
+    layouts, 15 touch a tree or its cap (5 sideways or below, 10 diagonally), all in Route 116's one
+    grove tucked under a canopy (composition rule `pairs`: sapling | tree). Returns [[cells]]."""
+    out, seen = [], set()
+    for x in range(sk.w):
+        for y in range(sk.h):
+            if sk.rows[y][x] != "y" or (x, y) in seen:
+                continue
+            run = []
+            while y < sk.h and sk.rows[y][x] == "y":
+                run.append((x, y))
+                y += 1
+            seen.update(run)
+            if any(0 <= cx + dx < sk.w and 0 <= cy + dy < sk.h and sk.rows[cy + dy][cx + dx] == "T"
+                   for cx, cy in run for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                out.append(run)
+    return out
+
+
+def uncrowd_saplings(sk, keep_clear=frozenset(), hold=frozenset()):
+    """Turn every sapling standing against a tree (crowded_saplings) into grass. Call it last in a
+    design script, after every placement that reads the ground (beds, boulders, meadows), so that
+    nothing else moves. A sapling may have closed a gap in the woods (its trunk is solid; the crown
+    top is walk-behind): read the route numbers and mapgen's reach line after the build, and name
+    such a sapling's cells in `hold`: its trunk becomes a boulder (as solid, and a boulder against a
+    tree is a pairing vanilla draws often), the rest grass. Returns the cells changed."""
+    out = []
+    for run in crowded_saplings(sk):
+        if any(c in keep_clear for c in run):
+            continue
+        boulder = run[-1] if any(c in hold for c in run) else None
+        for x, y in run:
+            sk.rows[y][x] = "b" if (x, y) == boulder else "."
+            out.append((x, y))
+    return out
 
 
 def _forest_damage(sk):
@@ -389,6 +479,63 @@ def flower_bed(sk, cx, cy, n, seed=0, keep_clear=frozenset()):
     for x, y in bed:
         sk.rows[y][x] = "*"
     return bed
+
+
+def sprinkle(sk, cx, cy, n, seed=0, keep_clear=frozenset(), radius=2):
+    """Up to n single flowers scattered within `radius` tiles of (cx, cy), none touching another
+    side by side: a route's flowers as vanilla draws them (singles in 90-100% of its route beds;
+    composition rule flower_singles). A compact bed (flower_bed) is a garden's, in a town.
+    Returns the cells."""
+    rng = random.Random(seed)
+    spots = [(x, y) for y in range(cy - radius, cy + radius + 1) for x in range(cx - radius, cx + radius + 1)
+             if _sunny(sk, x, y, keep_clear)]
+    rng.shuffle(spots)
+    spots.sort(key=lambda c: max(abs(c[0] - cx), abs(c[1] - cy)) + rng.random())   # near the spot first
+    out = []
+    for x, y in spots:
+        if len(out) >= n:
+            break
+        if any(0 <= x + dx < sk.w and 0 <= y + dy < sk.h and sk.rows[y + dy][x + dx] == "*"
+               for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        sk.rows[y][x] = "*"
+        out.append((x, y))
+    return out
+
+
+def loosen_flowers(sk, area=None):
+    """Thin every bed of two or more flowers to singles that don't touch side by side (a route's
+    flowers, as vanilla's are: composition rule flower_singles). Each bed keeps the cells of one
+    checkerboard colour (the colour holding more of it; the bed's first cell's on a tie), so a pair
+    keeps one flower, a row of three keeps both ends. Only flower cells change (to grass): call it
+    last in a design script and nothing else moves. Returns the cells cleared."""
+    beds, seen = [], set()
+    for y in range(sk.h):
+        for x in range(sk.w):
+            if sk.rows[y][x] != "*" or (x, y) in seen or (area is not None and (x, y) not in area):
+                continue
+            bed, stack = [], [(x, y)]
+            seen.add((x, y))
+            while stack:
+                cx, cy = stack.pop()
+                bed.append((cx, cy))
+                for c in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    if c not in seen and 0 <= c[0] < sk.w and 0 <= c[1] < sk.h and sk.rows[c[1]][c[0]] == "*":
+                        seen.add(c)
+                        stack.append(c)
+            beds.append(sorted(bed, key=lambda c: (c[1], c[0])))
+    out = []
+    for bed in beds:
+        if len(bed) < 2:
+            continue
+        first = (bed[0][0] + bed[0][1]) % 2
+        n_first = sum((x + y) % 2 == first for x, y in bed)
+        keep = first if n_first * 2 >= len(bed) else 1 - first
+        for x, y in bed:
+            if (x + y) % 2 != keep:
+                sk.rows[y][x] = "."
+                out.append((x, y))
+    return out
 
 
 def nestle(sk, area, n, seed=0, ch="b", min_gap=5, keep_clear=frozenset()):

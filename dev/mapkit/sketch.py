@@ -38,6 +38,8 @@ CLASS_TO_CHAR = {"G": ".", "TG": ",", "P": "=", "SA": ":", "S": "~", "W": "o",
                  shores.ROCK_CLS: shores.ROCK_CHAR, **flora.CLASS_CHAR,
                  **{c: ch for ch, c in cliffs.CLS.items()}}   # LD: ledges.piece_char
 LEVEL_PREFIX = "// level:"
+# tiles vanilla labels as grass that the learned rules must never choose: cliff stairs, sapling crowns
+NEVER_GRASS = frozenset(cliffs.STAIR_PIECES | {flora.CROWN, 0x00F})
 CLASS_ATTRS = {"G": (0, 3), "TG": (0, 3), "P": (0, 3), "SA": (0, 3), "S": (0, 1), "W": (0, 1),
                "TL": (1, 0), "TR": (1, 0), "BL": (1, 0), "BR": (1, 0), "LD": ledges.LEDGE_ATTRS,
                shores.ROCK_CLS: (1, 0)}
@@ -145,6 +147,18 @@ class Sketch:
         return st.door_at(x, y)
 
     # ---- editing helpers for procedural design scripts ----
+    def accept(self, rule, why):
+        """Say in the sketch that a visual guide's finding is meant (mapkit/composition.py), e.g.
+        accept("grass_rect", "hay fields are fields"): `// accept: rule: why`. The report then shows
+        the guide as accepted, with the reason, instead of flagging it."""
+        from .composition import RULES, ACCEPT_PREFIX
+        if rule not in RULES:
+            raise ValueError(f"accept: unknown rule {rule!r}; rules are {sorted(RULES)}")
+        if not why.strip():
+            raise ValueError("accept: give the reason")
+        self.comments = [c for c in self.comments
+                         if not c.startswith(f"{ACCEPT_PREFIX} {rule}:")] + [f"{ACCEPT_PREFIX} {rule}: {why}"]
+
     def fill(self, x0, y0, x1, y1, ch):
         for y in range(max(0, y0), min(self.h, y1 + 1)):
             for x in range(max(0, x0), min(self.w, x1 + 1)):
@@ -668,12 +682,14 @@ def compile_sketch(project, corpus, rules, sketch, layout, vocab=None, forbidden
         # come from `kept` below.
         learn_view = [[("G" if (x, y) in stamp_blocks else c) for x, c in enumerate(row)]
                       for y, row in enumerate(learn_view)]
-    # vanilla labels its cliff stairs as grass; the rules must never draw them in open ground
-    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=outside)
+    # vanilla labels its cliff stairs as grass, and a sapling's crown top (walk-behind): the rules must
+    # never draw either in open ground (a lone crown showed beside a kept cliff once a sapling there
+    # became grass: terrain-rules)
+    mids, levels = autotile(rules, learn_view, w, h, keep, exclude=NEVER_GRASS, outside=outside)
     shore_tiles = 0
     if has_water and layout.primary == PRIMARY:
         view = shores.sand_view(learn_view, w, h)
-        sand_mids = autotile(rules, view, w, h, keep, exclude=cliffs.STAIR_PIECES, outside=outside)[0] \
+        sand_mids = autotile(rules, view, w, h, keep, exclude=NEVER_GRASS, outside=outside)[0] \
             if view != learn_view else None
         shore_tiles = shores.apply(gview, mids, w, h, sand_mids)
     if fpieces:
