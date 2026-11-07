@@ -163,6 +163,7 @@ def roundtrip(p):
     keeping, and must still come back exactly, from the shape tables alone."""
     from mapkit.terrain import learn, class_adjacency, forbidden_pairs
     from mapkit.sketch import extract, compile_sketch, shore_owned
+    from mapkit.seams import compile_context
     corpus = Corpus(p)
     vocab = Vocabulary(p, corpus)
     entries = vanilla_maps(corpus)
@@ -177,7 +178,8 @@ def roundtrip(p):
         w, h = L.width, L.height
         own = name in OWN_MAPS
         sk = extract(p, vocab, name, rules, forbidden, corpus, verify_shores=not own)
-        blocks, _ = compile_sketch(p, corpus, rules, sk, L, vocab, forbidden)
+        blocks, _ = compile_sketch(p, corpus, rules, sk, L, vocab, forbidden,
+                                   **compile_context(p, vocab, p.load_map(name)))   # as mapgen
         # shore cells of the original map, judged on a raw extract (nothing kept by the check)
         raw = grid(extract(p, vocab, name, rules, verify_shores=False).rows)
         cells = [y * w + x for y in range(h) for x in range(w) if shore_owned(raw, x, y, w, h)]

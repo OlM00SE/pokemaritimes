@@ -418,9 +418,9 @@ def roundtrip(p):
         if not cells:
             continue
         sk = extract(p, vocab, name, rules, forbidden, corpus)
-        from mapkit.seams import outside_labels, border_labels       # as mapgen builds
+        from mapkit.seams import compile_context                    # as mapgen builds
         blocks, _ = compile_sketch(p, corpus, rules, sk, m.layout, vocab, forbidden,
-                                   seams=outside_labels(p, vocab, m), border=border_labels(p, vocab, m))
+                                   **compile_context(p, vocab, m))
         cliff_changed = sum(1 for i in cells if blocks[i] != m.layout.blocks[i])
         stray = sum(1 for i, b in enumerate(blocks) if C.is_cliff_block(b) and i not in set(cells))
         others = sum(1 for a, b in zip(blocks, m.layout.blocks) if a != b) - cliff_changed

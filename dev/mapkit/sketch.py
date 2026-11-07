@@ -206,8 +206,7 @@ def extract(project, vocab, map_name, rules=None, forbidden=None, corpus=None, v
             # verified as mapgen builds: with what lies past each edge (seams, border)
             from . import seams as seam_kit
             keep_unrebuildable_shore_blocks(project, vocab, rules, sk, L, forbidden, corpus,
-                                            seams=seam_kit.outside_labels(project, vocab, m),
-                                            border=seam_kit.border_labels(project, vocab, m))
+                                            **seam_kit.compile_context(project, vocab, m))
     if L.primary == PRIMARY:
         recheck_bridges(project, L, sk.rows)       # the passes above may have kept a deck's neighbours
     return sk

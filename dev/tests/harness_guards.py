@@ -189,11 +189,16 @@ class HarnessGuards(unittest.TestCase):
             "Lab: bump  4/4 as the model says\nLab: climb 0/0 as the model says\n"
             "TOTAL: 4/4 cliff cases behave as the model says")[0], "FAILED")
         good = ("shapes: 18/18 behave as expected\nvanilla agreement: 98/98 piece adjacencies vanilla uses\n"
+                "ground agreement: 77/114 piece-ground pairings vanilla uses, 37 judged (GROUND_OK), 0 not "
+                "(539 cells' sides on 2 maps)\n"
                 "roundtrip: CliffLab 152 cliff cells, 0 changed, 0 drawn elsewhere (1 other blocks differ)\nPASS\n")
         self.assertEqual(regression.evaluate(steps["cliff_pieces"], 0, good)[0], "PASSED")
         for bad in (good.replace("0 changed", "3 changed"), good.replace("98/98", "97/98"),
                     good.replace("roundtrip: CliffLab 152 cliff cells, 0 changed, 0 drawn elsewhere (1 other blocks differ)",
-                                 "roundtrip: NO MAP WITH CLIFFS")):
+                                 "roundtrip: NO MAP WITH CLIFFS"),
+                    good.replace("0 not (539", "2 not (539"),            # an unjudged pairing
+                    good.replace("(539 cells' sides", "(0 cells' sides"),    # nothing checked
+                    "\n".join(l for l in good.splitlines() if not l.startswith("ground"))):
             self.assertEqual(regression.evaluate(steps["cliff_pieces"], 0, bad)[0], "FAILED")
 
     def test_bridges_without_decks_fail(self):

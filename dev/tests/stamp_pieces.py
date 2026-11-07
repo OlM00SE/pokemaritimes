@@ -34,6 +34,7 @@ from mapkit.terrain import Vocabulary, vanilla_maps, learn, class_adjacency, for
 from mapkit.sketch import Sketch, SketchError, extract, compile_sketch
 from mapkit.doors import door_tiles, _upstream_maps
 from mapkit import stamps, interiors, buildings
+from mapkit.seams import compile_context
 
 TOWNS = ["LittlerootTown", "OldaleTown", "PetalburgCity"]
 OURS = ["HomeTown_0", "Woodstock_2", "TownLab"]
@@ -100,7 +101,8 @@ def round_trip(p, c, v, rules, forb, verbose):
         m = p.load_map(n)
         L = m.layout
         sk = extract(p, v, n, rules, forb, c)
-        blocks, _ = compile_sketch(p, c, rules, sk, L, v, forb)
+        ctx = compile_context(p, v, m)                    # as mapgen builds it
+        blocks, _ = compile_sketch(p, c, rules, sk, L, v, forb, **ctx)
         cells = set().union(*(stamps.catalog(p)[pl.name].footprint(pl.x, pl.y) for pl in sk.stamps)) \
             if sk.stamps else set()
         same_cells = all(blocks[y * L.width + x] == L.get(x, y) for x, y in cells)
@@ -112,7 +114,7 @@ def round_trip(p, c, v, rules, forb, verbose):
         check(drawn, f"{n}: extracted stamps are drawn B ({sum(sk.rows[y][x] == stamps.CHAR for x, y in cells)}"
               f"/{len(cells)}; the rest blended roof cells)")
         kept = Sketch(n, ["".join("#" if ch == stamps.CHAR else ch for ch in row) for row in sk.rows])
-        kblocks, _ = compile_sketch(p, c, rules, kept, L, v, forb)
+        kblocks, _ = compile_sketch(p, c, rules, kept, L, v, forb, **ctx)
         a = sum(x == y for x, y in zip(blocks, L.blocks))
         b = sum(x == y for x, y in zip(kblocks, L.blocks))
         check(same_cells and a >= b, f"{n}: {len(sk.stamps)} stamps, {len(cells)} cells exact; whole map "

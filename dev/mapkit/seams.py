@@ -208,6 +208,13 @@ def border_labels(p, vocab, m, depth=2, layout=None):
             for xy, block in border_cells(p, m, depth, layout).items()}
 
 
+def compile_context(p, vocab, m):
+    """compile_sketch's keyword arguments for map m as mapgen builds it: the neighbours across
+    connected seams and the border past the other edges. Anything that compiles a real map and
+    compares with it (extract's checks, the round trips) passes these, or edge cells differ."""
+    return {"seams": outside_labels(p, vocab, m), "border": border_labels(p, vocab, m)}
+
+
 def border_pairs(corpus, p, m, layout=None):
     """Edge cells side by side with what the engine draws past an edge where no neighbour's strip
     lies (border trees, edge water) in a pairing vanilla never draws: [((x, y), mine, beyond,
