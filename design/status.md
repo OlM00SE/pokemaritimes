@@ -1,10 +1,83 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-07 (edges and cliffs v2). Read this first in a new session. The world's geography and
+> Updated 2026-11-07 (visual rules). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
+**Visual rules** (branch `terrain-rules`, 2026-11-07). Tom asked, before Nackawic, for the tools to
+understand what makes vanilla's environments read as natural: beyond whether two tiles may touch,
+the surroundings, transitions, larger features and the composition, with strict rules and guides.
+Studied on vanilla's outdoor General maps; findings with their numbers in `mapping_reference.md`
+§18; tooling in `../dev/README.md`, "Visual rules". **SAVES CARRY OVER** (save line 2, no layout
+change, no world revision: art only; no reachable tile turned solid on any map, engine model).
+How it was verified (the gate: `terrain-rules @ c6d5b40fd3`, clean tree, ROM `80c417073e2ea96f…`,
+**56 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261107_163846_633700/`):
+terrain_rules 30/30 (bands reproducible, vanilla clean, every scene flagged bad and passed good,
+the ratchet); checker 41 maps, 0 errors (new `visual_pairs` warnings); vanilla baseline 939 maps,
+0 unexpected; corridor 7 maps, 0 errors, 0 warnings; cliff_pieces as before (ground agreement now
+reads the moved judged list: 77/113 vanilla's, 36 judged, 0 not); roundtrip 100% on the four
+corridor maps; crossings 53, 53, 28, 28, 51, 51 (Woodstock 29 -> 28: the freed nook); in-game
+conformance 574/574, flora 417/417, events 185/185, ledges 522/522, cliffs 477/477, world revision
+47/47, autowalks, save 45/45, doors 20, buildings 22/22.
+
+**Code review** (`/code-review medium`): 10 findings; 9 fixed, 1 answered. Fixed: a `hold` that names
+no crowded sapling (or a run that isn't one two-tall sapling) is now refused, since one that stopped
+matching after a redesign would silently reopen its gap; `loosen_flowers(area=)` flooded beds past
+the area; `// accept: pairs` was a silent no-op (now an error: pairs are judged in `JUDGED`); sea
+routes were judged against woodland bands (now no band, n/a); building pieces came from the default
+project, not the caller's; mapgen loaded the bands twice and printed the pairs twice; the checker
+duplicated `OUTDOOR`; terrain_report stopped at one bad accept line. Answered: "saplings under a
+tree's cap are missed": a cap lies directly above a tree top, so a sapling cell beside one has that
+tree among its eight neighbours; `crowded_saplings` catches it.
+
+**What the tools didn't see before:** each cell was a metatile vanilla uses beside its neighbours
+(learned rules, piece kits), and pairs were checked against vanilla only for cliffs and at seams.
+Nothing measured a feature against its surroundings or a screen's composition.
+
+**What was built** (`mapkit/composition.py`, `dev/terrain_report.py`, `tests/terrain_rules.py`):
+- **Strict, `pairs`:** two General metatiles side by side that vanilla never draws (both pieces
+  vanilla's). Checker WARN `visual_pairs`; `mapgen build` prints it. Judged pairings with reasons in
+  `composition.JUDGED` (the cliff list moved there; `cliff_pieces` reads it).
+- **Guides against vanilla's bands** (24 land routes, 16 towns; `composition_bands.json` from
+  `--calibrate`): staircases (banks, forest), straight edges, rectangular tall grass, tall grass
+  away from cover, free-standing tree rows, flower beds, bare screens (the 15x10 view), open
+  space. `unusual` outside p10..p90, `beyond` past vanilla. A meant finding is accepted in the
+  design (`sk.accept(rule, why)`); Route 202 accepts its hay fields.
+- **Finishing passes** (`landscape`, last in a design script so nothing else moves):
+  `uncrowd_saplings(hold=)`, `loosen_flowers`, `widen_paths`; `sprinkle` for new designs.
+- **Scenes** (`dev/out/terrain/scenes.png`): forest edge, river banks, meadow, hedge, flowers,
+  bare lawn, saplings, each drawn badly and well; every rule flags the bad and passes the good.
+- **Ratchet** in the gate: the corridor maps' odd pairs only go down; no guide newly outside its band.
+
+**Maps** (art only): saplings against trees gone (vanilla: 15 of 5817 sapling cells touch one, all
+in one Route 116 grove); Woodstock's two that closed gaps in its bottom woods are boulders (its
+crossing to Route 202 reads 28 steps, was 29: the path cuts a freed nook); route flowers are
+singles (vanilla's routes: 73-100%; ours were 0%); HomeTown's one-wide lane (rim on one side only)
+is two wide. Odd pairs 112 -> 50 (HomeTown 26 -> 11, Route 201 22 -> 16, Woodstock 50 -> 14,
+Route 202 14 -> 9). Cells: HomeTown 13, Route 201 11, Woodstock 20, Route 202 6. Evidence
+(gitignored): `dev/out/terrain/<Map>.png`, `scenes.png`, `ingame_before_after.png` (eight spots,
+the phone build vs this one).
+
+**Found on the way:** the learned rules could draw a sapling's crown top into open grass beside a
+kept block (vanilla labels it walkable grass, like the cliff stairs): excluded
+(`sketch.NEVER_GRASS`), no built map changed. Doing the finishing passes in place, inside `plant`,
+moved every later random placement (Woodstock 86 cells and a new shortcut, which the route numbers
+caught): hence passes run last.
+
+**Known findings, left for a design pass** (the ratchet lists them): HomeTown's brook steps in a
+one-tile staircase (5; vanilla towns max 5) with bank notches (7 pairs); Route 202's brook runs 18
+tiles ruler-straight (vanilla max 17) and its far bank steps regularly (6); Woodstock's far
+channel has a 14-tile straight bank (towns max 11) and a three-tree row by the river (hedge 6).
+They change water and woods on maps saves stand on, so they wait for a milestone that redesigns
+them, with a world revision. **Nackawic's headpond is the first design the rules will shape from
+the start.**
+
+**Recommended next: M18 Nackawic** (below), with the rules on from its first sketch; candidate
+tooling there: a bank helper that steps a rasterised river irregularly (the staircase finding), and
+vanilla's tall-tree forest (Routes 110-123: stacked sapling pieces, a conifer silhouette) as
+vocabulary for the boreal woods.
+
 **Edges and cliffs v2** (branch `edges-cliffs-v2`, 2026-11-07). Tooling-led follow-up to Tom's phone
 play: the cliff and rock tiles that didn't transition, and the map edges against the border. **SAVES
 CARRY OVER** (save line 2, no layout change, no world revision: no tile a walker could reach turned
@@ -1222,6 +1295,8 @@ dev/tests/flora_pieces.py             # no emulator; PASS (vanilla flora, 14/14 
 dev/tests/stamp_pieces.py             # no emulator; PASS (catalog, 37 vanilla doors recognised, round trips, refusals, door plans, room scripts)
 dev/tests/bridge_pieces.py            # no emulator; 31 checks (import from vanilla Petalburg in a fixture, shapes, extract)
 dev/tests/cliff_pieces.py             # no emulator; shapes 21/21, vanilla adjacencies 106/106, sketch agreement, round trip
+dev/tests/terrain_rules.py            # no emulator; visual rules: bands reproducible, vanilla clean, scenes bad/good, ratchet
+dev/terrain_report.py [Map...]        # the visual rules' report cards and dev/out/terrain/<Map>.png (after any map edit)
 dev/tests/ingame_cliffs.py            # CliffLab + Route 202: every wall bumped, every stair climbed, every cutting walked (477/477)
 dev/tests/ingame_encounters.py Route202_1
 dev/tests/resize_map.py               # no emulator; 5 fixture tests
