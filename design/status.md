@@ -1,12 +1,12 @@
 # PokéMaritimes: project status (handoff)
 
-> Updated 2026-11-06 (Milestone 17, Route 202 and cliffs). Read this first in a new session. The world's geography and
+> Updated 2026-11-07 (foundations: seams and edges, after Tom's phone play). Read this first in a new session. The world's geography and
 > the corridor plan live in `region_blueprint.md`; the creative brief in `region_plan.md`; tooling
 > in `../dev/README.md`; engine facts in `mapping_reference.md`.
 
 ## Where we are
-**Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; NOT MERGED YET: see the
-end of this section). Tom played the M17 phone build and reported three things: cliff and rock
+**Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; merged into `develop`
+locally, **not pushed: waiting for Tom's okay**; phone build at the end of this section). Tom played the M17 phone build and reported three things: cliff and rock
 tiles that don't transition smoothly, terrain changes and people popping in at map boundaries,
 rivers ending against the forest at a map's edge. Investigated in renders, in mGBA and against the
 vanilla corpus; the systemic causes are fixed, the cliff vocabulary's is diagnosed for the next
@@ -63,7 +63,25 @@ their people where they saved them until the map next loads.
   on the road (from the trail, rows 14-15, he was off-screen before too): the price of keeping him
   out of view from Route 201.
 
+How it was verified (the gate: `foundation-seams @ 4fff2062f3`, clean tree, ROM `d46d7a23…`,
+**55 gates passed, 2 observed, 0 failed**; report `dev/out/regression/20261107_050912_371600/`):
+| Area | Result |
+|---|---|
+| Static | checker 41 maps, 0 errors (15 warnings: the new seam warnings on the prototypes Fredericton, Route 203, Route 101_2/102_2, and HomeTown's accepted hedge); vanilla baseline 0 unexpected; **corridor 7 maps, 0 errors, 0 warnings, with the seam gate on 6 built joins (2 cells accepted)**; seam_checks 24/24; id budget, save layout (no layout change) |
+| Pieces | cliff_pieces as M17 (shapes 21/21, adjacencies 106/106); round trip 91.8-100%; reconstruction 87.8% (observed); ledge, shore, flora, stamp, bridge pieces PASS |
+| Routes | crossings 53, 53, 29, 29, 51, 51 steps, 0 forced tall grass (observed): unchanged from M17 |
+| In-game | **edge water: margin 18498/18498 cells as the model says on 14 maps, 198 filled; 25/25 bumps stay put (10 surfing)**; conformance 585/585; events 185/185 on 11 maps (the six moved people); playthrough (the researcher at his new spot); doors 20; buildings 22/22; world revision 47/47; bridges 162/162; cliffs 477/477; ledges 521/521; shores 624/624; flora 448/448; encounters 12 + 12 battles; four autowalks; save 45/45; respawn |
+| Before/after | `dev/out/seams/`: `before_popin_and_black_column.png` (Gordon and the ball missing from Fredericton's side, there one step later; Route 203's black column), `before_after_tree_seams.png` (six spots at the seams, M17 build vs now), `after_edge_water.png` (the four rivers running on), the cliff evidence (`cliff_rims_route202.png` against vanilla's `vanilla_rims_route116.png`, `vanilla_grass_terraces_lilycove.png`, `vanilla_thin_walls_route111.png`) |
+
 Known limits:
+- **Edges against the border** (found last, not fixed): at an edge with no neighbour the compiler
+  still reads off the map as unknown (`OUT`), while the engine draws the border's 2x2 trees there,
+  so trees cut by such an edge needn't line up with them (a cut column at Woodstock's east edge,
+  visible in `before_after_tree_seams.png`, row 5) and caps or edges can be wrong beside them: 93
+  edge cells on the four corridor maps pair with the border in ways vanilla never draws (HomeTown 32,
+  Route 201 32, Woodstock 23, Route 202 6). The fix is the seam context's other half: the border
+  pattern (and edge water) as `outside` on unconnected sides. It rebuilds every map's outer edge,
+  so it gets its own save check: first item of the next milestone.
 - Fredericton's fence column still draws black from Route 203 (prototype; the checker warns, the
   corridor gate will hold its rebuild). Route 203_1_2's river ends against trees inside the map
   (prototype design). The interim Route 202 / Fredericton seam until Nackawic.
@@ -1152,7 +1170,11 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ## Next milestone (proposed, not started)
 The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton.
 
-**Recommended first: cliff vocabulary v2** (small, tooling-led; from Tom's phone play, diagnosed in
+**Recommended first: edges and cliffs v2** (small, tooling-led). First the seam context's other
+half: on an edge with no neighbour, give the compiler the border pattern (and edge water) as what
+lies beyond, so trees cut by the edge line up with the border's and caps sit right (93 edge cells on
+the four corridor maps today; "Known limits" above), rebuilding the four maps with a save check.
+Then the cliff vocabulary (from Tom's phone play; from Tom's phone play, diagnosed in
 the seams work, `mapping_reference.md` §16 "The rim's high side"). Our terraces' north edges use
 vanilla's rock rim over grass, which vanilla never does. Every later map with elevation (Nackawic's
 bluffs, the highlands) inherits the fix, so it goes before them:
