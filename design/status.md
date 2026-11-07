@@ -6,7 +6,7 @@
 
 ## Where we are
 **Foundations: seams and edges** (branch `foundation-seams`, 2026-11-07; merged into `develop` as
-`f48b4a92d4`, **not pushed: waiting for Tom's okay**). **Phone build published:**
+`f48b4a92d4` and pushed to `origin/develop`, Tom okayed, 2026-11-07). **Phone build published:**
 `2026-11-07_f48b4a92d4`, ROM sha256 `d46d7a2355086f18…` (the ROM the gate tested), save line 2;
 `dev/mobile.py` 9/9 in mGBA; Google Drive confirmed `PokeMaritimes_save2.zip` and
 `builds/PokeMaritimes_2026-11-07_f48b4a92d4_save2.zip`. **SAVES CARRY OVER.** A local copy with its
@@ -1174,14 +1174,13 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 ```
 
 ## Next milestone (proposed, not started)
-The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton.
+The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton. Neither milestone below has started: wait for Tom's go before beginning either.
 
 **Recommended first: edges and cliffs v2** (small, tooling-led). First the seam context's other
 half: on an edge with no neighbour, give the compiler the border pattern (and edge water) as what
 lies beyond, so trees cut by the edge line up with the border's and caps sit right (93 edge cells on
 the four corridor maps today; "Known limits" above), rebuilding the four maps with a save check.
-Then the cliff vocabulary (from Tom's phone play; from Tom's phone play, diagnosed in
-the seams work, `mapping_reference.md` §16 "The rim's high side"). Our terraces' north edges use
+Then the cliff vocabulary (from Tom's phone play, diagnosed in the seams work, `mapping_reference.md` §16 "The rim's high side"). Our terraces' north edges use
 vanilla's rock rim over grass, which vanilla never does. Every later map with elevation (Nackawic's
 bluffs, the highlands) inherits the fix, so it goes before them:
 - **Grass-topped terraces:** a north edge drawn with vanilla's thin-wall family (`087` line, `0D5`/`0D6`
