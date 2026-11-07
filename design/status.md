@@ -11,7 +11,7 @@ the surroundings, transitions, larger features and the composition, with strict 
 Studied on vanilla's outdoor General maps; findings with their numbers in `mapping_reference.md`
 §18; tooling in `../dev/README.md`, "Visual rules". **SAVES CARRY OVER** (save line 2, no layout
 change, no world revision: art only; no reachable tile turned solid on any map, engine model).
-**Merged into `develop` as `d3ed430359`; not pushed (waiting for Tom's okay).** **Phone build
+**Merged into `develop` as `d3ed430359` and pushed to `origin/develop` (Tom okayed, 2026-11-07).** **Phone build
 published:** `2026-11-07_d3ed430359`, ROM sha256 `80c417073e2ea96f…` (the ROM the gate tested), save
 line 2; `dev/mobile.py` 9/9 in mGBA; Google Drive confirmed `PokeMaritimes_save2.zip` and
 `builds/PokeMaritimes_2026-11-07_d3ed430359_save2.zip`. A local copy with its `.map` for Nackawic's
@@ -79,7 +79,9 @@ They change water and woods on maps saves stand on, so they wait for a milestone
 them, with a world revision. **Nackawic's headpond is the first design the rules will shape from
 the start.**
 
-**Recommended next: M18 Nackawic** (below), with the rules on from its first sketch; candidate
+**Recommended next: M18 Nackawic** (below), **held until Tom says go** (Tom, 2026-11-07: keep the
+findings above documented for future redesigns, don't start Nackawic yet), with the rules on from
+its first sketch; candidate
 tooling there: a bank helper that steps a rasterised river irregularly (the staircase finding), and
 vanilla's tall-tree forest (Routes 110-123: stacked sapling pieces, a conifer silhouette) as
 vocabulary for the boreal woods.
@@ -1320,6 +1322,13 @@ dev/events.py build design/maps/<Map>.events.toml        # the same for HomeTown
 
 ## Next milestone (proposed, not started)
 The build order is in `region_blueprint.md`, "Build order": M15 Woodstock, M16 the start valley and M17 Route 202 (done), then Nackawic, Route 203 and Fredericton. Neither milestone below has started: wait for Tom's go before beginning either.
+
+~~Visual rules~~: done (above). **Open visual findings for future redesigns** (each needs a world
+revision; `tests/terrain_rules.py`'s RATCHET lists them, `dev/terrain_report.py` draws them):
+HomeTown's brook (one-tile staircase, bank notches), Route 202's ruler-straight brook and regular
+far bank, Woodstock's straight far-channel bank and three-tree row by the river; the remaining odd
+pairs (Route 201's gravel bar meeting the sand patch, building pieces beside flowers). When a
+redesign fixes one, lower its ratchet entry.
 
 ~~Edges and cliffs v2~~: done (above). The thin-wall family turned out not to be the answer (it can't
 close an outline); vanilla's own grass terrace edge (Safari Zone's `002` line) is.
