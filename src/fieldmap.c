@@ -6,6 +6,7 @@
 #include "fldeff_misc.h"
 #include "frontier_util.h"
 #include "menu.h"
+#include "metatile_behavior.h"
 #include "mirage_tower.h"
 #include "overworld.h"
 #include "palette.h"
@@ -44,6 +45,9 @@ static void FillNorthConnection(struct MapHeader const *mapHeader, struct MapHea
 static void FillWestConnection(struct MapHeader const *mapHeader, struct MapHeader const *connectedMapHeader, s32 offset);
 static void FillEastConnection(struct MapHeader const *mapHeader, struct MapHeader const *connectedMapHeader, s32 offset);
 static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader);
+#if OW_EDGE_WATER
+static void ExtendEdgeWater(const struct MapHeader *mapHeader);
+#endif
 static void LoadSavedMapView(void);
 static bool8 SkipCopyingMetatileFromSavedMap(u16 *mapBlock, u16 mapWidth, u8 yMode);
 static const struct MapConnection *GetIncomingConnection(enum Connection direction, s32 x, s32 y);
@@ -175,7 +179,104 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
 
     InitBackupMapLayoutData(mapLayout->map, mapLayout->width, mapLayout->height);
     InitBackupMapLayoutConnections(mapHeader);
+#if OW_EDGE_WATER
+    ExtendEdgeWater(mapHeader);
+#endif
 }
+
+#if OW_EDGE_WATER
+// Maritimes: a river or lake that reaches an edge with no connection runs on into the margin,
+// with a grass verge, instead of stopping against the border pattern (a map built before its
+// neighbour, or a brook that comes down out of the hills). Cells a connection filled are left
+// alone; filled cells carry the border's collision, so nobody walks or surfs into them, and
+// GetMapBorderIdAt never sees them (the player can't reach them). Modelled cell for cell by
+// dev/mapkit/seams.py margin_fill; checked in-game by dev/tests/ingame_edge_water.py.
+struct EdgeLine
+{
+    s32 x, y;       // grid cell of the edge's first map cell
+    s32 ax, ay;     // step along the edge
+    s32 ox, oy;     // step outward, into the margin
+    s32 count;      // map cells along the edge
+    s32 depth;      // margin cells outward
+};
+
+static bool32 EdgeWater(const struct EdgeLine *e, s32 k)
+{
+    if (k < 0 || k >= e->count)
+        return FALSE;
+    return MetatileBehavior_IsSurfableWaterOrUnderwater(MapGridGetMetatileBehaviorAt(e->x + k * e->ax, e->y + k * e->ay));
+}
+
+// a walkable edge cell beside water: the bank's grass
+static bool32 EdgeVerge(const struct EdgeLine *e, s32 k)
+{
+    if (k < 0 || k >= e->count || EdgeWater(e, k))
+        return FALSE;
+    if (MapGridGetCollisionAt(e->x + k * e->ax, e->y + k * e->ay))
+        return FALSE;
+    return EdgeWater(e, k - 1) || EdgeWater(e, k + 1);
+}
+
+// which edge cell's block runs out along line k, or -1: water and verges run on as they are; the
+// cell beyond a verge copies the verge where the border's 2x2 pattern (grid lines paired odd-even)
+// would otherwise show half a tree beside it
+static s32 EdgeSource(const struct EdgeLine *e, s32 k)
+{
+    s32 side, v, g, partner;
+
+    if (EdgeWater(e, k) || EdgeVerge(e, k))
+        return k;
+    g = k + MAP_OFFSET;
+    partner = (g & 1) ? g + 1 : g - 1;
+    for (side = 1; side >= -1; side -= 2)
+    {
+        v = k - side;
+        if (EdgeVerge(e, v) && EdgeWater(e, v - side) && partner == v + MAP_OFFSET)
+            return v;
+    }
+    return -1;
+}
+
+static void ExtendEdgeWaterLine(const struct EdgeLine *e)
+{
+    s32 k, s, src, gx, gy;
+    u16 block;
+
+    for (k = 0; k < e->count; k++)
+    {
+        src = EdgeSource(e, k);
+        if (src < 0)
+            continue;
+        block = gBackupMapLayout.map[(e->x + src * e->ax) + gBackupMapLayout.width * (e->y + src * e->ay)]
+              | MAPGRID_COLLISION_MASK;
+        for (s = 1; s <= e->depth; s++)
+        {
+            gx = e->x + k * e->ax + s * e->ox;
+            gy = e->y + k * e->ay + s * e->oy;
+            if (AreCoordsWithinMapGridBounds(gx, gy)
+             && gBackupMapLayout.map[gx + gBackupMapLayout.width * gy] == MAPGRID_UNDEFINED)
+                gBackupMapLayout.map[gx + gBackupMapLayout.width * gy] = block;
+        }
+    }
+}
+
+static void ExtendEdgeWater(const struct MapHeader *mapHeader)
+{
+    s32 w = mapHeader->mapLayout->width, h = mapHeader->mapLayout->height;
+    struct EdgeLine up    = {MAP_OFFSET, MAP_OFFSET,         1, 0,  0, -1, w, MAP_OFFSET};
+    struct EdgeLine down  = {MAP_OFFSET, MAP_OFFSET + h - 1, 1, 0,  0,  1, w, MAP_OFFSET};
+    struct EdgeLine left  = {MAP_OFFSET, MAP_OFFSET,         0, 1, -1,  0, h, MAP_OFFSET};
+    struct EdgeLine right = {MAP_OFFSET + w - 1, MAP_OFFSET, 0, 1,  1,  0, h, MAP_OFFSET + 1};
+
+    if (mapHeader->mapType != MAP_TYPE_TOWN && mapHeader->mapType != MAP_TYPE_CITY
+     && mapHeader->mapType != MAP_TYPE_ROUTE && mapHeader->mapType != MAP_TYPE_OCEAN_ROUTE)
+        return;
+    ExtendEdgeWaterLine(&up);
+    ExtendEdgeWaterLine(&down);
+    ExtendEdgeWaterLine(&left);
+    ExtendEdgeWaterLine(&right);
+}
+#endif // OW_EDGE_WATER
 
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
 {
