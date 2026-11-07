@@ -18,8 +18,9 @@ from playtest import prepare_rom
 from autowalk import Walker
 
 OUT = os.path.join(REPO, "dev", "out")
-RESEARCHER = (31, 22)          # beside the road where it leaves the hamlet, facing east
-TALK_FROM = (32, 22)           # east of him (he faces right)
+RESEARCHER = (26, 22)          # beside the road where it leaves the hamlet, facing east (out of view
+                               # from Route 201, so he doesn't pop in at the seam: mapkit/seams.py)
+TALK_FROM = (27, 22)           # east of him (he faces right)
 # the exit gate is the hamlet's east column (x = 33): one tile short of it, on the road and on
 # the trail along the brook's far bank (over the footbridge)
 EXITS = [(32, 24), (32, 14)]

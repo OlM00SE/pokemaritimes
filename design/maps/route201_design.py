@@ -136,6 +136,10 @@ OPEN = N_BANK | MEADOW | GLADE | CUTBLOCK | POND_GLADE | FLATS | VALLEY
 OPEN |= ls.rect(10, 6, 14, 9)                     # the meadow opens onto the trail at its east end
 OPEN -= ls.rect(0, 0, 0, 11)                      # the west seam: woods above the trail
 OPEN -= ls.rect(W - 2, 0, W - 1, 13)              # the east seam: woods above the bank
+# beside the pond glade those woods are two columns, whole trees flush with the seam: Woodstock's
+# woods start whole trees at its x = 0, so a third column here could only be a tree cut by the
+# seam that Woodstock doesn't continue (the compiler refuses it; mapkit/seams.py)
+OPEN |= ls.rect(W - 3, 2, W - 3, 9)
 # hedgerows and groves on the valley floor: between the fields, by the farmhouse, at the bends
 # (on the tree grid: whole 2-row bands starting on even rows, or plant drops them)
 GROVES = (ls.rect(8, 18, 11, 19) | ls.rect(30, 16, 33, 17) | ls.rect(40, 18, 43, 19)

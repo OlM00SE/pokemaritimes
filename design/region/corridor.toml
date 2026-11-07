@@ -23,6 +23,8 @@ rect = [-120, -10, 34, 28]
 inset = true
 role = "start"
 idea = "A hamlet in the Meduxnekeag hills against the border: forest closes the west and north. The brook comes down from the hills through the village; a small sawmill yard; the road leaves east."
+# seam cells judged in a render and in-game: [x, y, why] (dev/corridor.py check)
+seam_ok = [[33, 5, "the sawmill garden's hedge corner beside Route 201's woods: vanilla never draws the pair, but it reads as a hedge at the wood's edge"]]
 
 [[map]]
 name = "Route 201"
@@ -31,6 +33,7 @@ rect = [-86, -8, 52, 28]
 inset = true
 role = "route"
 idea = "The Meduxnekeag valley: the creek runs east the whole way with the road on its south bank. Appalachian hardwood forest (the real valley's preserve), a farm clearing, a ledge terrace down to the creek flats, a beaver pond."
+seam_ok = [[0, 3, "a tree trunk beside HomeTown's sawmill hedge corner (HomeTown's 33,5)"]]
 
 [[map]]
 name = "Woodstock"

@@ -106,7 +106,7 @@ The big ones stay out in the Saint John.
 # Beside the highway where it heads south.
 [[person]]
 name = "Walker"
-at = [24, 38]
+at = [24, 35]
 gfx = "MAN_3"
 facing = "right"
 text = """

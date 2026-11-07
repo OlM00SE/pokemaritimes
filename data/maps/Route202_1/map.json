@@ -70,10 +70,10 @@
     {
       "local_id": "LOCALID_ROUTE202_1_HIKER_GORDON",
       "graphics_id": "OBJ_EVENT_GFX_HIKER",
-      "x": 39,
+      "x": 34,
       "y": 32,
       "elevation": 3,
-      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NORMAL",
@@ -84,7 +84,7 @@
     {
       "local_id": "LOCALID_ROUTE202_1_UPLAND_BALL",
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
-      "x": 35,
+      "x": 34,
       "y": 33,
       "elevation": 3,
       "movement_type": "MOVEMENT_TYPE_FACE_DOWN",

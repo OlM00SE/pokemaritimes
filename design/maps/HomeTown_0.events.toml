@@ -35,9 +35,9 @@ In the spring we pick fiddleheads down by the brook. Nothing tastes better with 
 # A sawmill hand in the mill yard, by the lane down to the footbridge.
 [[person]]
 name = "MillHand"
-at = [30, 13]
+at = [26, 12]
 gfx = "HIKER"
-facing = "left"
+facing = "right"
 text = """
 Most folks in the village work in the woods or down at the sawmill.
 

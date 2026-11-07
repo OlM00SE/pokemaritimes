@@ -46,6 +46,9 @@ sk = Sketch("Woodstock_2", ["." * W for _ in range(H)], [
 # valley floor (a straight stretch where Main Street crosses), then widens into its mouth.
 RIVER = {(x, y) for y, row in enumerate(under) for x, ch in enumerate(row) if ch == "~" and x >= 35}
 RIVER |= ls.rect(35, 19, 36, 23) - {(36, 19)}          # the west bank at the mouth, made even
+# Route 202's river is a column wider at the seam (its 27 is our 43): the bottom row's east bank
+# steps out to meet it, so the bank runs on across the seam (no walker reaches this bank)
+RIVER |= {(43, H - 1)}
 CREEK_ROWS = [  # (x0, x1, top row, bottom row) of the water, west to east
     (0, 4, 30, 33),       # the seam with Route 201 (the plan: rows 30-33)
     (5, 8, 29, 32),
